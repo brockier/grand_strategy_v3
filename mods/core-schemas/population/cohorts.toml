@@ -1,0 +1,19 @@
+[[cohort_archetypes]]
+id = "founding_colonist_adult"
+display_name = "Landing Craft Adult Cadre"
+age_min_years = 18
+age_max_years = 55
+daily_grain_need_kg = 0.75
+base_fertility_annual = 0.04
+base_mortality_annual = 0.012
+initial_literacy = 0.72
+
+[[cohort_archetypes]]
+id = "colony_youth"
+display_name = "Colony Youth & Apprentices"
+age_min_years = 6
+age_max_years = 17
+daily_grain_need_kg = 0.55
+base_fertility_annual = 0.0
+base_mortality_annual = 0.008
+initial_literacy = 0.55

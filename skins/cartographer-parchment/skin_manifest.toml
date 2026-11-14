@@ -1,0 +1,15 @@
+schema_version = 1
+skin_id = "cartographer-parchment"
+display_name = "Cartographer's Parchment"
+stylesheet = "theme.css"
+audio_manifest = "audio/audio_manifest.toml"
+
+[globe_palette]
+ocean_shallow_hex = "#87a3ad"
+ocean_deep_hex = "#3d5966"
+land_low_hex = "#d8caa6"
+land_high_hex = "#8c7258"
+contour_ink_hex = "#3b2c1d"
+unexplored_vellum_hex = "#e6d8b9"
+parchment_grain_texture = "textures/parchment_tile.png"
+hatch_pattern_texture = "textures/ink_hatch_tile.png"

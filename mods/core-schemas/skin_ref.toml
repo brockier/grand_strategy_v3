@@ -1,0 +1,4 @@
+[skin_reference]
+id = "default_ui_skin"
+default_skin_id = "cartographer-parchment"
+skins_root_rel = "skins"

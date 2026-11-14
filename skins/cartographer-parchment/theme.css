@@ -1,0 +1,219 @@
+@font-face {
+  font-family: "Liberation Serif";
+  src: url("./fonts/LiberationSerif-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Liberation Mono";
+  src: url("./fonts/LiberationMono-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --skin-bg-panel: #f0e4cc;
+  --skin-bg-inset: #e3d3b4;
+  --skin-text-primary: #231c15;
+  --skin-text-muted: #5d5041;
+  --skin-accent-primary: #8b2e22;
+  --skin-accent-warning: #b36b12;
+  --skin-border-ink: #3b2c1d;
+  --skin-font-display: "Liberation Serif", Georgia, serif;
+  --skin-font-body: "Liberation Serif", Georgia, serif;
+  --skin-font-mono: "Liberation Mono", monospace;
+  --skin-frame-image: url("./assets/window_9slice.png");
+  --skin-frame-slice: 16;
+  --skin-frame-border-width: 12px;
+  --skin-chart-series-1: #2a5c8a;
+  --skin-chart-series-2: #8b2e22;
+  --skin-chart-series-3: #3d6e41;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: var(--skin-bg-panel);
+  color: var(--skin-text-primary);
+  font-family: var(--skin-font-body);
+}
+
+#app-shell {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#globe-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ng-hud-bar {
+  position: absolute;
+  inset-block-start: 12px;
+  inset-inline-start: 12px;
+  inset-inline-end: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  background-color: var(--skin-bg-panel);
+  color: var(--skin-text-primary);
+  border: 2px solid var(--skin-border-ink);
+  font-family: var(--skin-font-display);
+}
+
+.ng-window-frame {
+  border-style: solid;
+  border-width: var(--skin-frame-border-width);
+  border-image-source: var(--skin-frame-image);
+  border-image-slice: var(--skin-frame-slice) fill;
+  border-image-repeat: round;
+  background-color: var(--skin-bg-panel);
+  color: var(--skin-text-primary);
+}
+
+.ng-btn {
+  padding: 6px 12px;
+  border: 1px solid var(--skin-border-ink);
+  background-color: var(--skin-bg-inset);
+  color: var(--skin-text-primary);
+  font-family: var(--skin-font-body);
+  cursor: pointer;
+}
+
+.ng-btn-primary {
+  background-color: var(--skin-accent-primary);
+  color: var(--skin-bg-panel);
+}
+
+/* Native <dialog> rules per Modern Web Guidance */
+dialog[open].ng-mod-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-inline-size: min(920px, 92vw);
+  max-block-size: 86vh;
+  padding: 16px 20px;
+  background-color: var(--skin-bg-panel);
+  color: var(--skin-text-primary);
+  border-style: solid;
+  border-width: var(--skin-frame-border-width);
+  border-image-source: var(--skin-frame-image);
+  border-image-slice: var(--skin-frame-slice) fill;
+  border-image-repeat: round;
+}
+
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background-color: rgba(35, 28, 21, 0.58);
+}
+
+.ng-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+/* Responsive accessible table with @container fallback */
+.ng-table-wrapper {
+  overflow: auto;
+  max-inline-size: 100%;
+  max-block-size: min(440px, 55vh);
+  container-type: inline-size;
+  background-color: var(--skin-bg-inset);
+  border: 1px solid var(--skin-border-ink);
+}
+
+.ng-diagnostic-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: var(--skin-font-mono);
+  font-size: 0.875rem;
+}
+
+.ng-diagnostic-table thead {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background-color: var(--skin-bg-panel);
+}
+
+.ng-diagnostic-table th,
+.ng-diagnostic-table td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--skin-border-ink);
+  vertical-align: top;
+}
+
+.ng-diagnostic-table tbody th {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  background-color: var(--skin-bg-inset);
+  font-weight: 600;
+}
+
+@container (width < 600px) {
+  .ng-diagnostic-table,
+  .ng-diagnostic-table thead,
+  .ng-diagnostic-table tbody,
+  .ng-diagnostic-table tr,
+  .ng-diagnostic-table th,
+  .ng-diagnostic-table td {
+    display: block;
+  }
+
+  .ng-diagnostic-table thead {
+    display: none;
+  }
+
+  .ng-diagnostic-table tr {
+    margin-block-end: 0.75rem;
+    border: 1px solid var(--skin-border-ink);
+  }
+
+  .ng-diagnostic-table tbody th {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
+    background-color: var(--skin-bg-panel);
+  }
+
+  .ng-diagnostic-table td:nth-child(2)::before {
+    content: var(--label-2) ": ";
+    font-weight: 600;
+  }
+
+  .ng-diagnostic-table td:nth-child(3)::before {
+    content: var(--label-3) ": ";
+    font-weight: 600;
+  }
+
+  .ng-diagnostic-table td:nth-child(4)::before {
+    content: var(--label-4) ": ";
+    font-weight: 600;
+  }
+
+  .ng-diagnostic-table td:nth-child(5)::before {
+    content: var(--label-5) ": ";
+    font-weight: 600;
+  }
+}

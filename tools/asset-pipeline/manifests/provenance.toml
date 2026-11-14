@@ -1,0 +1,28 @@
+schema_version = 1
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/assets/window_9slice.png"
+generator_model = "Procedural Baseline Raster Generator (Milestone 0 Placeholder prior to AI Paint Overpass)"
+generator_version = "1.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Verified 9-slice patch region boundaries and RGBA alpha border padding"
+steam_disclosure_category = "VisualTexture"
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/textures/parchment_tile.png"
+generator_model = "Procedural Baseline Raster Generator (Milestone 0 Placeholder prior to AI Paint Overpass)"
+generator_version = "1.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Tile-seam checked and palette matched to Cartographer's Parchment skin"
+steam_disclosure_category = "VisualTexture"
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/textures/ink_hatch_tile.png"
+generator_model = "Procedural Baseline Raster Generator (Milestone 0 Placeholder prior to AI Paint Overpass)"
+generator_version = "1.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Alpha-masked seamless hatching tile validated for cartographic shader"
+steam_disclosure_category = "VisualTexture"

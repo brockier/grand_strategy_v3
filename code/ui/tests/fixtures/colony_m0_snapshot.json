@@ -1,0 +1,249 @@
+[
+  {
+    "schemaVersion": 1,
+    "scenarioKey": "unexplained_colony_v1",
+    "scenarioName": "The Unexplained Colony",
+    "globeTopology": {
+      "subdivision": 3,
+      "cellCount": 642
+    },
+    "knownCells": [
+      {
+        "tier": "surveyed",
+        "cellId": 0,
+        "observedTick": 0,
+        "isLiveHqSight": true,
+        "elevationM": 120.0,
+        "confidence01": 1.0,
+        "provenanceLabel": "Direct Observation (HQ)"
+      },
+      {
+        "tier": "surveyed",
+        "cellId": 1,
+        "observedTick": 0,
+        "isLiveHqSight": true,
+        "elevationM": 142.5,
+        "confidence01": 0.98,
+        "provenanceLabel": "Direct Observation (HQ)"
+      },
+      {
+        "tier": "surveyed",
+        "cellId": 2,
+        "observedTick": 0,
+        "isLiveHqSight": true,
+        "elevationM": 96.0,
+        "confidence01": 0.96,
+        "provenanceLabel": "Direct Observation (HQ)"
+      },
+      {
+        "tier": "unexplored",
+        "cellId": 3
+      },
+      {
+        "tier": "unexplored",
+        "cellId": 4
+      },
+      {
+        "tier": "unexplored",
+        "cellId": 5
+      }
+    ],
+    "hqPresence": {
+      "mode": "Stationary",
+      "cellId": 0,
+      "settlementName": "First Landing Perimeter",
+      "sightRadiusCells": 1
+    },
+    "trackedConvoys": [],
+    "observedWeather": [
+      {
+        "cellId": 0,
+        "observedTick": 0,
+        "precipMmHr": 0.0,
+        "mudIndex01": 0.1,
+        "tempC": 14.0,
+        "visibility01": 1.0
+      }
+    ],
+    "ledgerRows": [
+      {
+        "settlementId": 0,
+        "settlementName": "First Landing Perimeter",
+        "commodityKey": "raw_grain",
+        "commodityName": "Raw Grain",
+        "reportedMassKg": 2850.0,
+        "minEstKg": 2850.0,
+        "maxEstKg": 2850.0,
+        "observedTick": 0,
+        "provenanceLabel": "Direct Observation (HQ)"
+      },
+      {
+        "settlementId": 1,
+        "settlementName": "Outpost Cairn",
+        "commodityKey": "timber",
+        "commodityName": "Felled Timber",
+        "reportedMassKg": 420.0,
+        "minEstKg": 395.0,
+        "maxEstKg": 445.0,
+        "observedTick": 0,
+        "provenanceLabel": "Survey Courier Report"
+      }
+    ],
+    "delegationTree": {
+      "leaderTitle": "Colony Commander",
+      "capacityAttention": 100.0,
+      "usedAttention": 12.0,
+      "subordinates": [
+        {
+          "characterId": 1,
+          "displayName": "Henrik Solberg",
+          "roleTitle": "Master Artificer",
+          "competence": 0.82
+        },
+        {
+          "characterId": 2,
+          "displayName": "Ines Valdez",
+          "roleTitle": "Acting Quartermaster & Clerk",
+          "competence": 0.56
+        }
+      ]
+    },
+    "dispatchInbox": [],
+    "clockAndNotifications": {
+      "tick": 0,
+      "calendarText": "Year 1, Thaw 01 (00:00)",
+      "paused": false,
+      "speedMultiplier": 1,
+      "activeAlertCount": 0
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "scenarioKey": "unexplained_colony_v1",
+    "scenarioName": "The Unexplained Colony",
+    "globeTopology": {
+      "subdivision": 3,
+      "cellCount": 642
+    },
+    "knownCells": [
+      {
+        "tier": "surveyed",
+        "cellId": 0,
+        "observedTick": 12,
+        "isLiveHqSight": true,
+        "elevationM": 120.0,
+        "confidence01": 1.0,
+        "provenanceLabel": "Direct Observation (HQ)"
+      },
+      {
+        "tier": "surveyed",
+        "cellId": 1,
+        "observedTick": 12,
+        "isLiveHqSight": true,
+        "elevationM": 142.5,
+        "confidence01": 0.99,
+        "provenanceLabel": "Direct Observation (HQ)"
+      },
+      {
+        "tier": "surveyed",
+        "cellId": 3,
+        "observedTick": 11,
+        "isLiveHqSight": false,
+        "elevationM": 185.0,
+        "confidence01": 0.85,
+        "provenanceLabel": "Scout Party Estimate"
+      },
+      {
+        "tier": "unexplored",
+        "cellId": 4
+      },
+      {
+        "tier": "unexplored",
+        "cellId": 5
+      }
+    ],
+    "hqPresence": {
+      "mode": "Stationary",
+      "cellId": 0,
+      "settlementName": "First Landing Perimeter",
+      "sightRadiusCells": 1
+    },
+    "trackedConvoys": [
+      {
+        "convoyId": 101,
+        "label": "Pack-Ox Team North",
+        "status": "EnRoute",
+        "projectedCellId": 1
+      }
+    ],
+    "observedWeather": [
+      {
+        "cellId": 0,
+        "observedTick": 12,
+        "precipMmHr": 4.2,
+        "mudIndex01": 0.25,
+        "tempC": 12.5,
+        "visibility01": 0.85
+      }
+    ],
+    "ledgerRows": [
+      {
+        "settlementId": 0,
+        "settlementName": "First Landing Perimeter",
+        "commodityKey": "raw_grain",
+        "commodityName": "Raw Grain",
+        "reportedMassKg": 2790.0,
+        "minEstKg": 2790.0,
+        "maxEstKg": 2790.0,
+        "observedTick": 12,
+        "provenanceLabel": "Direct Observation (HQ)"
+      },
+      {
+        "settlementId": 1,
+        "settlementName": "Outpost Cairn",
+        "commodityKey": "timber",
+        "commodityName": "Felled Timber",
+        "reportedMassKg": 495.0,
+        "minEstKg": 460.0,
+        "maxEstKg": 530.0,
+        "observedTick": 11,
+        "provenanceLabel": "Survey Courier Report"
+      }
+    ],
+    "delegationTree": {
+      "leaderTitle": "Colony Commander",
+      "capacityAttention": 100.0,
+      "usedAttention": 28.0,
+      "subordinates": [
+        {
+          "characterId": 1,
+          "displayName": "Henrik Solberg",
+          "roleTitle": "Master Artificer",
+          "competence": 0.82
+        },
+        {
+          "characterId": 2,
+          "displayName": "Ines Valdez",
+          "roleTitle": "Acting Quartermaster & Clerk",
+          "competence": 0.56
+        }
+      ]
+    },
+    "dispatchInbox": [
+      {
+        "dispatchId": 5001,
+        "title": "Timber Felling Tallies from Outpost Cairn",
+        "sentTick": 10,
+        "arrivedTick": 12,
+        "originLabel": "Outpost Cairn"
+      }
+    ],
+    "clockAndNotifications": {
+      "tick": 12,
+      "calendarText": "Year 1, Thaw 01 (12:00)",
+      "paused": false,
+      "speedMultiplier": 1,
+      "activeAlertCount": 1
+    }
+  }
+]

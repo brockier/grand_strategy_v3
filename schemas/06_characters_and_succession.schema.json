@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CharactersDomain",
+  "type": "object",
+  "properties": {
+    "succession_rules": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/SuccessionRuleRecord"
+      }
+    },
+    "traits": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/CharacterTraitRecord"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "CharacterTraitRecord": {
+      "type": "object",
+      "properties": {
+        "caution_delta": {
+          "type": "number",
+          "format": "float"
+        },
+        "competence_delta": {
+          "type": "number",
+          "format": "float"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "honesty_delta": {
+          "type": "number",
+          "format": "float"
+        },
+        "id": {
+          "type": "string"
+        },
+        "precision_delta": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "competence_delta",
+        "precision_delta",
+        "honesty_delta",
+        "caution_delta"
+      ]
+    },
+    "SuccessionRuleRecord": {
+      "type": "object",
+      "properties": {
+        "continuity_fraction": {
+          "type": "number",
+          "format": "float"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "transition_disruption_hours": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "continuity_fraction",
+        "transition_disruption_hours"
+      ]
+    }
+  }
+}

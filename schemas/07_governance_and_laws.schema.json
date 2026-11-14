@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GovernanceDomain",
+  "type": "object",
+  "properties": {
+    "governance_models": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/GovernanceModelRecord"
+      }
+    },
+    "policy_laws": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/PolicyLawRecord"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "GovernanceModelRecord": {
+      "type": "object",
+      "properties": {
+        "base_attention_capacity": {
+          "type": "number",
+          "format": "float"
+        },
+        "clerical_overhead_per_mandate": {
+          "type": "number",
+          "format": "float"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "hierarchy_hop_latency_hours": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "base_attention_capacity",
+        "clerical_overhead_per_mandate",
+        "hierarchy_hop_latency_hours"
+      ]
+    },
+    "PolicyLawRecord": {
+      "type": "object",
+      "properties": {
+        "display_name": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "patent_duration_years": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "tax_or_tribute_rate": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "tax_or_tribute_rate",
+        "patent_duration_years"
+      ]
+    }
+  }
+}

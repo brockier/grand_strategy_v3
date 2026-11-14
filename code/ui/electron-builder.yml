@@ -1,0 +1,22 @@
+appId: com.ng.colony
+productName: ColonyCommand
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "native/bin/**"
+  - "native/lib/libsteam_api.so"
+  - "native/lib/steam_api64.dll"
+  - "**/*.so"
+  - "**/*.dll"
+extraResources:
+  - from: "../../dist/THIRD_PARTY_NOTICES.txt"
+    to: "licenses/THIRD_PARTY_NOTICES.txt"
+  - from: "../../mods/"
+    to: "mods/"
+  - from: "../../skins/"
+    to: "skins/"
+linux:
+  target: ["dir"]
+  executableName: "ng-colony"
+win:
+  target: ["dir"]

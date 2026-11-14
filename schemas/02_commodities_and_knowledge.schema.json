@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CommoditiesAndKnowledgeDomain",
+  "type": "object",
+  "properties": {
+    "commodities": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/CommodityRecord"
+      }
+    },
+    "tech_components": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/TechComponentRecord"
+      }
+    },
+    "theory_domains": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/TheoryDomainRecord"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "CommodityRecord": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "energy_mj_per_kg": {
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "id": {
+          "type": "string"
+        },
+        "is_tool": {
+          "type": "boolean",
+          "default": false
+        },
+        "mass_per_unit_kg": {
+          "type": "number",
+          "format": "double"
+        },
+        "spoilage_rate_per_hour": {
+          "type": "number",
+          "format": "double"
+        },
+        "structural_strength": {
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "tool_wear_per_hour": {
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "volume_per_unit_m3": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "category",
+        "mass_per_unit_kg",
+        "volume_per_unit_m3",
+        "spoilage_rate_per_hour"
+      ]
+    },
+    "TechComponentRecord": {
+      "type": "object",
+      "properties": {
+        "display_name": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "empirical_difficulty": {
+          "type": "number",
+          "format": "float"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "domain",
+        "empirical_difficulty"
+      ]
+    },
+    "TheoryDomainRecord": {
+      "type": "object",
+      "properties": {
+        "abstraction_depth": {
+          "type": "integer",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "abstraction_depth"
+      ]
+    }
+  }
+}

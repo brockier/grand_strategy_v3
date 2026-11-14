@@ -1,0 +1,6 @@
+[[governance_models]]
+id = "provisional_expedition_council"
+display_name = "Provisional Expedition Authority"
+base_attention_capacity = 100.0
+clerical_overhead_per_mandate = 4.0
+hierarchy_hop_latency_hours = 2

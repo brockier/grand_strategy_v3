@@ -1,0 +1,5 @@
+[[succession_rules]]
+id = "council_senior_appointee"
+display_name = "Appointed Colony Deputy Succession"
+continuity_fraction = 0.85
+transition_disruption_hours = 72

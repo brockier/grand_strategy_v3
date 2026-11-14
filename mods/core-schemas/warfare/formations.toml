@@ -1,0 +1,7 @@
+[[formation_templates]]
+id = "militia_survey_guard"
+display_name = "Armed Escort & Perimeter Watch"
+personnel_count = 35
+required_vocation = "courier"
+equipment_commodity = "wrought_iron"
+equipment_kg_per_troop = 8.0

@@ -1,0 +1,23 @@
+[[carriers]]
+id = "foot_porter_column"
+display_name = "Foot Porter & Pack Party"
+max_payload_kg = 450.0
+max_payload_m3 = 1.2
+base_speed_km_hr = 4.2
+max_grade_rad = 0.42
+mud_penalty_factor = 0.45
+crew_required = 8
+fodder_or_fuel_commodity = "raw_grain"
+fuel_burn_kg_per_hour = 0.6
+
+[[carriers]]
+id = "mounted_dispatch_rider"
+display_name = "Mounted Dispatch Courier"
+max_payload_kg = 40.0
+max_payload_m3 = 0.08
+base_speed_km_hr = 14.0
+max_grade_rad = 0.35
+mud_penalty_factor = 0.60
+crew_required = 1
+fodder_or_fuel_commodity = "raw_grain"
+fuel_burn_kg_per_hour = 0.35

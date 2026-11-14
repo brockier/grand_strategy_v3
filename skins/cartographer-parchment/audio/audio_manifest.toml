@@ -1,0 +1,18 @@
+schema_version = 1
+skin_id = "cartographer-parchment"
+
+[channels.ambient_surface]
+fade_start_altitude = 0.20
+fade_end_altitude = 0.55
+
+[channels.ambient_map_study]
+fade_start_altitude = 0.35
+fade_end_altitude = 0.70
+
+[channels.ui_foley]
+cooldown_ms = 60
+cues = ["window_open", "window_close", "mandate_seal", "dialog_open"]
+
+[channels.music]
+crossfade_ms = 1200
+stems = []

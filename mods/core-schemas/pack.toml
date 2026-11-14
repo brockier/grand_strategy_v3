@@ -1,0 +1,5 @@
+schema_version = 1
+pack_id = "core-schemas"
+display_name = "Core Universal Mechanics & Baseline Definitions"
+layer = "CoreSchemas"
+load_priority = 0

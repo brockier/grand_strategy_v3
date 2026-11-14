@@ -1,0 +1,15 @@
+[[strings]]
+id = "dispatch.survey_arrived"
+text = "Survey party submitted field notes covering sector {sector_label}."
+
+[[strings]]
+id = "dispatch.overdue_expedition"
+text = "Expected signal from {convoy_label} missed schedule beyond grace threshold."
+
+[[strings]]
+id = "dispatch.tool_critical"
+text = "Precision pre-landing equipment at {settlement_label} has degraded below operational margin."
+
+[[strings]]
+id = "dispatch.mandate_escalation"
+text = "Overseer {character_label} reports a bottleneck requiring allocation review."

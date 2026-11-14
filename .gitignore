@@ -1,0 +1,9 @@
+code/engine/target/
+code/ui/node_modules/
+code/ui/dist/
+code/ui/dist-electron/
+code/ui/release/
+code/ui/playwright-report/
+code/ui/test-results/
+dist/
+*.log

@@ -1,0 +1,108 @@
+[scenario]
+id = "generic_baseline"
+display_name = "Baseline Empty Survey Horizon"
+starting_profile = "ExpeditionColony"
+governance_model = "provisional_expedition_council"
+succession_rule = "council_senior_appointee"
+active_policy = "emergency_rationing"
+hq_settlement_id = "haven_landing"
+hq_sight_radius_cells = 1
+unexplored_surrounding_cells = true
+
+[[starting_settlements]]
+id = "haven_landing"
+display_name = "Landing Perimeter"
+cell_index = 0
+initial_population = 180
+
+[[starting_settlements.stockpiles]]
+commodity = "raw_grain"
+mass_kg = 2400.0
+purity = 0.95
+
+[[starting_settlements.stockpiles]]
+commodity = "colony_precision_tools"
+mass_kg = 420.0
+purity = 0.98
+
+[[starting_settlements.stockpiles]]
+commodity = "timber"
+mass_kg = 900.0
+purity = 0.90
+
+[[starting_settlements.cohorts]]
+archetype = "founding_colonist_adult"
+vocation = "agronomist"
+count = 60
+
+[[starting_settlements.cohorts]]
+archetype = "founding_colonist_adult"
+vocation = "artificer"
+count = 45
+
+[[starting_settlements.cohorts]]
+archetype = "founding_colonist_adult"
+vocation = "miner"
+count = 35
+
+[[starting_settlements.cohorts]]
+archetype = "founding_colonist_adult"
+vocation = "smith"
+count = 20
+
+[[starting_settlements.cohorts]]
+archetype = "colony_youth"
+vocation = "courier"
+count = 20
+
+[[starting_settlements.initial_facilities]]
+process = "subsistence_farming"
+workers = 36
+
+[[starting_settlements.initial_facilities]]
+process = "logging_camp"
+workers = 24
+
+[[starting_characters]]
+id = "mara_chen"
+display_name = "Mara Chen"
+role_title = "Chief Agricultural Steward"
+home_settlement = "haven_landing"
+competence = 0.78
+precision_01 = 0.84
+honesty_vs_sycophancy = 0.72
+caution_vs_alarmism = 0.18
+traits = ["pragmatic_overseer"]
+
+[[starting_characters]]
+id = "tomasz_kowalski"
+display_name = "Tomasz Kowalski"
+role_title = "Survey & Mining Warden"
+home_settlement = "haven_landing"
+competence = 0.74
+precision_01 = 0.88
+honesty_vs_sycophancy = 0.65
+caution_vs_alarmism = 0.25
+traits = ["meticulous_surveyor"]
+
+[[starting_characters]]
+id = "henrik_solberg"
+display_name = "Henrik Solberg"
+role_title = "Master Artificer"
+home_settlement = "haven_landing"
+competence = 0.81
+precision_01 = 0.79
+honesty_vs_sycophancy = 0.40
+caution_vs_alarmism = -0.10
+traits = ["pragmatic_overseer"]
+
+[[starting_characters]]
+id = "ines_valdez"
+display_name = "Ines Valdez"
+role_title = "Acting Quartermaster & Clerk"
+home_settlement = "haven_landing"
+competence = 0.58
+precision_01 = 0.62
+honesty_vs_sycophancy = -0.30
+caution_vs_alarmism = -0.25
+traits = ["eager_sycophant"]

@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProcessesDomain",
+  "type": "object",
+  "properties": {
+    "processes": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ProcessRecord"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "ProcessQuantityRecord": {
+      "type": "object",
+      "properties": {
+        "amount_kg": {
+          "type": "number",
+          "format": "double"
+        },
+        "commodity": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "commodity",
+        "amount_kg"
+      ]
+    },
+    "ProcessRecord": {
+      "type": "object",
+      "properties": {
+        "cycle_hours": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "inputs": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProcessQuantityRecord"
+          }
+        },
+        "outputs": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProcessQuantityRecord"
+          }
+        },
+        "required_vocation": {
+          "type": "string"
+        },
+        "tool_commodity": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "weather_halt_mud_threshold": {
+          "type": "number",
+          "format": "float"
+        },
+        "workforce_hours_required": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "required_vocation",
+        "cycle_hours",
+        "workforce_hours_required",
+        "weather_halt_mud_threshold"
+      ]
+    }
+  }
+}

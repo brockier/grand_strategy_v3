@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/sim-spine",
+    "crates/sim-data",
+    "crates/sim-core",
+    "crates/player-view",
+    "crates/steam-adapter",
+    "crates/sim-cli",
+    "tools/xtask",
+]
+
+[workspace.package]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_path_to_error = "0.1"
+toml = "0.8"
+toml_edit = "0.22"
+schemars = "1.2"
+blake3 = "1.8"
+thiserror = "2.0"

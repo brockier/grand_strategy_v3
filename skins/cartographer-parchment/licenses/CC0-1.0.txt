@@ -1,0 +1,6 @@
+CC0 1.0 Universal (Public Domain Dedication)
+
+The baseline procedural skin vector placeholders and generated geometric pattern
+assets created for the project default skin are dedicated to the public domain
+under Creative Commons CC0 1.0 Universal.
+https://creativecommons.org/publicdomain/zero/1.0/

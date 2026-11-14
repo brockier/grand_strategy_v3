@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PopulationDomain",
+  "type": "object",
+  "properties": {
+    "cohort_archetypes": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/CohortArchetypeRecord"
+      }
+    },
+    "vocations": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/VocationRecord"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "CohortArchetypeRecord": {
+      "type": "object",
+      "properties": {
+        "age_max_years": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "age_min_years": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "base_fertility_annual": {
+          "type": "number",
+          "format": "float"
+        },
+        "base_mortality_annual": {
+          "type": "number",
+          "format": "float"
+        },
+        "daily_grain_need_kg": {
+          "type": "number",
+          "format": "double"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "initial_literacy": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "age_min_years",
+        "age_max_years",
+        "daily_grain_need_kg",
+        "base_fertility_annual",
+        "base_mortality_annual",
+        "initial_literacy"
+      ]
+    },
+    "VocationRecord": {
+      "type": "object",
+      "properties": {
+        "base_skill_gain_per_day": {
+          "type": "number",
+          "format": "float"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "skill_decay_per_day": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "base_skill_gain_per_day",
+        "skill_decay_per_day"
+      ]
+    }
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PlanetGenDomain",
+  "type": "object",
+  "properties": {
+    "planet_generation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PlanetGenerationRecord"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "PlanetGenerationRecord": {
+      "type": "object",
+      "properties": {
+        "axial_tilt_deg": {
+          "type": "number",
+          "format": "float"
+        },
+        "base_sea_level_m": {
+          "type": "number",
+          "format": "float"
+        },
+        "goldberg_subdivision": {
+          "type": "integer",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "id": {
+          "type": "string"
+        },
+        "land_fraction_target": {
+          "type": "number",
+          "format": "float"
+        },
+        "max_orogenic_uplift_m": {
+          "type": "number",
+          "format": "float"
+        },
+        "mean_radius_km": {
+          "type": "number",
+          "format": "float"
+        },
+        "planetary_density_kg_m3": {
+          "type": "number",
+          "format": "float"
+        },
+        "rotation_period_hours": {
+          "type": "number",
+          "format": "float"
+        },
+        "solar_constant_w_m2": {
+          "type": "number",
+          "format": "float"
+        },
+        "tectonic_plate_count": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "goldberg_subdivision",
+        "tectonic_plate_count",
+        "land_fraction_target",
+        "axial_tilt_deg",
+        "solar_constant_w_m2",
+        "rotation_period_hours",
+        "mean_radius_km",
+        "base_sea_level_m",
+        "max_orogenic_uplift_m",
+        "planetary_density_kg_m3"
+      ]
+    }
+  }
+}

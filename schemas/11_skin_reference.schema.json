@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SkinRefDomain",
+  "type": "object",
+  "properties": {
+    "skin_reference": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SkinReferenceRecord"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "SkinReferenceRecord": {
+      "type": "object",
+      "properties": {
+        "default_skin_id": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "skins_root_rel": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "default_skin_id",
+        "skins_root_rel"
+      ]
+    }
+  }
+}

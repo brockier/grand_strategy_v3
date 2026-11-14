@@ -1,0 +1,23 @@
+[[event_classes]]
+id = "survey_report_arrived"
+display_name = "Survey Report Arrived at HQ"
+default_tier = "BannerAlert"
+template_key = "dispatch.survey_arrived"
+
+[[event_classes]]
+id = "overdue_expedition"
+display_name = "Overdue Expedition or Convoy"
+default_tier = "DispatchPopupAutoPause"
+template_key = "dispatch.overdue_expedition"
+
+[[event_classes]]
+id = "tool_reserve_critical"
+display_name = "Precision Tooling Critical Wear"
+default_tier = "DispatchPopup"
+template_key = "dispatch.tool_critical"
+
+[[event_classes]]
+id = "mandate_escalation"
+display_name = "Subordinate Bottleneck Escalation"
+default_tier = "LogOnly"
+template_key = "dispatch.mandate_escalation"

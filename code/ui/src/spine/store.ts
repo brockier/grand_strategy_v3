@@ -1,0 +1,91 @@
+import {
+  ClockAndNotificationsDto,
+  DelegationTreeDto,
+  DiegeticDispatchDto,
+  DiegeticSnapshot,
+  GlobeTopologyDto,
+  HqPresenceDto,
+  KnownCellDto,
+  ObservedWeatherDto,
+  ReportedLedgerRowDto,
+  TrackedConvoyDto,
+  isValidDiegeticSnapshot,
+} from "./contracts";
+
+export interface DiegeticStoreAccess {
+  getSnapshot(): DiegeticSnapshot | null;
+  subscribe(listener: (snapshot: DiegeticSnapshot) => void): () => void;
+}
+
+/** Immutable snapshot store populated exclusively from `player-view` `DiegeticSnapshot` payloads. */
+export class DiegeticStore implements DiegeticStoreAccess {
+  private currentSnapshot: DiegeticSnapshot | null = null;
+  private readonly listeners = new Set<(snapshot: DiegeticSnapshot) => void>();
+
+  public ingestSnapshot(candidate: DiegeticSnapshot): void {
+    if (!isValidDiegeticSnapshot(candidate)) {
+      throw new Error("Rejected invalid or air-gap-violating DiegeticSnapshot payload");
+    }
+    this.currentSnapshot = candidate;
+    for (const listener of this.listeners) {
+      listener(candidate);
+    }
+  }
+
+  public getSnapshot(): DiegeticSnapshot | null {
+    return this.currentSnapshot;
+  }
+
+  public subscribe(listener: (snapshot: DiegeticSnapshot) => void): () => void {
+    this.listeners.add(listener);
+    if (this.currentSnapshot !== null) {
+      listener(this.currentSnapshot);
+    }
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+}
+
+export function selectGlobeTopology(store: DiegeticStoreAccess): GlobeTopologyDto | null {
+  return store.getSnapshot()?.globeTopology ?? null;
+}
+
+export function selectKnownCells(store: DiegeticStoreAccess): readonly KnownCellDto[] {
+  return store.getSnapshot()?.knownCells ?? [];
+}
+
+export function selectHqPresence(store: DiegeticStoreAccess): HqPresenceDto | null {
+  return store.getSnapshot()?.hqPresence ?? null;
+}
+
+export function selectTrackedConvoys(store: DiegeticStoreAccess): readonly TrackedConvoyDto[] {
+  return store.getSnapshot()?.trackedConvoys ?? [];
+}
+
+export function selectObservedWeather(store: DiegeticStoreAccess): readonly ObservedWeatherDto[] {
+  return store.getSnapshot()?.observedWeather ?? [];
+}
+
+export function selectLedgerRows(
+  store: DiegeticStoreAccess,
+  settlementId?: number,
+): readonly ReportedLedgerRowDto[] {
+  const rows = store.getSnapshot()?.ledgerRows ?? [];
+  if (settlementId === undefined) return rows;
+  return rows.filter((r) => r.settlementId === settlementId);
+}
+
+export function selectDelegationTree(store: DiegeticStoreAccess): DelegationTreeDto | null {
+  return store.getSnapshot()?.delegationTree ?? null;
+}
+
+export function selectDispatchInbox(store: DiegeticStoreAccess): readonly DiegeticDispatchDto[] {
+  return store.getSnapshot()?.dispatchInbox ?? [];
+}
+
+export function selectClockAndNotifications(
+  store: DiegeticStoreAccess,
+): ClockAndNotificationsDto | null {
+  return store.getSnapshot()?.clockAndNotifications ?? null;
+}

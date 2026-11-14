@@ -1,0 +1,21 @@
+[calendar]
+id = "colony_solar_standard"
+hours_per_day = 24
+days_per_year = 365
+year_prefix = "Year"
+starting_year = 1
+month_names = [
+    "Thaw",
+    "Seedrise",
+    "Bloom",
+    "Highsun",
+    "Drywind",
+    "Reap",
+    "Mistfall",
+    "Frostset",
+    "Deepcold",
+    "Icewatch",
+    "Latefrost",
+    "Firstlight",
+]
+month_lengths = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]

@@ -1,0 +1,4 @@
+[[commodities]]
+id = "wrought_iron"
+_patch = true
+structural_strength = 0.88

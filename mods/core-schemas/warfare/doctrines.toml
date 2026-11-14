@@ -1,0 +1,6 @@
+[[doctrines]]
+id = "cautious_reconnaissance"
+display_name = "Standing Orders: Reconnaissance & Defense"
+initiative_bonus = 0.15
+strict_obedience_weight = 0.70
+rain_penalty_mitigation = 0.10

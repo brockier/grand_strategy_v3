@@ -1,0 +1,302 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ScenarioAndCalendarDomain",
+  "type": "object",
+  "properties": {
+    "calendar": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CalendarRecord"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "scenario": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ScenarioHeaderRecord"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "starting_characters": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/StartingCharacterRecord"
+      }
+    },
+    "starting_settlements": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/StartingSettlementRecord"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "CalendarRecord": {
+      "type": "object",
+      "properties": {
+        "days_per_year": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "hours_per_day": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "id": {
+          "type": "string"
+        },
+        "month_lengths": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "month_names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "starting_year": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "year_prefix": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "hours_per_day",
+        "days_per_year",
+        "year_prefix",
+        "starting_year",
+        "month_names",
+        "month_lengths"
+      ]
+    },
+    "ScenarioHeaderRecord": {
+      "type": "object",
+      "properties": {
+        "active_policy": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "governance_model": {
+          "type": "string"
+        },
+        "hq_settlement_id": {
+          "type": "string"
+        },
+        "hq_sight_radius_cells": {
+          "type": "integer",
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "id": {
+          "type": "string"
+        },
+        "starting_profile": {
+          "type": "string"
+        },
+        "succession_rule": {
+          "type": "string"
+        },
+        "unexplored_surrounding_cells": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "starting_profile",
+        "governance_model",
+        "succession_rule",
+        "active_policy",
+        "hq_settlement_id",
+        "hq_sight_radius_cells",
+        "unexplored_surrounding_cells"
+      ]
+    },
+    "StartingCharacterRecord": {
+      "type": "object",
+      "properties": {
+        "caution_vs_alarmism": {
+          "type": "number",
+          "format": "float"
+        },
+        "competence": {
+          "type": "number",
+          "format": "float"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "home_settlement": {
+          "type": "string"
+        },
+        "honesty_vs_sycophancy": {
+          "type": "number",
+          "format": "float"
+        },
+        "id": {
+          "type": "string"
+        },
+        "precision_01": {
+          "type": "number",
+          "format": "float"
+        },
+        "role_title": {
+          "type": "string"
+        },
+        "traits": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "role_title",
+        "home_settlement",
+        "competence",
+        "precision_01",
+        "honesty_vs_sycophancy",
+        "caution_vs_alarmism"
+      ]
+    },
+    "StartingCohortRecord": {
+      "type": "object",
+      "properties": {
+        "archetype": {
+          "type": "string"
+        },
+        "count": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "vocation": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "archetype",
+        "vocation",
+        "count"
+      ]
+    },
+    "StartingFacilityRecord": {
+      "type": "object",
+      "properties": {
+        "process": {
+          "type": "string"
+        },
+        "workers": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "process",
+        "workers"
+      ]
+    },
+    "StartingSettlementRecord": {
+      "type": "object",
+      "properties": {
+        "cell_index": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "cohorts": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/StartingCohortRecord"
+          }
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "initial_facilities": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/StartingFacilityRecord"
+          }
+        },
+        "initial_population": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "stockpiles": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/StartingStockpileRecord"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "cell_index",
+        "initial_population"
+      ]
+    },
+    "StartingStockpileRecord": {
+      "type": "object",
+      "properties": {
+        "commodity": {
+          "type": "string"
+        },
+        "mass_kg": {
+          "type": "number",
+          "format": "double"
+        },
+        "purity": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "commodity",
+        "mass_kg",
+        "purity"
+      ]
+    }
+  }
+}

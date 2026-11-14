@@ -1,0 +1,5 @@
+schema_version = 1
+pack_id = "baseline-era"
+display_name = "Transition Era: Early Colony to Industrializing Basin"
+layer = "EraPack"
+load_priority = 0

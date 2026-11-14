@@ -1,0 +1,23 @@
+[[traits]]
+id = "meticulous_surveyor"
+display_name = "Meticulous Chronicler"
+competence_delta = 0.12
+precision_delta = 0.18
+honesty_delta = 0.10
+caution_delta = 0.05
+
+[[traits]]
+id = "eager_sycophant"
+display_name = "Optimistic Favor-Seeker"
+competence_delta = -0.04
+precision_delta = -0.10
+honesty_delta = -0.35
+caution_delta = -0.20
+
+[[traits]]
+id = "pragmatic_overseer"
+display_name = "Pragmatic Overseer"
+competence_delta = 0.15
+precision_delta = 0.08
+honesty_delta = 0.15
+caution_delta = 0.10

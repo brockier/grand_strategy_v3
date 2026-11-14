@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PackManifest",
+  "description": "Pack header manifest (`pack.toml`).",
+  "type": "object",
+  "properties": {
+    "display_name": {
+      "type": "string"
+    },
+    "layer": {
+      "$ref": "#/$defs/ModLayerKind"
+    },
+    "load_priority": {
+      "type": "integer",
+      "format": "int32",
+      "default": 0
+    },
+    "pack_id": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "pack_id",
+    "display_name",
+    "layer"
+  ],
+  "$defs": {
+    "ModLayerKind": {
+      "description": "Five deterministic layer tiers in load order priority.",
+      "type": "string",
+      "enum": [
+        "CoreSchemas",
+        "EraPack",
+        "ScenarioPack",
+        "UserMod",
+        "UiSkin"
+      ]
+    }
+  }
+}

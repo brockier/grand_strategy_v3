@@ -1,0 +1,32 @@
+{
+  "name": "ng-ui-shell",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron, Three.js WebGPU/WebGL2 geodesic globe, and skinnable desktop window shell",
+  "license": "MIT",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.electron.json",
+    "lint": "eslint \"src/**/*.ts\" \"electron/**/*.ts\"",
+    "test": "vitest run",
+    "start": "electron dist-electron/main.js",
+    "verify:licenses": "node scripts/check-npm-licenses.mjs && node scripts/check-skin-licenses.mjs",
+    "verify:steam-package": "node scripts/stage-steam-package.mjs && node scripts/verify-steam-package.mjs"
+  },
+  "dependencies": {
+    "three": "^0.187.0"
+  },
+  "devDependencies": {
+    "@electron/asar": "^4.3.2",
+    "@types/node": "^22.0.0",
+    "@types/three": "^0.187.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "electron": "^45.3.2",
+    "eslint": "^9.0.0",
+    "jsdom": "^26.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0",
+    "vitest": "^3.0.0"
+  }
+}

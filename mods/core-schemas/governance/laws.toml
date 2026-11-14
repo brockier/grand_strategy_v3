@@ -1,0 +1,5 @@
+[[policy_laws]]
+id = "emergency_rationing"
+display_name = "Public Granary Allocation"
+tax_or_tribute_rate = 0.0
+patent_duration_years = 0

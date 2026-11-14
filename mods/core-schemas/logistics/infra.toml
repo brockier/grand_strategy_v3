@@ -1,0 +1,15 @@
+[[infra_classes]]
+id = "foot_trail"
+display_name = "Cleared Footpath"
+throughput_tonnes_per_hour = 1.5
+speed_multiplier = 1.0
+mud_shield_factor = 0.1
+maintenance_timber_kg_per_week = 5.0
+
+[[infra_classes]]
+id = "metalled_road"
+display_name = "Drained Crushed-Stone Road"
+throughput_tonnes_per_hour = 18.0
+speed_multiplier = 1.5
+mud_shield_factor = 0.72
+maintenance_timber_kg_per_week = 12.0

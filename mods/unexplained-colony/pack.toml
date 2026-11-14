@@ -1,0 +1,5 @@
+schema_version = 1
+pack_id = "unexplained-colony"
+display_name = "The Unexplained Colony"
+layer = "ScenarioPack"
+load_priority = 0

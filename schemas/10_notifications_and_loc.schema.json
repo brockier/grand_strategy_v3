@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NotificationsAndLocDomain",
+  "type": "object",
+  "properties": {
+    "event_classes": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/EventClassRecord"
+      }
+    },
+    "strings": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/LocalizationStringRecord"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "EventClassRecord": {
+      "type": "object",
+      "properties": {
+        "default_tier": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "template_key": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "default_tier",
+        "template_key"
+      ]
+    },
+    "LocalizationStringRecord": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "text"
+      ]
+    }
+  }
+}

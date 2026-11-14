@@ -1,0 +1,12 @@
+[planet_generation]
+id = "default_terrestrial_planet"
+goldberg_subdivision = 3
+tectonic_plate_count = 12
+land_fraction_target = 0.34
+axial_tilt_deg = 23.4
+solar_constant_w_m2 = 1361.0
+rotation_period_hours = 24.0
+mean_radius_km = 6371.0
+base_sea_level_m = 0.0
+max_orogenic_uplift_m = 6800.0
+planetary_density_kg_m3 = 5514.0

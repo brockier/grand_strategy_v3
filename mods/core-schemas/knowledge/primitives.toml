@@ -1,0 +1,21 @@
+[[tech_components]]
+id = "lever_and_fulcrum"
+display_name = "Weighted Lever Hoist"
+domain = "mechanics"
+empirical_difficulty = 0.25
+
+[[tech_components]]
+id = "forced_draft_tuyere"
+display_name = "Bellows Forced-Draft Tuyere"
+domain = "metallurgy"
+empirical_difficulty = 0.35
+
+[[theory_domains]]
+id = "mechanics"
+display_name = "Applied Mechanics"
+abstraction_depth = 1
+
+[[theory_domains]]
+id = "metallurgy"
+display_name = "Ferrous Metallurgy & Thermodynamics"
+abstraction_depth = 2

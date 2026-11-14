@@ -1,0 +1,79 @@
+[[processes]]
+id = "subsistence_farming"
+display_name = "Clearland Grain Cultivation"
+required_vocation = "agronomist"
+cycle_hours = 24
+workforce_hours_required = 16.0
+tool_commodity = "forged_hand_tools"
+weather_halt_mud_threshold = 0.85
+
+[[processes.inputs]]
+commodity = "timber"
+amount_kg = 0.5
+
+[[processes.outputs]]
+commodity = "raw_grain"
+amount_kg = 4.0
+
+[[processes]]
+id = "logging_camp"
+display_name = "Timber Felling & Milling"
+required_vocation = "artificer"
+cycle_hours = 24
+workforce_hours_required = 12.0
+tool_commodity = "colony_precision_tools"
+weather_halt_mud_threshold = 0.90
+
+[[processes.outputs]]
+commodity = "timber"
+amount_kg = 6.0
+
+[[processes]]
+id = "charcoal_burning"
+display_name = "Earth Mound Charcoal Burning"
+required_vocation = "artificer"
+cycle_hours = 24
+workforce_hours_required = 10.0
+weather_halt_mud_threshold = 0.92
+
+[[processes.inputs]]
+commodity = "timber"
+amount_kg = 4.0
+
+[[processes.outputs]]
+commodity = "charcoal"
+amount_kg = 1.6
+
+[[processes]]
+id = "surface_ore_quarrying"
+display_name = "Surface Hematite Quarrying"
+required_vocation = "miner"
+cycle_hours = 24
+workforce_hours_required = 18.0
+tool_commodity = "colony_precision_tools"
+weather_halt_mud_threshold = 0.78
+
+[[processes.outputs]]
+commodity = "hematite_ore"
+amount_kg = 5.0
+
+[[processes]]
+id = "bloomery_smelting"
+display_name = "Bloomery Iron Reduction"
+required_vocation = "smith"
+cycle_hours = 24
+workforce_hours_required = 20.0
+tool_commodity = "forged_hand_tools"
+weather_halt_mud_threshold = 0.98
+
+[[processes.inputs]]
+commodity = "hematite_ore"
+amount_kg = 3.0
+
+[[processes.inputs]]
+commodity = "charcoal"
+amount_kg = 1.5
+
+[[processes.outputs]]
+commodity = "wrought_iron"
+amount_kg = 1.4

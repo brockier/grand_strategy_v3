@@ -1,0 +1,29 @@
+[[vocations]]
+id = "agronomist"
+display_name = "Field Agronomist & Cultivator"
+base_skill_gain_per_day = 0.004
+skill_decay_per_day = 0.0005
+
+[[vocations]]
+id = "artificer"
+display_name = "Timberwright & Artificer"
+base_skill_gain_per_day = 0.003
+skill_decay_per_day = 0.0005
+
+[[vocations]]
+id = "miner"
+display_name = "Prospector & Quarryman"
+base_skill_gain_per_day = 0.0035
+skill_decay_per_day = 0.0006
+
+[[vocations]]
+id = "smith"
+display_name = "Smelter & Ironwright"
+base_skill_gain_per_day = 0.0025
+skill_decay_per_day = 0.0006
+
+[[vocations]]
+id = "courier"
+display_name = "Signal Runner & Scout"
+base_skill_gain_per_day = 0.004
+skill_decay_per_day = 0.0004

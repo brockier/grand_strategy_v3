@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "WarfareDomain",
+  "type": "object",
+  "properties": {
+    "doctrines": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/DoctrineRecord"
+      }
+    },
+    "formation_templates": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/FormationTemplateRecord"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "DoctrineRecord": {
+      "type": "object",
+      "properties": {
+        "display_name": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "initiative_bonus": {
+          "type": "number",
+          "format": "float"
+        },
+        "rain_penalty_mitigation": {
+          "type": "number",
+          "format": "float"
+        },
+        "strict_obedience_weight": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "initiative_bonus",
+        "strict_obedience_weight",
+        "rain_penalty_mitigation"
+      ]
+    },
+    "FormationTemplateRecord": {
+      "type": "object",
+      "properties": {
+        "display_name": {
+          "type": "string"
+        },
+        "equipment_commodity": {
+          "type": "string"
+        },
+        "equipment_kg_per_troop": {
+          "type": "number",
+          "format": "double"
+        },
+        "id": {
+          "type": "string"
+        },
+        "personnel_count": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "required_vocation": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "personnel_count",
+        "required_vocation",
+        "equipment_commodity",
+        "equipment_kg_per_troop"
+      ]
+    }
+  }
+}

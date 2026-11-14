@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LogisticsDomain",
+  "type": "object",
+  "properties": {
+    "carriers": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/CarrierRecord"
+      }
+    },
+    "infra_classes": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/InfraClassRecord"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "CarrierRecord": {
+      "type": "object",
+      "properties": {
+        "base_speed_km_hr": {
+          "type": "number",
+          "format": "float"
+        },
+        "crew_required": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "fodder_or_fuel_commodity": {
+          "type": "string"
+        },
+        "fuel_burn_kg_per_hour": {
+          "type": "number",
+          "format": "double"
+        },
+        "id": {
+          "type": "string"
+        },
+        "max_grade_rad": {
+          "type": "number",
+          "format": "float"
+        },
+        "max_payload_kg": {
+          "type": "number",
+          "format": "double"
+        },
+        "max_payload_m3": {
+          "type": "number",
+          "format": "double"
+        },
+        "mud_penalty_factor": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "max_payload_kg",
+        "max_payload_m3",
+        "base_speed_km_hr",
+        "max_grade_rad",
+        "mud_penalty_factor",
+        "crew_required",
+        "fodder_or_fuel_commodity",
+        "fuel_burn_kg_per_hour"
+      ]
+    },
+    "InfraClassRecord": {
+      "type": "object",
+      "properties": {
+        "display_name": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "maintenance_timber_kg_per_week": {
+          "type": "number",
+          "format": "double"
+        },
+        "mud_shield_factor": {
+          "type": "number",
+          "format": "float"
+        },
+        "speed_multiplier": {
+          "type": "number",
+          "format": "float"
+        },
+        "throughput_tonnes_per_hour": {
+          "type": "number",
+          "format": "float"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "display_name",
+        "throughput_tonnes_per_hour",
+        "speed_multiplier",
+        "mud_shield_factor",
+        "maintenance_timber_kg_per_week"
+      ]
+    }
+  }
+}
