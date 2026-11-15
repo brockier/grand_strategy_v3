@@ -389,6 +389,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "sim-command"
+version = "0.1.0"
+dependencies = [
+ "sim-spine",
+]
+
+[[package]]
 name = "sim-core"
 version = "0.1.0"
 dependencies = [
@@ -412,12 +419,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "sim-economy"
+version = "0.1.0"
+dependencies = [
+ "sim-spine",
+]
+
+[[package]]
+name = "sim-logistics"
+version = "0.1.0"
+dependencies = [
+ "sim-spine",
+]
+
+[[package]]
 name = "sim-planet"
 version = "0.1.0"
 dependencies = [
  "blake3",
  "rand_chacha",
  "rand_core",
+ "sim-spine",
+]
+
+[[package]]
+name = "sim-pop"
+version = "0.1.0"
+dependencies = [
  "sim-spine",
 ]
 
@@ -431,9 +459,13 @@ dependencies = [
  "rand_core",
  "rayon",
  "sim-clock",
+ "sim-command",
  "sim-core",
  "sim-data",
+ "sim-economy",
+ "sim-logistics",
  "sim-planet",
+ "sim-pop",
  "sim-spine",
  "sim-weather",
 ]

@@ -1,15 +1,21 @@
 import {
+  ArbitrationProposalDto,
+  AuditDiscrepancyDto,
   ClockAndNotificationsDto,
   DelegationTreeDto,
   DiegeticDispatchDto,
   DiegeticSnapshot,
+  FacilityRowDto,
   GlobeTopologyDto,
   HqPresenceDto,
   KnownCellDto,
   KnownSettlementDto,
+  NotificationRuleDto,
   ObservedWeatherDto,
+  PopulationCohortRowDto,
   ReportedLedgerRowDto,
   SurveyedRoadEdgeDto,
+  TimeSeriesDto,
   TrackedConvoyDto,
   isValidDiegeticSnapshot,
 } from "./contracts";
@@ -98,4 +104,38 @@ export function selectClockAndNotifications(
   store: DiegeticStoreAccess,
 ): ClockAndNotificationsDto | null {
   return store.getSnapshot()?.clockAndNotifications ?? null;
+}
+
+export function selectPopulationRows(
+  store: DiegeticStoreAccess,
+  settlementId?: number,
+): readonly PopulationCohortRowDto[] {
+  const rows = store.getSnapshot()?.populationRows ?? [];
+  if (settlementId === undefined) return rows;
+  return rows.filter((r) => r.settlementId === settlementId);
+}
+
+export function selectFacilityRows(
+  store: DiegeticStoreAccess,
+  settlementId?: number,
+): readonly FacilityRowDto[] {
+  const rows = store.getSnapshot()?.facilityRows ?? [];
+  if (settlementId === undefined) return rows;
+  return rows.filter((r) => r.settlementId === settlementId);
+}
+
+export function selectTimeSeries(store: DiegeticStoreAccess): readonly TimeSeriesDto[] {
+  return store.getSnapshot()?.timeSeries ?? [];
+}
+
+export function selectOpenProposals(store: DiegeticStoreAccess): readonly ArbitrationProposalDto[] {
+  return store.getSnapshot()?.openProposals ?? [];
+}
+
+export function selectNotificationRules(store: DiegeticStoreAccess): readonly NotificationRuleDto[] {
+  return store.getSnapshot()?.notificationRules ?? [];
+}
+
+export function selectAuditDiscrepancies(store: DiegeticStoreAccess): readonly AuditDiscrepancyDto[] {
+  return store.getSnapshot()?.auditDiscrepancies ?? [];
 }

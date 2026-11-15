@@ -4,7 +4,16 @@ import {
   selectClockAndNotifications,
   selectDelegationTree,
   selectHqPresence,
+  selectOpenProposals,
 } from "../spine";
+
+export {
+  createArbitrationWindowPlugin,
+  createAttentionZoomWindowPlugin,
+  createHqRelocationPlannerWindowPlugin,
+  createMandateComposerWindowPlugin,
+  createNotificationMatrixWindowPlugin,
+} from "./m4-panels";
 
 const SPEED_TIERS: readonly number[] = [1, 4, 24, 168];
 
@@ -94,7 +103,7 @@ export function mountCommandHud(
 
   const autoPauseBanner = document.createElement("div");
   autoPauseBanner.id = "hud-autopause-banner";
-  autoPauseBanner.className = "ng-hud-autopause-banner";
+  autoPauseBanner.className = "ng-hud-autopause-banner ng-autopause-banner";
   autoPauseBanner.setAttribute("role", "status");
   autoPauseBanner.hidden = true;
 
@@ -111,13 +120,21 @@ export function mountCommandHud(
   windowsCluster.className = "ng-hud-cluster";
   const launchers: ReadonlyArray<{ readonly pluginId: string; readonly label: string }> = [
     { pluginId: "physical_ledger", label: "Ledger" },
+    { pluginId: "time_series_chart", label: "Charts" },
+    { pluginId: "delegation_org_tree", label: "Org Tree" },
     { pluginId: "entity_inspector", label: "Inspector" },
     { pluginId: "dispatch_inbox", label: "Dispatches" },
+    { pluginId: "mandate_composer", label: "Mandates" },
+    { pluginId: "arbitration_panel", label: "Arbitration" },
+    { pluginId: "attention_zoom", label: "Attention" },
+    { pluginId: "hq_relocation", label: "Relocate HQ" },
+    { pluginId: "notification_matrix", label: "Alerts" },
     { pluginId: "skin_appearance", label: "Skins" },
     { pluginId: "audio_mixer", label: "Audio" },
     { pluginId: "layout_presets", label: "Layouts" },
   ];
 
+  const launcherButtons = new Map<string, HTMLButtonElement>();
   for (const item of launchers) {
     const wBtn = document.createElement("button");
     wBtn.type = "button";
@@ -127,6 +144,7 @@ export function mountCommandHud(
     wBtn.addEventListener("click", () => {
       bus.emit({ kind: "OpenSystemWindow", pluginId: item.pluginId });
     });
+    launcherButtons.set(item.pluginId, wBtn);
     windowsCluster.appendChild(wBtn);
   }
 
@@ -169,6 +187,12 @@ export function mountCommandHud(
 
     if (delegation) {
       attentionBadge.textContent = `Attention: ${delegation.usedAttention.toFixed(1)}/${delegation.capacityAttention.toFixed(1)}`;
+    }
+
+    const proposalCount = selectOpenProposals(store).length;
+    const arbBtn = launcherButtons.get("arbitration_panel");
+    if (arbBtn) {
+      arbBtn.textContent = proposalCount > 0 ? `Arbitration (${proposalCount})` : "Arbitration";
     }
 
     if (clk) {

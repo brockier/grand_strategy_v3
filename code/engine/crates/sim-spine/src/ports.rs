@@ -99,8 +99,16 @@ pub struct CommodityDefView {
     pub mass_per_unit_kg: f64,
     pub volume_per_unit_m3: f64,
     pub spoilage_rate_per_hour: f64,
+    pub energy_mj_per_kg: f64,
+    pub structural_strength: f64,
     pub is_tool: bool,
     pub tool_wear_per_hour: f64,
+    pub caloric_mcal_per_kg: f64,
+    pub potable_liters_per_kg: f64,
+    pub heating_mj_per_kg: f64,
+    pub is_clothing: bool,
+    pub tool_hardness_rating: f32,
+    pub is_slag_or_waste: bool,
 }
 
 /// Commodity quantity binding inside a production or extraction recipe.
@@ -120,7 +128,17 @@ pub struct ProcessDefView {
     pub cycle_hours: u32,
     pub workforce_hours_required: f64,
     pub tool_commodity: Option<CommodityId>,
+    pub fallback_tool_commodity: Option<CommodityId>,
+    pub waste_commodity: Option<CommodityId>,
     pub weather_halt_mud_threshold: f32,
+    pub is_outdoor_construction: bool,
+    pub is_underground_mine: bool,
+    pub is_crop_cultivation: bool,
+    pub is_mine_drainage: bool,
+    pub min_temp_c: f32,
+    pub max_temp_c: f32,
+    pub optimal_moisture_01: f32,
+    pub tool_wear_intensity: f64,
     pub inputs: Vec<ProcessQuantityView>,
     pub outputs: Vec<ProcessQuantityView>,
 }
@@ -139,6 +157,12 @@ pub struct CarrierDefView {
     pub crew_required: u32,
     pub fodder_or_fuel_commodity: CommodityId,
     pub fuel_burn_kg_per_hour: f64,
+    pub allowed_infra_classes: Vec<InfraClassId>,
+    pub is_watercraft: bool,
+    pub uses_wind_sail: bool,
+    pub max_ice_thickness_m: f32,
+    pub spare_parts_commodity: Option<CommodityId>,
+    pub spare_parts_wear_per_km: f64,
 }
 
 /// Read-only view of an interned infrastructure class definition.
@@ -162,6 +186,130 @@ pub struct VocationDefView {
     pub skill_decay_per_day: f32,
 }
 
+/// Read-only view of an interned demographic cohort archetype definition.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CohortArchetypeDefView {
+    pub index: u16,
+    pub key: String,
+    pub display_name: String,
+    pub daily_grain_need_kg: f64,
+    pub daily_water_need_kg: f64,
+    pub daily_fuel_need_kg_below_10c: f64,
+    pub daily_clothing_wear_kg: f64,
+    pub base_fertility_annual: f32,
+    pub base_mortality_annual: f32,
+    pub initial_literacy: f32,
+    pub dependents_share_01: f32,
+    pub elders_share_01: f32,
+}
+
+/// Scenario starting archetype selector (`ENG-SCN-001`).
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
+pub enum ScenarioArchetypeKind {
+    EmergentDawn,
+    #[default]
+    ExpeditionColony,
+    GovernorSuccessor,
+}
+
+impl ScenarioArchetypeKind {
+    /// Parses external scenario profile key into typed archetype enum.
+    #[must_use]
+    pub fn from_profile_str(raw: &str) -> Self {
+        match raw.trim() {
+            "EmergentDawn" | "emergent_dawn" => Self::EmergentDawn,
+            "GovernorSuccessor" | "governor_successor" | "SuccessorGovernor" => {
+                Self::GovernorSuccessor
+            }
+            _ => Self::ExpeditionColony,
+        }
+    }
+
+    /// Stable machine label for telemetry and inspection.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::EmergentDawn => "EmergentDawn",
+            Self::ExpeditionColony => "ExpeditionColony",
+            Self::GovernorSuccessor => "GovernorSuccessor",
+        }
+    }
+}
+
+/// Per-event-class notification and auto-pause tier (`ENG-SCN-003`, `UI-HUD-006`).
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
+pub enum NotificationBehaviorKind {
+    #[default]
+    LogOnly = 0,
+    BannerAlert = 1,
+    DispatchPopup = 2,
+    DispatchPopupAndAutoPause = 3,
+}
+
+impl NotificationBehaviorKind {
+    /// Parses external mod string representation into a strict tier.
+    #[must_use]
+    pub fn from_mod_str(raw: &str) -> Self {
+        match raw.trim() {
+            "BannerAlert" | "banner_alert" => Self::BannerAlert,
+            "DispatchPopup" | "dispatch_popup" => Self::DispatchPopup,
+            "DispatchPopupAutoPause"
+            | "DispatchPopupAndAutoPause"
+            | "dispatch_popup_and_auto_pause" => Self::DispatchPopupAndAutoPause,
+            _ => Self::LogOnly,
+        }
+    }
+
+    /// Canonical snake_case identifier shared with IPC and telemetry.
+    #[must_use]
+    pub const fn as_snake_str(self) -> &'static str {
+        match self {
+            Self::LogOnly => "log_only",
+            Self::BannerAlert => "banner_alert",
+            Self::DispatchPopup => "dispatch_popup",
+            Self::DispatchPopupAndAutoPause => "dispatch_popup_and_auto_pause",
+        }
+    }
+}
+
+/// Movement channel sharing unified graph routing physics (`ENG-LOG-003`).
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub enum TransitChannelKind {
+    FreightCargo = 0,
+    CohortMigration = 1,
+    MilitaryMarch = 2,
+    HqRetinue = 3,
+    SurveyExpedition = 4,
+    PhysicalCourier = 5,
+}
+
+/// Continuous cohort grievance & unrest progression stage (`ENG-POP-005`).
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
+pub enum UnrestStage {
+    #[default]
+    Compliant = 0,
+    WorkSlowdown = 1,
+    LaborStrike = 2,
+    OutMigration = 3,
+    Banditry = 4,
+    LocalRevolt = 5,
+}
+
+impl UnrestStage {
+    /// Human-readable label for UI & dispatches.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Compliant => "Compliant",
+            Self::WorkSlowdown => "WorkSlowdown",
+            Self::LaborStrike => "LaborStrike",
+            Self::OutMigration => "OutMigration",
+            Self::Banditry => "Banditry",
+            Self::LocalRevolt => "LocalRevolt",
+        }
+    }
+}
+
 /// Read-only scenario calendar configuration.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CalendarConfigView {
@@ -181,8 +329,12 @@ pub struct ScenarioSettlementSeed {
     pub cell_index: u32,
     pub initial_population: u32,
     pub stockpiles: Vec<(CommodityId, f64, f32)>,
+    pub stockpile_roofs_01: Vec<f32>,
     pub cohorts: Vec<(VocationId, u32)>,
+    pub cohort_archetype_indices: Vec<usize>,
     pub initial_facilities: Vec<(ProcessId, u32)>,
+    pub initial_facility_owners: Vec<ActorId>,
+    pub initial_shaft_water_01: f32,
 }
 
 /// Starting named individual seed extracted strictly from external scenario files.
@@ -196,17 +348,26 @@ pub struct ScenarioCharacterSeed {
     pub precision_01: f32,
     pub honesty_vs_sycophancy: f32,
     pub caution_vs_alarmism: f32,
+    pub initiative_01: f32,
+    pub adaptability_01: f32,
+    pub ambition_01: f32,
+    pub loyalty_01: f32,
+    pub greed_skimming_01: f32,
 }
 
-/// Scenario launch descriptor passed from `sim-data` through `sim-spine` into `sim-core`.
+/// Scenario launch descriptor passed from `sim-data` through `sim-spine` into engine cartridges.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ScenarioInitView {
     pub scenario_key: String,
     pub display_name: String,
+    pub archetype: ScenarioArchetypeKind,
     pub hq_settlement_key: String,
     pub hq_sight_radius_cells: u8,
     pub unexplored_surrounding_cells: bool,
     pub goldberg_subdivision: u8,
+    pub governance_base_attention: f32,
+    pub clerical_overhead_per_mandate: f32,
+    pub hierarchy_hop_latency_hours: u32,
     pub settlements: Vec<ScenarioSettlementSeed>,
     pub characters: Vec<ScenarioCharacterSeed>,
 }
@@ -221,9 +382,24 @@ pub trait ModRegistryPort: Send + Sync {
     fn process_count(&self) -> usize;
 
     fn carrier_def(&self, id: CarrierClassId) -> Option<&CarrierDefView>;
+    fn carrier_count(&self) -> usize;
+    fn carrier_id_by_key(&self, key: &str) -> Option<CarrierClassId>;
+
     fn infra_def(&self, id: InfraClassId) -> Option<&InfraDefView>;
+    fn infra_count(&self) -> usize;
+    fn infra_id_by_key(&self, key: &str) -> Option<InfraClassId>;
+
     fn vocation_def(&self, id: VocationId) -> Option<&VocationDefView>;
+    fn vocation_count(&self) -> usize;
+
+    fn cohort_archetype_count(&self) -> usize;
+    fn cohort_archetype_def(&self, idx: usize) -> Option<&CohortArchetypeDefView>;
+
     fn event_class_id(&self, key: &str) -> Option<EventClassId>;
+    fn notification_default_behavior(&self, key: &str) -> Option<NotificationBehaviorKind>;
+    fn notification_classes(&self) -> Vec<(EventClassId, String, String, NotificationBehaviorKind)>;
+    fn localization_template(&self, key: &str) -> Option<&str>;
+
     fn calendar_config(&self) -> &CalendarConfigView;
     fn planet_gen_config(&self) -> &PlanetGenConfigView;
     fn bundle_blake3_bytes(&self) -> [u8; 32];
@@ -402,12 +578,16 @@ pub trait PhysicalLedgerPort: Send + Sync {
 pub struct ConvoyTransitView {
     pub convoy_id: ConvoyId,
     pub label: String,
+    pub channel: TransitChannelKind,
+    pub origin_cell: CellId,
     pub current_cell: CellId,
     pub destination_cell: CellId,
     pub planned_route: Vec<CellId>,
     pub departure_tick: Tick,
     pub expected_arrival_tick: Tick,
+    pub grace_ticks: u64,
     pub is_hq_move: bool,
+    pub stranded_no_fuel: bool,
 }
 
 /// Request to spawn a physical cargo shipment.
@@ -445,6 +625,9 @@ pub struct ArrivedCourierEnvelope {
 /// Logistics port for convoys and physical courier dispatches.
 pub trait LogisticsPort: Send + Sync {
     fn convoy_state(&self, convoy: ConvoyId) -> Option<ConvoyTransitView>;
+    fn all_active_convoys(&self) -> Vec<ConvoyTransitView> {
+        Vec::new()
+    }
     fn enqueue_shipment(&mut self, req: ShipmentRequest) -> ConvoyId;
     fn enqueue_courier(&mut self, env: CourierEnvelope) -> DispatchId;
     fn arrived_envelopes(&self) -> &[ArrivedCourierEnvelope];
@@ -489,6 +672,9 @@ pub trait PopulationPort: Send + Sync {
     fn character_view(&self, id: CharacterId) -> Option<CharacterSnapshotView>;
     fn all_characters(&self) -> &[CharacterSnapshotView];
     fn apply_labor_and_welfare(&mut self, updates: &[CohortDelta]);
+    fn unrest_stage_for_settlement(&self, _settlement: SettlementId) -> UnrestStage {
+        UnrestStage::Compliant
+    }
 }
 
 /// Attention utilization view for a commander.
@@ -519,6 +705,28 @@ pub enum SpinePlayerCommand {
     SetSpeedMultiplier(u32),
     AcknowledgeNotification(u64),
     StubPing { tag: String },
+    IssueMandate {
+        assignee: CharacterId,
+        objective_kind: String,
+        target_cell: CellId,
+        priority_weight: u32,
+        authority_tier: String,
+    },
+    ResolveArbitrationProposal {
+        proposal_id: u64,
+        chosen_option_index: u32,
+    },
+    SetPersonalAttentionZoom {
+        target_mandate_id: Option<MandateId>,
+        share_01: f32,
+    },
+    RelocateHq {
+        destination_cell: CellId,
+    },
+    UpdateNotificationRule {
+        event_class_key: String,
+        behavior: NotificationBehaviorKind,
+    },
 }
 
 /// Command hierarchy and player input port.

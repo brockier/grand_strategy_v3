@@ -3,8 +3,9 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { parsePlayerCommand } from "./ipc-validator";
+import { parsePlayerCommand, type ValidatedCommand } from "./ipc-validator";
 import { runM2E2ESmokePhase } from "./m2-e2e-smoke";
+import { runM3M4E2ESmokePhase } from "./m3-m4-e2e-smoke";
 
 // Enable Chromium Dawn WebGPU with Vulkan + WebGL2 fallback across Linux X11, Wayland & Windows.
 app.commandLine.appendSwitch("enable-unsafe-webgpu");
@@ -61,11 +62,17 @@ function resolveRuntimePaths(): RuntimePaths {
   };
 }
 
+interface QueuedTimedCommand {
+  readonly tick: number;
+  readonly command: ValidatedCommand;
+}
+
 let activeExtraPacks: string[] = INITIAL_CORRUPT_PACK ? [INITIAL_CORRUPT_PACK] : [];
 let currentTick = 0;
 let isPaused = false;
 let speedMultiplier = 1;
 let cachedSnapshot: Record<string, unknown> | null = null;
+let queuedCommands: QueuedTimedCommand[] = [];
 
 type RgbTuple = [number, number, number];
 
@@ -333,6 +340,7 @@ function defaultUserPreferences() {
       foleyMuted: false,
     },
     namedLayoutPresets: {},
+    notificationRules: {},
   };
 }
 
@@ -357,6 +365,14 @@ function readUserPreferences() {
     for (const [k, v] of Object.entries(presetsRaw)) {
       if (typeof v === "string") namedLayoutPresets[k] = v;
     }
+    const rulesRaw =
+      typeof raw.notificationRules === "object" && raw.notificationRules !== null
+        ? (raw.notificationRules as Record<string, unknown>)
+        : {};
+    const notificationRules: Record<string, string> = {};
+    for (const [k, v] of Object.entries(rulesRaw)) {
+      if (typeof v === "string") notificationRules[k] = v;
+    }
     return {
       activeSkinId: typeof raw.activeSkinId === "string" ? raw.activeSkinId : defaults.activeSkinId,
       audioMixer: {
@@ -371,6 +387,7 @@ function readUserPreferences() {
       },
       ...(typeof raw.activeLayoutJson === "string" ? { activeLayoutJson: raw.activeLayoutJson } : {}),
       namedLayoutPresets,
+      notificationRules,
     };
   } catch {
     return defaults;
@@ -397,6 +414,12 @@ function writeUserPreferences(raw: unknown): void {
       ...existing.namedLayoutPresets,
       ...(typeof incoming.namedLayoutPresets === "object" && incoming.namedLayoutPresets !== null
         ? (incoming.namedLayoutPresets as Record<string, string>)
+        : {}),
+    },
+    notificationRules: {
+      ...existing.notificationRules,
+      ...(typeof incoming.notificationRules === "object" && incoming.notificationRules !== null
+        ? (incoming.notificationRules as Record<string, string>)
         : {}),
     },
   };
@@ -460,7 +483,21 @@ function computeInitialState(paths: RuntimePaths): unknown {
     }
   }
 
-  const snapRes = runSimCli(paths.simCliBin, "dump-snapshot", packs, ["--ticks", String(currentTick), "--seed", "42"]);
+  const snapArgs = ["--ticks", String(currentTick), "--seed", "42"];
+  const persistedPrefs = readUserPreferences();
+  const persistedRuleCmds: QueuedTimedCommand[] = Object.entries(
+    (persistedPrefs.notificationRules ?? {}) as Record<string, unknown>,
+  )
+    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+    .map(([eventClassKey, behavior]) => ({
+      tick: 1,
+      command: { kind: "updateNotificationRule", eventClassKey, behavior },
+    }));
+  const combinedCmds = [...persistedRuleCmds, ...queuedCommands];
+  if (combinedCmds.length > 0) {
+    snapArgs.push("--commands-json", JSON.stringify(combinedCmds));
+  }
+  const snapRes = runSimCli(paths.simCliBin, "dump-snapshot", packs, snapArgs);
   if (!snapRes.ok) {
     return {
       state: "mod_error",
@@ -481,6 +518,21 @@ function computeInitialState(paths: RuntimePaths): unknown {
     };
   }
   const snapshot = JSON.parse(snapRes.stdout) as Record<string, unknown>;
+  const persistedEntries = Object.entries(persistedPrefs.notificationRules);
+  if (persistedEntries.length > 0) {
+    const existingRules = Array.isArray(snapshot.notificationRules)
+      ? (snapshot.notificationRules as Array<Record<string, unknown>>)
+      : [];
+    for (const [eventClassKey, behavior] of persistedEntries) {
+      const found = existingRules.find((r) => r.eventClassKey === eventClassKey);
+      if (found) {
+        found.behavior = behavior;
+      } else {
+        existingRules.push({ eventClassKey, displayName: eventClassKey, behavior });
+      }
+    }
+    snapshot.notificationRules = existingRules;
+  }
   const clk = snapshot.clockAndNotifications as Record<string, unknown> | undefined;
   if (clk && typeof clk === "object") {
     clk.paused = isPaused;
@@ -488,6 +540,33 @@ function computeInitialState(paths: RuntimePaths): unknown {
   }
   cachedSnapshot = snapshot;
   return { state: "ready", snapshot };
+}
+
+let lastAutoPauseReason: string | null = null;
+const dismissedAutoPauseReasons = new Set<string>();
+
+function computeInitialStateChecked(paths: RuntimePaths): unknown {
+  const result = computeInitialState(paths) as { state: string; snapshot?: Record<string, unknown> };
+  if (result.state === "ready" && result.snapshot) {
+    const clk = result.snapshot.clockAndNotifications as Record<string, unknown> | undefined;
+    if (clk && typeof clk === "object") {
+      const reason = typeof clk.autoPauseReason === "string" && clk.autoPauseReason.length > 0
+        ? clk.autoPauseReason
+        : null;
+      if (reason && !dismissedAutoPauseReasons.has(reason)) {
+        if (reason !== lastAutoPauseReason) {
+          isPaused = true;
+          lastAutoPauseReason = reason;
+        }
+        clk.paused = isPaused;
+      } else if (reason && dismissedAutoPauseReasons.has(reason)) {
+        clk.autoPauseReason = null;
+        clk.paused = isPaused;
+      }
+    }
+    cachedSnapshot = result.snapshot;
+  }
+  return result;
 }
 
 function createMainWindow(paths: RuntimePaths): BrowserWindow {
@@ -523,13 +602,19 @@ app.whenReady().then(() => {
     });
   });
 
-  ipcMain.handle("sim:get-initial-state", () => computeInitialState(paths));
+  ipcMain.handle("sim:get-initial-state", () => computeInitialStateChecked(paths));
 
   ipcMain.handle("sim:reload-mods", (_ev, recoverToDefault: boolean) => {
     if (recoverToDefault) {
       activeExtraPacks = [];
+      queuedCommands = [];
+      currentTick = 0;
+      isPaused = false;
+      speedMultiplier = 1;
+      lastAutoPauseReason = null;
+      dismissedAutoPauseReasons.clear();
     }
-    return computeInitialState(paths);
+    return computeInitialStateChecked(paths);
   });
 
   ipcMain.handle("sim:send-command", (ev, rawCmd: unknown) => {
@@ -543,13 +628,58 @@ app.whenReady().then(() => {
       };
     }
     const cmd = parsed.command;
-    if (cmd.kind === "setPaused") isPaused = cmd.paused;
+    if (cmd.kind === "setPaused") {
+      isPaused = cmd.paused;
+      if (!isPaused && lastAutoPauseReason) {
+        dismissedAutoPauseReasons.add(lastAutoPauseReason);
+      }
+    }
     if (cmd.kind === "setSpeedMultiplier") speedMultiplier = cmd.multiplier;
+
     if (cmd.kind === "stepSingleTick") {
       currentTick += 1;
-      const boot = computeInitialState(paths) as { state: string; snapshot?: unknown };
+      const boot = computeInitialStateChecked(paths) as { state: string; snapshot?: unknown };
       if (boot.state === "ready" && boot.snapshot) {
         ev.sender.send("sim:snapshot", boot.snapshot);
+      }
+    } else if (cmd.kind === "issueMandate" || cmd.kind === "resolveArbitrationProposal" || cmd.kind === "relocateHq") {
+      queuedCommands.push({ tick: currentTick + 1, command: cmd });
+    } else if (cmd.kind === "updateNotificationRule" || cmd.kind === "setPersonalAttentionZoom") {
+      queuedCommands.push({ tick: Math.max(1, currentTick), command: cmd });
+      if (cmd.kind === "updateNotificationRule") {
+        writeUserPreferences({ notificationRules: { [cmd.eventClassKey]: cmd.behavior } });
+      }
+      if (currentTick >= 1) {
+        const boot = computeInitialStateChecked(paths) as { state: string; snapshot?: unknown };
+        if (boot.state === "ready" && boot.snapshot) {
+          ev.sender.send("sim:snapshot", boot.snapshot);
+        }
+      } else if (cachedSnapshot) {
+        const updated = JSON.parse(JSON.stringify(cachedSnapshot)) as Record<string, unknown>;
+        if (cmd.kind === "setPersonalAttentionZoom") {
+          const dt = updated.delegationTree as Record<string, unknown> | undefined;
+          if (dt) {
+            dt.focusedMandateId = cmd.targetMandateId;
+            dt.focusedAttentionShare = cmd.share01;
+          }
+        } else {
+          const rules = Array.isArray(updated.notificationRules)
+            ? (updated.notificationRules as Array<Record<string, unknown>>)
+            : [];
+          const existing = rules.find((r) => r.eventClassKey === cmd.eventClassKey);
+          if (existing) {
+            existing.behavior = cmd.behavior;
+          } else {
+            rules.push({
+              eventClassKey: cmd.eventClassKey,
+              displayName: cmd.eventClassKey,
+              behavior: cmd.behavior,
+            });
+          }
+          updated.notificationRules = rules;
+        }
+        cachedSnapshot = updated;
+        ev.sender.send("sim:snapshot", updated);
       }
     } else if ((cmd.kind === "setPaused" || cmd.kind === "setSpeedMultiplier") && cachedSnapshot) {
       const updated = JSON.parse(JSON.stringify(cachedSnapshot)) as Record<string, unknown>;
@@ -625,6 +755,12 @@ app.whenReady().then(() => {
         if (SMOKE_MODE.startsWith("m2-")) {
           const m2Result = await runM2E2ESmokePhase(mainWindow, SMOKE_MODE);
           console.log("M2_SMOKE_RESULT:" + JSON.stringify(m2Result));
+          app.exit(0);
+          return;
+        }
+        if (SMOKE_MODE.startsWith("m3-m4")) {
+          const m34Result = await runM3M4E2ESmokePhase(mainWindow, SMOKE_MODE);
+          console.log("M3_M4_SMOKE_RESULT:" + JSON.stringify(m34Result));
           app.exit(0);
           return;
         }

@@ -128,7 +128,8 @@ export class MockSnapshotPlayer implements SimBridgeApi {
 
   public async sendPlayerCommand(command: ValidatedPlayerCommand): Promise<CommandAck> {
     const validated = validatePlayerCommand(command);
-    const currentTick = this.timeline[this.cursor]?.clockAndNotifications.tick ?? 0;
+    const active = this.timeline[this.cursor];
+    const currentTick = active?.clockAndNotifications.tick ?? 0;
     if (!validated) {
       return {
         accepted: false,
@@ -138,12 +139,117 @@ export class MockSnapshotPlayer implements SimBridgeApi {
       };
     }
     this.recordedCommands.push(validated);
+    if (active) {
+      const next = this.applyCommandToSnapshot(active, validated);
+      this.timeline[this.cursor] = next;
+      for (const listener of this.listeners) {
+        listener(next);
+      }
+    }
     return {
       accepted: true,
       tick: currentTick,
       errorCode: null,
       message: `Recorded ${validated.kind}`,
     };
+  }
+
+  private applyCommandToSnapshot(
+    snap: DiegeticSnapshot,
+    cmd: ValidatedPlayerCommand,
+  ): DiegeticSnapshot {
+    const next = structuredClone(snap) as DiegeticSnapshot & {
+      clockAndNotifications: { paused: boolean; speedMultiplier: number; autoPauseReason?: string | null };
+      delegationTree: {
+        focusedMandateId?: number | null;
+        focusedAttentionShare?: number;
+        usedAttention: number;
+        activeMandates?: Array<{
+          mandateId: number;
+          assigneeId: number;
+          targetSettlementId: number;
+          targetCellId: number;
+          objectiveKind: string;
+          authorityTier: string;
+          summary: string;
+          priorityWeight: number;
+          status: string;
+          realizedEfficiency: number;
+          progress01: number;
+          subtasks: string[];
+        }>;
+      };
+      hqPresence: {
+        inTransit?: boolean;
+        destinationCellId?: number | null;
+        etaTick?: number | null;
+      };
+      openProposals?: Array<{ proposalId: number }>;
+      notificationRules?: Array<{ eventClassKey: string; displayName: string; behavior: string }>;
+    };
+
+    switch (cmd.kind) {
+      case "setPaused":
+        next.clockAndNotifications.paused = cmd.paused;
+        if (!cmd.paused) next.clockAndNotifications.autoPauseReason = null;
+        break;
+      case "setSpeedMultiplier":
+        next.clockAndNotifications.speedMultiplier = cmd.multiplier;
+        break;
+      case "setPersonalAttentionZoom":
+        next.delegationTree.focusedMandateId = cmd.targetMandateId;
+        next.delegationTree.focusedAttentionShare = cmd.share01;
+        break;
+      case "issueMandate": {
+        const list = next.delegationTree.activeMandates ?? [];
+        const newId = list.reduce((m, item) => Math.max(m, item.mandateId), 0) + 1;
+        list.push({
+          mandateId: newId,
+          assigneeId: cmd.assignee,
+          targetSettlementId: 0,
+          targetCellId: cmd.targetCell,
+          objectiveKind: cmd.objectiveKind,
+          authorityTier: cmd.authorityTier,
+          summary: `${cmd.objectiveKind} (${cmd.authorityTier}) -> cell ${cmd.targetCell}`,
+          priorityWeight: cmd.priorityWeight,
+          status: "in_transit_courier",
+          realizedEfficiency: 0.75,
+          progress01: 0,
+          subtasks: ["Courier dispatch in transit"],
+        });
+        next.delegationTree.activeMandates = list;
+        next.delegationTree.usedAttention += 10;
+        break;
+      }
+      case "resolveArbitrationProposal":
+        if (next.openProposals) {
+          next.openProposals = next.openProposals.filter((p) => p.proposalId !== cmd.proposalId);
+        }
+        break;
+      case "relocateHq":
+        next.hqPresence.inTransit = true;
+        next.hqPresence.destinationCellId = cmd.destinationCell;
+        next.hqPresence.etaTick = next.clockAndNotifications.tick + 12;
+        break;
+      case "updateNotificationRule": {
+        const rules = next.notificationRules ?? [];
+        const existing = rules.find((r) => r.eventClassKey === cmd.eventClassKey);
+        if (existing) {
+          existing.behavior = cmd.behavior;
+        } else {
+          rules.push({
+            eventClassKey: cmd.eventClassKey,
+            displayName: cmd.eventClassKey,
+            behavior: cmd.behavior,
+          });
+        }
+        next.notificationRules = rules;
+        break;
+      }
+      default:
+        break;
+    }
+    return next;
   }
 
   public async reloadMods(_recoverToDefault: boolean): Promise<InitialBootPayload> {

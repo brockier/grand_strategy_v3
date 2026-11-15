@@ -20,13 +20,28 @@ export interface ModValidationFailureState {
   readonly diagnostics: readonly ModDiagnosticDto[];
 }
 
+export interface DepositEstimateDto {
+  readonly materialId: number;
+  readonly materialLabel: string;
+  readonly categoryKey: string;
+  readonly minTonnes: number;
+  readonly pointEstTonnes: number;
+  readonly maxTonnes: number;
+  readonly purityEst01: number;
+  readonly confidence01: number;
+  readonly surveyorSkill01: number;
+  readonly instrumentTier: number;
+  readonly observedTick: number;
+  readonly provenanceLabel: string;
+}
+
 export type KnownCellDto =
   | {
       readonly tier: "unexplored";
       readonly cellId: number;
     }
   | {
-      readonly tier: "stale";
+      readonly tier: "rumored";
       readonly cellId: number;
       readonly observedTick: number;
       readonly elevationM: number;
@@ -34,6 +49,20 @@ export type KnownCellDto =
       readonly provenanceLabel: string;
       readonly biomeKey?: string;
       readonly isOcean?: boolean;
+    }
+  | {
+      readonly tier: "stale";
+      readonly cellId: number;
+      readonly observedTick: number;
+      readonly lastLiveTick?: number;
+      readonly elevationM: number;
+      readonly confidence01: number;
+      readonly provenanceLabel: string;
+      readonly biomeKey?: string;
+      readonly isOcean?: boolean;
+      readonly riverDownstreamCellId?: number | null;
+      readonly riverFlowNorm01?: number;
+      readonly depositEstimates?: readonly DepositEstimateDto[];
     }
   | {
       readonly tier: "surveyed";
@@ -47,6 +76,7 @@ export type KnownCellDto =
       readonly isOcean?: boolean;
       readonly riverDownstreamCellId?: number | null;
       readonly riverFlowNorm01?: number;
+      readonly depositEstimates?: readonly DepositEstimateDto[];
     };
 
 export interface KnownSettlementDto {
@@ -61,6 +91,21 @@ export interface SurveyedRoadEdgeDto {
   readonly fromCellId: number;
   readonly toCellId: number;
   readonly infraKey: string;
+  readonly washedOut?: boolean;
+  readonly riverEdge?: boolean;
+  readonly bridgeCapKg?: number | null;
+}
+
+export interface CommLatencyContourDto {
+  readonly cellId: number;
+  readonly estimatedCourierHours: number;
+}
+
+export interface HqRelocationPreviewDto {
+  readonly targetCellId: number;
+  readonly label: string;
+  readonly travelHours: number;
+  readonly projectedHavenLatencyHours: number;
 }
 
 export interface HqPresenceDto {
@@ -68,6 +113,11 @@ export interface HqPresenceDto {
   readonly cellId: number;
   readonly settlementName: string;
   readonly sightRadiusCells: number;
+  readonly inTransit?: boolean;
+  readonly destinationCellId?: number | null;
+  readonly etaTick?: number | null;
+  readonly communicationContours?: readonly CommLatencyContourDto[];
+  readonly relocationPreviews?: readonly HqRelocationPreviewDto[];
 }
 
 export interface GlobeTopologyDto {
@@ -82,6 +132,11 @@ export interface ObservedWeatherDto {
   readonly mudIndex01: number;
   readonly tempC: number;
   readonly visibility01: number;
+  readonly floodStage01?: number;
+  readonly snowDepthM?: number;
+  readonly iceThicknessM?: number;
+  readonly windUMps?: number;
+  readonly windVMps?: number;
 }
 
 export interface ReportedLedgerRowDto {
@@ -94,6 +149,71 @@ export interface ReportedLedgerRowDto {
   readonly maxEstKg: number;
   readonly observedTick: number;
   readonly provenanceLabel: string;
+  readonly category?: string;
+  readonly confidence01?: number;
+  readonly reporterName?: string;
+}
+
+export interface PopulationCohortRowDto {
+  readonly cohortId: number;
+  readonly settlementId: number;
+  readonly settlementName: string;
+  readonly vocationKey: string;
+  readonly vocationName: string;
+  readonly reportedHeadcount: number;
+  readonly minHeadcount: number;
+  readonly maxHeadcount: number;
+  readonly meanSkill01: number;
+  readonly literacy01: number;
+  readonly nutrition01: number;
+  readonly unrestStage: string;
+  readonly observedTick: number;
+  readonly confidence01: number;
+  readonly provenanceLabel: string;
+}
+
+export interface FacilityRowDto {
+  readonly facilityId: number;
+  readonly settlementId: number;
+  readonly settlementName: string;
+  readonly processKey: string;
+  readonly processName: string;
+  readonly assignedWorkers: number;
+  readonly toolCondition01: number;
+  readonly weatherHalted: boolean;
+  readonly shaftWater01: number;
+  readonly observedTick: number;
+  readonly provenanceLabel: string;
+}
+
+export interface TimeSeriesPointDto {
+  readonly tick: number;
+  readonly value: number;
+  readonly minBound: number;
+  readonly maxBound: number;
+  readonly isConfirmed: boolean;
+}
+
+export interface TimeSeriesDto {
+  readonly seriesKey: string;
+  readonly label: string;
+  readonly unit: string;
+  readonly points: readonly TimeSeriesPointDto[];
+}
+
+export interface MandateSummaryDto {
+  readonly mandateId: number;
+  readonly assigneeId: number;
+  readonly targetSettlementId: number;
+  readonly targetCellId: number;
+  readonly objectiveKind: string;
+  readonly authorityTier: string;
+  readonly summary: string;
+  readonly priorityWeight: number;
+  readonly status: string;
+  readonly realizedEfficiency: number;
+  readonly progress01: number;
+  readonly subtasks: readonly string[];
 }
 
 export interface SubordinateSummaryDto {
@@ -101,6 +221,12 @@ export interface SubordinateSummaryDto {
   readonly displayName: string;
   readonly roleTitle: string;
   readonly competence: number;
+  readonly homeSettlementId?: number;
+  readonly homeCellId?: number;
+  readonly precision01?: number;
+  readonly loyaltyLabel?: string;
+  readonly allocatedAttention?: number;
+  readonly assignedMandates?: readonly MandateSummaryDto[];
 }
 
 export interface DelegationTreeDto {
@@ -108,6 +234,11 @@ export interface DelegationTreeDto {
   readonly capacityAttention: number;
   readonly usedAttention: number;
   readonly subordinates: readonly SubordinateSummaryDto[];
+  readonly clericalOverhead?: number;
+  readonly overloadRatio?: number;
+  readonly focusedMandateId?: number | null;
+  readonly focusedAttentionShare?: number;
+  readonly activeMandates?: readonly MandateSummaryDto[];
 }
 
 export interface TrackedConvoyDto {
@@ -115,6 +246,21 @@ export interface TrackedConvoyDto {
   readonly label: string;
   readonly status: string;
   readonly projectedCellId: number;
+  readonly channel?: string;
+  readonly originCellId?: number;
+  readonly destinationCellId?: number;
+  readonly routeCells?: readonly number[];
+  readonly departureTick?: number;
+  readonly expectedArrivalTick?: number;
+  readonly confidence01?: number;
+  readonly provenanceLabel?: string;
+}
+
+export interface DispatchTokenDto {
+  readonly text: string;
+  readonly entityKind: string | null;
+  readonly entityId: number | null;
+  readonly targetCellId: number | null;
 }
 
 export interface DiegeticDispatchDto {
@@ -123,6 +269,50 @@ export interface DiegeticDispatchDto {
   readonly sentTick: number;
   readonly arrivedTick: number;
   readonly originLabel: string;
+  readonly senderId?: number;
+  readonly senderName?: string;
+  readonly originCellId?: number;
+  readonly eventClassKey?: string;
+  readonly severity?: string;
+  readonly confidence01?: number;
+  readonly bodyTokens?: readonly DispatchTokenDto[];
+}
+
+export interface ArbitrationOptionDto {
+  readonly index: number;
+  readonly label: string;
+  readonly description: string;
+  readonly attentionCost: number;
+}
+
+export interface ArbitrationProposalDto {
+  readonly proposalId: number;
+  readonly settlementId: number;
+  readonly originCellId: number;
+  readonly raisedById: number;
+  readonly raisedByName: string;
+  readonly title: string;
+  readonly summary: string;
+  readonly createdTick: number;
+  readonly deadlineTick: number;
+  readonly options: readonly ArbitrationOptionDto[];
+}
+
+export interface NotificationRuleDto {
+  readonly eventClassKey: string;
+  readonly displayName: string;
+  readonly behavior: string;
+}
+
+export interface AuditDiscrepancyDto {
+  readonly settlementId: number;
+  readonly characterId: number;
+  readonly characterName: string;
+  readonly commodityKey: string;
+  readonly claimedMassKg: number;
+  readonly verifiedMassKg: number;
+  readonly discrepancyKg: number;
+  readonly detectedTick: number;
 }
 
 export interface ClockAndNotificationsDto {
@@ -149,13 +339,46 @@ export interface DiegeticSnapshot {
   readonly delegationTree: DelegationTreeDto;
   readonly dispatchInbox: readonly DiegeticDispatchDto[];
   readonly clockAndNotifications: ClockAndNotificationsDto;
+  readonly populationRows?: readonly PopulationCohortRowDto[];
+  readonly facilityRows?: readonly FacilityRowDto[];
+  readonly timeSeries?: readonly TimeSeriesDto[];
+  readonly openProposals?: readonly ArbitrationProposalDto[];
+  readonly notificationRules?: readonly NotificationRuleDto[];
+  readonly auditDiscrepancies?: readonly AuditDiscrepancyDto[];
 }
 
 export type ValidatedPlayerCommand =
   | { readonly kind: "setPaused"; readonly paused: boolean }
   | { readonly kind: "stepSingleTick" }
   | { readonly kind: "setSpeedMultiplier"; readonly multiplier: number }
-  | { readonly kind: "pingBridge"; readonly tag: string };
+  | { readonly kind: "pingBridge"; readonly tag: string }
+  | {
+      readonly kind: "issueMandate";
+      readonly assignee: number;
+      readonly objectiveKind: string;
+      readonly targetCell: number;
+      readonly priorityWeight: number;
+      readonly authorityTier: string;
+    }
+  | {
+      readonly kind: "resolveArbitrationProposal";
+      readonly proposalId: number;
+      readonly chosenOptionIndex: number;
+    }
+  | {
+      readonly kind: "setPersonalAttentionZoom";
+      readonly targetMandateId: number | null;
+      readonly share01: number;
+    }
+  | {
+      readonly kind: "relocateHq";
+      readonly destinationCell: number;
+    }
+  | {
+      readonly kind: "updateNotificationRule";
+      readonly eventClassKey: string;
+      readonly behavior: string;
+    };
 
 export interface CommandAck {
   readonly accepted: boolean;
@@ -271,6 +494,7 @@ export interface UserPreferencesDto {
   readonly audioMixer: AudioMixerSettings;
   readonly activeLayoutJson?: string;
   readonly namedLayoutPresets: Readonly<Record<string, string>>;
+  readonly notificationRules?: Readonly<Record<string, string>>;
 }
 
 export type GlobeRayHit =
@@ -348,7 +572,6 @@ export function isValidDiegeticSnapshot(value: unknown): value is DiegeticSnapsh
     const c = cell as Record<string, unknown>;
     if (typeof c.cellId !== "number") return false;
     if (c.tier === "unexplored") {
-      // Epistemic air-gap invariant: Unexplored cell payloads omit terrain/mineral/weather properties.
       if (
         "elevationM" in c ||
         "confidence01" in c ||
@@ -356,7 +579,17 @@ export function isValidDiegeticSnapshot(value: unknown): value is DiegeticSnapsh
         "biomeKey" in c ||
         "isOcean" in c ||
         "riverDownstreamCellId" in c ||
-        "riverFlowNorm01" in c
+        "riverFlowNorm01" in c ||
+        "depositEstimates" in c ||
+        "lastLiveTick" in c
+      ) {
+        return false;
+      }
+    } else if (c.tier === "rumored") {
+      if (
+        typeof c.observedTick !== "number" ||
+        typeof c.elevationM !== "number" ||
+        typeof c.confidence01 !== "number"
       ) {
         return false;
       }
@@ -383,6 +616,17 @@ export function isValidDiegeticSnapshot(value: unknown): value is DiegeticSnapsh
   }
   return true;
 }
+
+const VALID_NOTIFICATION_BEHAVIORS = new Set<string>([
+  "LogOnly",
+  "BannerAlert",
+  "DispatchPopup",
+  "DispatchPopupAndAutoPause",
+  "log_only",
+  "banner_alert",
+  "dispatch_popup",
+  "dispatch_popup_and_auto_pause",
+]);
 
 /** Validates outbound `ValidatedPlayerCommand` payloads strictly before crossing IPC. */
 export function validatePlayerCommand(value: unknown): ValidatedPlayerCommand | null {
@@ -411,6 +655,102 @@ export function validatePlayerCommand(value: unknown): ValidatedPlayerCommand | 
         return null;
       }
       return { kind: "pingBridge", tag: raw.tag };
+    case "issueMandate":
+      if (
+        keys.length !== 6 ||
+        typeof raw.assignee !== "number" ||
+        !Number.isInteger(raw.assignee) ||
+        raw.assignee < 0 ||
+        typeof raw.objectiveKind !== "string" ||
+        raw.objectiveKind.length === 0 ||
+        raw.objectiveKind.length > 64 ||
+        typeof raw.targetCell !== "number" ||
+        !Number.isInteger(raw.targetCell) ||
+        raw.targetCell < 0 ||
+        typeof raw.priorityWeight !== "number" ||
+        !Number.isInteger(raw.priorityWeight) ||
+        raw.priorityWeight < 1 ||
+        raw.priorityWeight > 10 ||
+        typeof raw.authorityTier !== "string" ||
+        raw.authorityTier.length === 0 ||
+        raw.authorityTier.length > 64
+      ) {
+        return null;
+      }
+      return {
+        kind: "issueMandate",
+        assignee: raw.assignee,
+        objectiveKind: raw.objectiveKind,
+        targetCell: raw.targetCell,
+        priorityWeight: raw.priorityWeight,
+        authorityTier: raw.authorityTier,
+      };
+    case "resolveArbitrationProposal":
+      if (
+        keys.length !== 3 ||
+        typeof raw.proposalId !== "number" ||
+        !Number.isInteger(raw.proposalId) ||
+        raw.proposalId < 1 ||
+        typeof raw.chosenOptionIndex !== "number" ||
+        !Number.isInteger(raw.chosenOptionIndex) ||
+        raw.chosenOptionIndex < 0 ||
+        raw.chosenOptionIndex > 16
+      ) {
+        return null;
+      }
+      return {
+        kind: "resolveArbitrationProposal",
+        proposalId: raw.proposalId,
+        chosenOptionIndex: raw.chosenOptionIndex,
+      };
+    case "setPersonalAttentionZoom":
+      if (
+        keys.length !== 3 ||
+        (raw.targetMandateId !== null &&
+          (typeof raw.targetMandateId !== "number" ||
+            !Number.isInteger(raw.targetMandateId) ||
+            raw.targetMandateId < 1)) ||
+        typeof raw.share01 !== "number" ||
+        !Number.isFinite(raw.share01) ||
+        raw.share01 < 0 ||
+        raw.share01 > 1
+      ) {
+        return null;
+      }
+      return {
+        kind: "setPersonalAttentionZoom",
+        targetMandateId: raw.targetMandateId,
+        share01: raw.share01,
+      };
+    case "relocateHq":
+      if (
+        keys.length !== 2 ||
+        typeof raw.destinationCell !== "number" ||
+        !Number.isInteger(raw.destinationCell) ||
+        raw.destinationCell < 0
+      ) {
+        return null;
+      }
+      return {
+        kind: "relocateHq",
+        destinationCell: raw.destinationCell,
+      };
+    case "updateNotificationRule":
+      if (
+        keys.length !== 3 ||
+        typeof raw.eventClassKey !== "string" ||
+        raw.eventClassKey.length === 0 ||
+        raw.eventClassKey.length > 64 ||
+        typeof raw.behavior !== "string" ||
+        !VALID_NOTIFICATION_BEHAVIORS.has(raw.behavior)
+      ) {
+        return null;
+      }
+      return {
+        kind: "updateNotificationRule",
+        eventClassKey: raw.eventClassKey,
+        behavior: raw.behavior,
+      };
     default:
       return null;
   }

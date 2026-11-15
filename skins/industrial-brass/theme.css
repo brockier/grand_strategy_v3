@@ -645,6 +645,184 @@ dialog::backdrop {
   border: 1px solid var(--skin-border-ink);
 }
 
+:root {
+  --chart-series-1: #d99b38;
+  --chart-series-2: #58b4c9;
+  --chart-series-3: #8ec06c;
+  --chart-series-4: #d96248;
+  --chart-band-fill: rgba(217, 155, 56, 0.18);
+  --chart-grid-stroke: rgba(196, 173, 128, 0.20);
+  --chart-axis-ink: #e4d7bc;
+  --provenance-direct-bg: #1e3826;
+  --provenance-direct-fg: #a6e3b6;
+  --provenance-courier-bg: #3b2e16;
+  --provenance-courier-fg: #f2cf83;
+  --provenance-stale-bg: #3d1d1c;
+  --provenance-stale-fg: #f2a79d;
+  --overload-ok: #72c488;
+  --overload-warn: #e6ac40;
+  --overload-crit: #eb6a5b;
+  --convoy-confirmed: #72c488;
+  --convoy-projected: #c9ab6b;
+  --convoy-overdue: #eb6a5b;
+}
+
+.ng-virtual-viewport {
+  overflow: auto;
+  max-inline-size: 100%;
+  max-block-size: min(440px, 58vh);
+  container-type: inline-size;
+  background-color: var(--skin-bg-inset);
+  border: 1px solid var(--skin-border-ink);
+  position: relative;
+}
+
+.ng-ledger-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+}
+
+.ng-ledger-table caption {
+  text-align: left;
+  padding: 6px 8px;
+  font-weight: 600;
+  color: var(--chart-axis-ink);
+}
+
+.ng-ledger-table thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  background-color: var(--skin-bg-panel);
+  border-bottom: 2px solid var(--skin-border-ink);
+  padding: 0;
+  text-align: left;
+}
+
+.ng-ledger-table th[aria-sort] button.ng-sort-btn {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ng-ledger-table td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--skin-border-ink);
+  white-space: nowrap;
+}
+
+.ng-virtual-row {
+  height: 32px;
+}
+
+.ng-prov-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid currentColor;
+}
+
+.ng-prov-badge[data-tier="direct"] {
+  background-color: var(--provenance-direct-bg);
+  color: var(--provenance-direct-fg);
+}
+
+.ng-prov-badge[data-tier="courier"] {
+  background-color: var(--provenance-courier-bg);
+  color: var(--provenance-courier-fg);
+}
+
+.ng-prov-badge[data-tier="stale"] {
+  background-color: var(--provenance-stale-bg);
+  color: var(--provenance-stale-fg);
+}
+
+.ng-dispatch-token {
+  display: inline;
+  padding: 0 3px;
+  border: 0;
+  border-bottom: 1px dotted currentColor;
+  background: transparent;
+  color: var(--chart-series-2);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ng-form-fieldset {
+  border: 1px solid var(--skin-border-ink);
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+.ng-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px 12px;
+  align-items: end;
+}
+
+.ng-impact-output {
+  display: block;
+  padding: 8px 10px;
+  background-color: var(--skin-bg-inset);
+  border: 1px solid var(--skin-border-ink);
+  font-variant-numeric: tabular-nums;
+  margin-top: 8px;
+}
+
+.ng-org-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.ng-subordinate-card,
+.ng-proposal-card {
+  border: 1px solid var(--skin-border-ink);
+  background-color: var(--skin-bg-inset);
+  padding: 8px 10px;
+}
+
+.ng-autopause-banner {
+  padding: 6px 10px;
+  border: 1px solid var(--overload-crit);
+  background-color: var(--provenance-stale-bg);
+  color: var(--provenance-stale-fg);
+  font-weight: 700;
+}
+
+:where(button, input, select, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--overload-warn);
+  outline-offset: 2px;
+}
+
+@container (width < 540px) {
+  .ng-ledger-table th,
+  .ng-ledger-table td {
+    padding: 4px 6px;
+    font-size: 0.78rem;
+  }
+}
+
 .ng-diagnostic-table {
   width: 100%;
   border-collapse: separate;
@@ -721,4 +899,35 @@ dialog::backdrop {
     content: var(--label-5) ": ";
     font-weight: 600;
   }
+}
+
+.ng-overlay-legend {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  pointer-events: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 10px;
+  background-color: var(--skin-bg-panel);
+  border: 1px solid var(--skin-border-ink);
+  z-index: 20;
+}
+
+.ng-chart-canvas-wrap {
+  position: relative;
+  width: 100%;
+  min-height: 210px;
+}
+
+.ng-chart-tooltip {
+  position: absolute;
+  pointer-events: none;
+  padding: 4px 8px;
+  background-color: var(--skin-bg-panel);
+  border: 1px solid var(--skin-border-ink);
+  font-size: 0.76rem;
+  z-index: 5;
 }

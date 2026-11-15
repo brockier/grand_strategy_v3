@@ -227,7 +227,7 @@ void main() {
 
   float tier = vCellData.a;
   // Unexplored cells have tier == 0.0: render pure opaque blank vellum/parchment without hidden info.
-  if (tier < 0.15) {
+  if (tier < 0.08) {
     vec3 vellum = uUnexploredVellumRgb * (0.92 + 0.14 * grainLum);
     vellum = mix(vellum, uContourInkRgb, 0.10 * grat + 0.06 * cellBorder);
     if (isHover > 0.5 || isSelect > 0.5) {
@@ -241,7 +241,9 @@ void main() {
   float elevNorm = vCellData.r;
   float rainNorm = vCellData.g;
   float biomeCode = vCellData.b;
-  float isStale = step(tier, 0.48);
+  float isRumored = step(0.08, tier) * step(tier, 0.25);
+  float isStale = step(0.25, tier) * step(tier, 0.48);
+  float isDatedSurvey = step(0.48, tier) * step(tier, 0.71);
 
   bool isOcean = (elevNorm < 0.5) || (biomeCode < 0.20);
   vec3 reliefBase;
@@ -265,10 +267,6 @@ void main() {
   float ndl = clamp(dot(normalize(vWorldNormal), normalize(uSunDir)), 0.0, 1.0);
   float hillshade = 0.52 + 0.55 * ndl;
   vec3 shadedRelief = reliefBase * hillshade;
-
-  if (uWeatherOverlay > 0.5 && rainNorm > 0.05) {
-    shadedRelief = mix(shadedRelief, uRiverWaterRgb, clamp(rainNorm * 0.55, 0.0, 0.55));
-  }
 
   // Cartographic antique parchment map layer (uCartographicBlend near 1.0)
   vec3 mapPaper = uUnexploredVellumRgb * (0.95 + 0.10 * grainLum);
@@ -294,11 +292,25 @@ void main() {
 
   vec3 finalRgb = mix(shadedRelief, mapColor, uCartographicBlend);
 
-  // Stale tier fogging: desaturated dusty vellum wash
-  if (isStale > 0.5) {
+  if (rainNorm > 0.05) {
+    finalRgb *= (1.0 - 0.16 * rainNorm);
+  }
+  if (uWeatherOverlay > 0.5 && rainNorm > 0.05) {
+    finalRgb = mix(finalRgb, uRiverWaterRgb, clamp(rainNorm * 0.58, 0.0, 0.58));
+  }
+
+  // 4-tier epistemic washes: Rumored sketch, Stale dust, Dated Survey slight softening
+  if (isRumored > 0.5) {
+    float luma = dot(finalRgb, vec3(0.299, 0.587, 0.114));
+    vec3 sketch = mix(uUnexploredVellumRgb, vec3(luma), 0.28);
+    finalRgb = mix(sketch, uContourInkRgb, 0.10 * grat + 0.08 * hatchInk);
+  } else if (isStale > 0.5) {
     float luma = dot(finalRgb, vec3(0.299, 0.587, 0.114));
     vec3 faded = mix(vec3(luma), uUnexploredVellumRgb, 0.55);
     finalRgb = mix(finalRgb, faded, 0.65);
+  } else if (isDatedSurvey > 0.5) {
+    float luma = dot(finalRgb, vec3(0.299, 0.587, 0.114));
+    finalRgb = mix(finalRgb, vec3(luma), 0.18);
   }
 
   // Hover and selected cell perimeter emphasis
@@ -425,15 +437,25 @@ export function createGlobeShaderController(initialPalette?: GlobePalette): Glob
           continue;
         }
         const offset = cell.cellId * 4;
-        const isOcean = cell.tier === "surveyed" ? Boolean(cell.isOcean || cell.elevationM < 0) : cell.elevationM < 0;
+        const isOcean = Boolean(cell.isOcean || cell.elevationM < 0);
         buf[offset] = encodeElevationByte(cell.elevationM, isOcean);
 
         const weather = weatherByCell.get(cell.cellId);
         const precip = weather ? Math.max(0, Math.min(1, weather.precipMmHr / 25)) : 0;
-        buf[offset + 1] = cell.tier === "surveyed" ? Math.round(precip * 255) : 0;
+        const wetness = weather
+          ? Math.max(0, Math.min(1, Math.max(precip, (weather.mudIndex01 ?? 0) * 0.85)))
+          : 0;
+        buf[offset + 1] = cell.tier === "surveyed" ? Math.round(wetness * 255) : 0;
         buf[offset + 2] = encodeBiomeByte(cell);
 
-        let alpha = cell.tier === "stale" ? 85 : 170;
+        let alpha = 42;
+        if (cell.tier === "rumored") {
+          alpha = 42;
+        } else if (cell.tier === "stale") {
+          alpha = 85;
+        } else {
+          alpha = cell.isLiveHqSight ? 192 : 170;
+        }
         if (cell.cellId === selectedCellId || cell.cellId === hoveredCellId) {
           alpha = 255;
         } else if (cell.tier === "surveyed" && precip > 0.15) {

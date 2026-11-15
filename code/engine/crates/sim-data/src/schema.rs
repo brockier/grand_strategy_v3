@@ -125,6 +125,52 @@ pub struct PlanetGenDomain {
     pub planet_generation: Option<PlanetGenerationRecord>,
 }
 
+fn default_tool_hardness() -> f32 {
+    0.75
+}
+fn default_process_min_temp() -> f32 {
+    -40.0
+}
+fn default_process_max_temp() -> f32 {
+    50.0
+}
+fn default_process_opt_moisture() -> f32 {
+    0.45
+}
+fn default_tool_wear_intensity() -> f64 {
+    1.0
+}
+fn default_max_ice_thickness() -> f32 {
+    0.15
+}
+fn default_daily_water_kg() -> f64 {
+    2.0
+}
+fn default_daily_fuel_kg() -> f64 {
+    1.2
+}
+fn default_daily_clothing_kg() -> f64 {
+    0.005
+}
+fn default_dependents_share() -> f32 {
+    0.20
+}
+fn default_elders_share() -> f32 {
+    0.12
+}
+fn default_roof_protection() -> f32 {
+    0.95
+}
+fn default_half_f32() -> f32 {
+    0.50
+}
+fn default_low_drive_f32() -> f32 {
+    0.25
+}
+fn default_high_loyalty_f32() -> f32 {
+    0.70
+}
+
 // --- Domain 2: Commodities, Materials & Knowledge Primitives ---
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -144,6 +190,18 @@ pub struct CommodityRecord {
     pub is_tool: bool,
     #[serde(default)]
     pub tool_wear_per_hour: f64,
+    #[serde(default)]
+    pub caloric_mcal_per_kg: f64,
+    #[serde(default)]
+    pub potable_liters_per_kg: f64,
+    #[serde(default)]
+    pub heating_mj_per_kg: f64,
+    #[serde(default)]
+    pub is_clothing: bool,
+    #[serde(default = "default_tool_hardness")]
+    pub tool_hardness_rating: f32,
+    #[serde(default)]
+    pub is_slag_or_waste: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -193,7 +251,27 @@ pub struct ProcessRecord {
     pub workforce_hours_required: f64,
     #[serde(default)]
     pub tool_commodity: Option<String>,
+    #[serde(default)]
+    pub fallback_tool_commodity: Option<String>,
+    #[serde(default)]
+    pub waste_commodity: Option<String>,
     pub weather_halt_mud_threshold: f32,
+    #[serde(default)]
+    pub is_outdoor_construction: bool,
+    #[serde(default)]
+    pub is_underground_mine: bool,
+    #[serde(default)]
+    pub is_crop_cultivation: bool,
+    #[serde(default)]
+    pub is_mine_drainage: bool,
+    #[serde(default = "default_process_min_temp")]
+    pub min_temp_c: f32,
+    #[serde(default = "default_process_max_temp")]
+    pub max_temp_c: f32,
+    #[serde(default = "default_process_opt_moisture")]
+    pub optimal_moisture_01: f32,
+    #[serde(default = "default_tool_wear_intensity")]
+    pub tool_wear_intensity: f64,
     #[serde(default)]
     pub inputs: Vec<ProcessQuantityRecord>,
     #[serde(default)]
@@ -222,6 +300,18 @@ pub struct CarrierRecord {
     pub crew_required: u32,
     pub fodder_or_fuel_commodity: String,
     pub fuel_burn_kg_per_hour: f64,
+    #[serde(default)]
+    pub allowed_infra_classes: Vec<String>,
+    #[serde(default)]
+    pub is_watercraft: bool,
+    #[serde(default)]
+    pub uses_wind_sail: bool,
+    #[serde(default = "default_max_ice_thickness")]
+    pub max_ice_thickness_m: f32,
+    #[serde(default)]
+    pub spare_parts_commodity: Option<String>,
+    #[serde(default)]
+    pub spare_parts_wear_per_km: f64,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -257,6 +347,16 @@ pub struct CohortArchetypeRecord {
     pub base_fertility_annual: f32,
     pub base_mortality_annual: f32,
     pub initial_literacy: f32,
+    #[serde(default = "default_daily_water_kg")]
+    pub daily_water_need_kg: f64,
+    #[serde(default = "default_daily_fuel_kg")]
+    pub daily_fuel_need_kg_below_10c: f64,
+    #[serde(default = "default_daily_clothing_kg")]
+    pub daily_clothing_wear_kg: f64,
+    #[serde(default = "default_dependents_share")]
+    pub dependents_share_01: f32,
+    #[serde(default = "default_elders_share")]
+    pub elders_share_01: f32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -404,6 +504,8 @@ pub struct StartingStockpileRecord {
     pub commodity: String,
     pub mass_kg: f64,
     pub purity: f32,
+    #[serde(default = "default_roof_protection")]
+    pub roof_protection_01: f32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -419,6 +521,8 @@ pub struct StartingCohortRecord {
 pub struct StartingFacilityRecord {
     pub process: String,
     pub workers: u32,
+    #[serde(default)]
+    pub owner_actor_id: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
@@ -428,6 +532,8 @@ pub struct StartingSettlementRecord {
     pub display_name: String,
     pub cell_index: u32,
     pub initial_population: u32,
+    #[serde(default)]
+    pub initial_shaft_water_01: f32,
     #[serde(default)]
     pub stockpiles: Vec<StartingStockpileRecord>,
     #[serde(default)]
@@ -449,6 +555,16 @@ pub struct StartingCharacterRecord {
     pub caution_vs_alarmism: f32,
     #[serde(default)]
     pub traits: Vec<String>,
+    #[serde(default = "default_half_f32")]
+    pub initiative_01: f32,
+    #[serde(default = "default_half_f32")]
+    pub adaptability_01: f32,
+    #[serde(default = "default_low_drive_f32")]
+    pub ambition_01: f32,
+    #[serde(default = "default_high_loyalty_f32")]
+    pub loyalty_01: f32,
+    #[serde(default = "default_low_drive_f32")]
+    pub greed_skimming_01: f32,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema)]

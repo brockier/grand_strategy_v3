@@ -796,8 +796,12 @@ export class DesktopWindowManager implements LayoutPresetPort {
         ? clamp(tabIdOrIndex, 0, frame.tabs.length - 1)
         : frame.tabs.findIndex((t) => t.tabId === tabIdOrIndex);
     if (idx === -1) return;
+    const changed = frame.activeTabIndex !== idx;
     frame.activeTabIndex = idx;
     this.syncFrameChrome(frame);
+    if (changed) {
+      this.spine.bus.emit({ kind: "PlayUiFoley", cueId: "ledger_page_turn" });
+    }
   }
 
   public dockFrameInto(sourceFrameId: string, targetFrameId: string): boolean {
@@ -820,6 +824,7 @@ export class DesktopWindowManager implements LayoutPresetPort {
     if (dst.collapsed) this.toggleCollapse(dst.frameId);
     this.syncFrameChrome(dst);
     this.focusFrame(dst.frameId);
+    this.spine.bus.emit({ kind: "PlayUiFoley", cueId: "window_open" });
     this.emitPersistence();
     return true;
   }
@@ -953,7 +958,7 @@ export class DesktopWindowManager implements LayoutPresetPort {
     }
 
     if (typeof document.querySelectorAll === "function") {
-      const occluders = document.querySelectorAll<HTMLElement>(".ng-hud-bar, dialog[open]");
+      const occluders = document.querySelectorAll<HTMLElement>(".ng-hud-bar, [data-chrome-occluder='true'], dialog[open]");
       for (const el of Array.from(occluders)) {
         const rect = el.getBoundingClientRect();
         if (

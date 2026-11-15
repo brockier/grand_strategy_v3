@@ -10,7 +10,11 @@ import {
 } from "./spine";
 import { initializeGlobeViewport, GlobeViewportController } from "./globe";
 import {
+  EpistemicCurrencyOverlayLayer,
+  LogisticsConvoyOverlayLayer,
   OcclusionAwareCellPicker,
+  OverlayToolbarLayer,
+  WeatherHydrologyOverlayLayer,
   createBaselineOverlayPlugin,
   createOperationalWarfareStubLayer,
   createTradeAndCongestionStubLayer,
@@ -21,12 +25,21 @@ import {
   createPlaceholderWindowPlugin,
 } from "./windows";
 import {
+  createDelegationOrgTreeWindowPlugin,
   createEntityInspectorWindowPlugin,
   createLayoutPresetsWindowPlugin,
   createLedgerStubPlugin,
+  createTimeSeriesChartWindowPlugin,
 } from "./views";
 import { createDispatchInboxStubPlugin } from "./dispatches";
-import { mountCommandHud } from "./hud";
+import {
+  createArbitrationWindowPlugin,
+  createAttentionZoomWindowPlugin,
+  createHqRelocationPlannerWindowPlugin,
+  createMandateComposerWindowPlugin,
+  createNotificationMatrixWindowPlugin,
+  mountCommandHud,
+} from "./hud";
 import { SkinManager, createSkinSwitcherWindowPlugin } from "./skins";
 import { AudioMixerEngine, createAudioSettingsWindowPlugin } from "./audio";
 
@@ -105,14 +118,25 @@ async function bootstrapShell(): Promise<void> {
   });
 
   registry.registerMapLayer(createBaselineOverlayPlugin());
+  registry.registerMapLayer(new EpistemicCurrencyOverlayLayer());
+  registry.registerMapLayer(new WeatherHydrologyOverlayLayer());
+  registry.registerMapLayer(new LogisticsConvoyOverlayLayer());
+  registry.registerMapLayer(new OverlayToolbarLayer());
   registry.registerMapLayer(new OcclusionAwareCellPicker());
   registry.registerMapLayer(createTradeAndCongestionStubLayer());
   registry.registerMapLayer(createOperationalWarfareStubLayer());
 
   registry.registerWindowPlugin(createPlaceholderWindowPlugin());
   registry.registerWindowPlugin(createLedgerStubPlugin());
+  registry.registerWindowPlugin(createTimeSeriesChartWindowPlugin());
+  registry.registerWindowPlugin(createDelegationOrgTreeWindowPlugin());
   registry.registerWindowPlugin(createEntityInspectorWindowPlugin());
   registry.registerWindowPlugin(createDispatchInboxStubPlugin());
+  registry.registerWindowPlugin(createMandateComposerWindowPlugin());
+  registry.registerWindowPlugin(createArbitrationWindowPlugin());
+  registry.registerWindowPlugin(createAttentionZoomWindowPlugin());
+  registry.registerWindowPlugin(createHqRelocationPlannerWindowPlugin());
+  registry.registerWindowPlugin(createNotificationMatrixWindowPlugin());
   registry.registerWindowPlugin(createSkinSwitcherWindowPlugin(skinManager));
   registry.registerWindowPlugin(createAudioSettingsWindowPlugin(audioEngine));
   registry.registerWindowPlugin(createLayoutPresetsWindowPlugin());
@@ -126,6 +150,7 @@ async function bootstrapShell(): Promise<void> {
       assetResolver: skinManager.assetResolver,
       audioPrefs: audioEngine,
       readPreferences: bridge.readUserPreferences,
+      writePreferences: bridge.writeUserPreferences,
     },
     {
       viewportWidth: window.innerWidth || 1280,

@@ -6,6 +6,7 @@ mass_per_unit_kg = 1.0
 volume_per_unit_m3 = 0.0014
 spoilage_rate_per_hour = 0.00005
 energy_mj_per_kg = 14.2
+caloric_mcal_per_kg = 3.4
 structural_strength = 0.05
 is_tool = false
 tool_wear_per_hour = 0.0
@@ -18,6 +19,7 @@ mass_per_unit_kg = 1.0
 volume_per_unit_m3 = 0.0018
 spoilage_rate_per_hour = 0.00001
 energy_mj_per_kg = 15.0
+heating_mj_per_kg = 15.0
 structural_strength = 0.45
 is_tool = false
 tool_wear_per_hour = 0.0
@@ -42,6 +44,7 @@ mass_per_unit_kg = 1.0
 volume_per_unit_m3 = 0.0040
 spoilage_rate_per_hour = 0.0
 energy_mj_per_kg = 29.6
+heating_mj_per_kg = 29.6
 structural_strength = 0.10
 is_tool = false
 tool_wear_per_hour = 0.0
@@ -69,6 +72,7 @@ energy_mj_per_kg = 0.0
 structural_strength = 0.98
 is_tool = true
 tool_wear_per_hour = 0.00025
+tool_hardness_rating = 0.98
 
 [[commodities]]
 id = "forged_hand_tools"
@@ -81,3 +85,40 @@ energy_mj_per_kg = 0.0
 structural_strength = 0.72
 is_tool = true
 tool_wear_per_hour = 0.0008
+tool_hardness_rating = 0.72
+
+[[commodities]]
+id = "potable_water"
+display_name = "Potable Cistern Water"
+category = "Water"
+mass_per_unit_kg = 1.0
+volume_per_unit_m3 = 0.0010
+spoilage_rate_per_hour = 0.0
+potable_liters_per_kg = 1.0
+structural_strength = 0.0
+is_tool = false
+tool_wear_per_hour = 0.0
+
+[[commodities]]
+id = "slag_tailings"
+display_name = "Smelter Slag & Quarry Tailings"
+category = "Waste"
+mass_per_unit_kg = 1.0
+volume_per_unit_m3 = 0.0004
+spoilage_rate_per_hour = 0.0
+structural_strength = 0.25
+is_tool = false
+tool_wear_per_hour = 0.0
+is_slag_or_waste = true
+
+[[commodities]]
+id = "simple_clothing"
+display_name = "Homespun Weather Clothing"
+category = "Consumer"
+mass_per_unit_kg = 1.0
+volume_per_unit_m3 = 0.0030
+spoilage_rate_per_hour = 0.00001
+structural_strength = 0.15
+is_tool = false
+is_clothing = true
+tool_wear_per_hour = 0.0

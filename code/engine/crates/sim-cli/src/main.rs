@@ -7,10 +7,39 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
 
-use player_view::{ModDiagnosticDto, ModValidationFailureState};
+use player_view::{ModDiagnosticDto, ModValidationFailureState, ValidatedPlayerCommand};
+use serde::Deserialize;
 use sim_data::{export_json_schemas, load_mod_bundle};
 use sim_scenario::{resolve_scenario_pack_stack, ScenarioWorld};
-use sim_spine::{ModRegistryPort, PhysicalLedgerPort, PlanetGeometryPort};
+use sim_spine::{ModRegistryPort, PhysicalLedgerPort, PlanetGeometryPort, Tick};
+
+#[derive(Deserialize)]
+struct TimedCommandInput {
+    tick: u64,
+    command: ValidatedPlayerCommand,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum CommandBatchEntry {
+    Timed(TimedCommandInput),
+    Immediate(ValidatedPlayerCommand),
+}
+
+fn enqueue_commands_json(world: &mut ScenarioWorld, raw: &str) -> Result<(), String> {
+    let entries: Vec<CommandBatchEntry> =
+        serde_json::from_str(raw).map_err(|err| format!("Invalid --commands-json payload: {err}"))?;
+    let default_tick = world.clock.current_tick.get() + 1;
+    for entry in entries {
+        let (target_tick, validated) = match entry {
+            CommandBatchEntry::Timed(item) => (Tick(item.tick.max(1)), item.command),
+            CommandBatchEntry::Immediate(cmd) => (Tick(default_tick), cmd),
+        };
+        let spine_cmd = validated.to_spine_command()?;
+        world.enqueue_command(target_tick, spine_cmd);
+    }
+    Ok(())
+}
 
 fn to_diag_dtos(diags: Vec<sim_data::ModDiagnostic>) -> Vec<ModDiagnosticDto> {
     diags
@@ -137,13 +166,21 @@ fn main() -> ExitCode {
             }
         }
         "dump-snapshot" => {
-            let packs = resolve_packs_from_args(&args[2..]);
-            let ticks = parse_u64_flag(&args[2..], "--ticks", 0);
-            let seed = parse_u64_flag(&args[2..], "--seed", 42);
+            let sub = &args[2..];
+            let packs = resolve_packs_from_args(sub);
+            let ticks = parse_u64_flag(sub, "--ticks", 0);
+            let seed = parse_u64_flag(sub, "--seed", 42);
+            let commands_json = parse_str_flag(sub, "--commands-json");
             let pack_refs: Vec<&Path> = packs.iter().map(PathBuf::as_path).collect();
             match load_mod_bundle(&pack_refs) {
                 Ok(bundle) => {
                     let mut world = ScenarioWorld::from_registry(&bundle, seed);
+                    if let Some(ref raw_cmds) = commands_json
+                        && let Err(err) = enqueue_commands_json(&mut world, raw_cmds)
+                    {
+                        eprintln!("{err}");
+                        return ExitCode::FAILURE;
+                    }
                     world.step_ticks(&bundle, ticks);
                     let snap = world.compile_diegetic_snapshot(&bundle);
                     println!(
@@ -165,6 +202,7 @@ fn main() -> ExitCode {
             let profile_human = has_flag(sub, "--profile-human");
             let save_out = parse_str_flag(sub, "--save-out");
             let load_in = parse_str_flag(sub, "--load-in");
+            let commands_json = parse_str_flag(sub, "--commands-json");
 
             let pack_refs: Vec<&Path> = packs.iter().map(PathBuf::as_path).collect();
             match load_mod_bundle(&pack_refs) {
@@ -175,6 +213,12 @@ fn main() -> ExitCode {
                         && let Err(err) = world.load_from_path(Path::new(load_path), &bundle)
                     {
                         eprintln!("Failed loading snapshot {load_path}: {err}");
+                        return ExitCode::FAILURE;
+                    }
+                    if let Some(ref raw_cmds) = commands_json
+                        && let Err(err) = enqueue_commands_json(&mut world, raw_cmds)
+                    {
+                        eprintln!("{err}");
                         return ExitCode::FAILURE;
                     }
                     if threads > 0
@@ -207,13 +251,14 @@ fn main() -> ExitCode {
                         "ticksPerSecond": (ticks as f64 / elapsed).round(),
                         "planetCells": world.planet.cell_count(),
                         "populationSummary": {
-                            "totalPopulation": world.core.total_population(),
+                            "totalPopulation": world.pop.total_population(),
                             "settlementCount": world.core.settlements().len(),
-                            "cohortCount": world.core.cohort_count()
+                            "cohortCount": world.pop.all_cohorts().len()
                         },
                         "economySummary": {
-                            "totalStockpileMassKg": world.core.total_stockpile_mass_kg(),
-                            "facilityCount": world.core.facility_count()
+                            "totalStockpileMassKg": world.economy.total_stockpile_mass_kg(),
+                            "facilityCount": world.economy.facilities().len(),
+                            "conservationErrorKg": world.economy.conservation_error_kg()
                         },
                         "assertionsPassed": true
                     });

@@ -63,6 +63,7 @@ export class AudioMixerEngine implements AudioPreferencesPort {
   private readonly playedFoleyLog: FoleyPlaybackRecord[] = [];
   private readonly settingsListeners = new Set<() => void>();
   private readonly cleanups: Array<() => void> = [];
+  private lastSeenDispatchCount: number | null = null;
 
   constructor(
     bus: UiIntentBus,
@@ -98,8 +99,13 @@ export class AudioMixerEngine implements AudioPreferencesPort {
 
     if (this.store) {
       this.cleanups.push(
-        this.store.subscribe(() => {
+        this.store.subscribe((snap) => {
           this.syncAudioNodes();
+          const count = snap.dispatchInbox.length;
+          if (this.lastSeenDispatchCount !== null && count > this.lastSeenDispatchCount) {
+            this.triggerFoleyCue("alert_bell");
+          }
+          this.lastSeenDispatchCount = count;
         }),
       );
     }
@@ -287,7 +293,13 @@ export class AudioMixerEngine implements AudioPreferencesPort {
         const osc = this.audioCtx.createOscillator();
         const env = this.audioCtx.createGain();
         osc.type = "triangle";
-        osc.frequency.value = cueId === "window_close" ? 240 : 420;
+        let freq = 420;
+        if (cueId === "window_close") freq = 240;
+        else if (cueId === "mandate_seal") freq = 310;
+        else if (cueId === "dispatch_seal_break") freq = 360;
+        else if (cueId === "ledger_page_turn") freq = 510;
+        else if (cueId === "alert_bell") freq = 660;
+        osc.frequency.value = freq;
         env.gain.setValueAtTime(0.08, this.audioCtx.currentTime);
         env.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.045);
         osc.connect(env);
@@ -320,12 +332,14 @@ export function mountAudioController(
   const engine = new AudioMixerEngine(bus, { store, bridge, initialSettings });
   const handle = Object.assign(() => engine.dispose(), {
     getSettings: () => engine.getSettings(),
+    subscribeSettings: (listener: () => void) => engine.subscribeSettings(listener),
     updateSettings: (patch: Partial<AudioMixerSettings>) => engine.updateSettings(patch),
     getEffectiveGains: () => engine.getEffectiveGains(),
     setAltitudeAndCell: (alt: number, cellId?: number) => engine.setAltitudeAndCell(alt, cellId),
     getManifest: () => engine.getManifest(),
     getPlayedFoleyLog: () => engine.getPlayedFoleyLog(),
     getWebAudioNodeValues: () => engine.getWebAudioNodeValues(),
+    triggerFoleyCue: (cueId: string, nowMs?: number) => engine.triggerFoleyCue(cueId, nowMs),
     dispose: () => engine.dispose(),
   });
   return handle as unknown as AudioMixerEngine & (() => void);

@@ -21,9 +21,24 @@ mass_kg = 2400.0
 purity = 0.95
 
 [[starting_settlements.stockpiles]]
+commodity = "potable_water"
+mass_kg = 3000.0
+purity = 0.98
+
+[[starting_settlements.stockpiles]]
 commodity = "colony_precision_tools"
 mass_kg = 420.0
 purity = 0.98
+
+[[starting_settlements.stockpiles]]
+commodity = "forged_hand_tools"
+mass_kg = 120.0
+purity = 0.92
+
+[[starting_settlements.stockpiles]]
+commodity = "simple_clothing"
+mass_kg = 350.0
+purity = 0.90
 
 [[starting_settlements.stockpiles]]
 commodity = "timber"
@@ -60,8 +75,16 @@ process = "subsistence_farming"
 workers = 36
 
 [[starting_settlements.initial_facilities]]
+process = "well_and_cistern_draw"
+workers = 12
+
+[[starting_settlements.initial_facilities]]
 process = "logging_camp"
 workers = 24
+
+[[starting_settlements.initial_facilities]]
+process = "textile_and_hide_tailoring"
+workers = 5
 
 [[starting_characters]]
 id = "mara_chen"

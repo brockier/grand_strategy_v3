@@ -1,0 +1,1177 @@
+{
+  "schemaVersion": 2,
+  "scenarioKey": "unexplained_colony_v1",
+  "scenarioName": "The Unexplained Colony",
+  "globeTopology": {
+    "subdivision": 3,
+    "cellCount": 642
+  },
+  "knownCells": [
+    {
+      "tier": "unexplored",
+      "cellId": 0
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 1
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 2
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 3
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 4
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 5
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 6
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 7
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 8
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 9
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 10
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 11
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 12
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 13
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 14
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 15
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 16
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 17
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 18
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 19
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 20
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 21
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 22
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 23
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 24
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 25
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 26
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 27
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 28
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 29
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 30
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 31
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 32
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 33
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 34
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 35
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 36
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 37
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 38
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 39
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 40
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 41
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 42
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 43
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 44
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 45
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 46
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 47
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 48
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 49
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 50
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 51
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 52
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 53
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 54
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 55
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 56
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 57
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 58
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 59
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 60
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 61
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 62
+    },
+    {
+      "tier": "unexplored",
+      "cellId": 63
+    },
+    {
+      "tier": "surveyed",
+      "cellId": 77,
+      "observedTick": 72,
+      "isLiveHqSight": true,
+      "elevationM": 283.78503,
+      "confidence01": 1.0,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "biomeKey": "boreal_taiga",
+      "isOcean": false,
+      "riverDownstreamCellId": 72,
+      "riverFlowNorm01": 1.0,
+      "depositEstimates": []
+    },
+    {
+      "tier": "surveyed",
+      "cellId": 78,
+      "observedTick": 72,
+      "isLiveHqSight": true,
+      "elevationM": 11.581238,
+      "confidence01": 1.0,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "biomeKey": "temperate_forest",
+      "isOcean": false,
+      "riverDownstreamCellId": 73,
+      "riverFlowNorm01": 1.0,
+      "depositEstimates": []
+    },
+    {
+      "tier": "surveyed",
+      "cellId": 81,
+      "observedTick": 72,
+      "isLiveHqSight": true,
+      "elevationM": 651.83734,
+      "confidence01": 1.0,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "biomeKey": "temperate_grassland",
+      "isOcean": false,
+      "riverDownstreamCellId": 82,
+      "riverFlowNorm01": 1.0,
+      "depositEstimates": []
+    },
+    {
+      "tier": "surveyed",
+      "cellId": 82,
+      "observedTick": 72,
+      "isLiveHqSight": true,
+      "elevationM": 119.07086,
+      "confidence01": 1.0,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "biomeKey": "temperate_grassland",
+      "isOcean": false,
+      "riverDownstreamCellId": 207,
+      "riverFlowNorm01": 1.0,
+      "depositEstimates": []
+    },
+    {
+      "tier": "surveyed",
+      "cellId": 85,
+      "observedTick": 72,
+      "isLiveHqSight": true,
+      "elevationM": 150.12604,
+      "confidence01": 1.0,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "biomeKey": "temperate_grassland",
+      "isOcean": false,
+      "riverDownstreamCellId": 212,
+      "riverFlowNorm01": 1.0,
+      "depositEstimates": []
+    },
+    {
+      "tier": "surveyed",
+      "cellId": 207,
+      "observedTick": 72,
+      "isLiveHqSight": true,
+      "elevationM": -31.576965,
+      "confidence01": 1.0,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "biomeKey": "shallow_sea",
+      "isOcean": true,
+      "riverDownstreamCellId": null,
+      "riverFlowNorm01": 0.0,
+      "depositEstimates": []
+    },
+    {
+      "tier": "surveyed",
+      "cellId": 212,
+      "observedTick": 72,
+      "isLiveHqSight": true,
+      "elevationM": 0.0,
+      "confidence01": 1.0,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "biomeKey": "shallow_sea",
+      "isOcean": true,
+      "riverDownstreamCellId": null,
+      "riverFlowNorm01": 0.0,
+      "depositEstimates": []
+    }
+  ],
+  "hqPresence": {
+    "mode": "Stationary",
+    "cellId": 82,
+    "settlementName": "Haven Landing Perimeter",
+    "sightRadiusCells": 1,
+    "inTransit": false,
+    "destinationCellId": null,
+    "etaTick": null,
+    "communicationContours": [
+      {
+        "cellId": 82,
+        "estimatedCourierHours": 1.0
+      }
+    ],
+    "relocationPreviews": [
+      {
+        "targetCellId": 85,
+        "label": "Forward Post Cell #85",
+        "travelHours": 287.25012,
+        "projectedHavenLatencyHours": 69.76074
+      },
+      {
+        "targetCellId": 78,
+        "label": "Forward Post Cell #78",
+        "travelHours": 287.25015,
+        "projectedHavenLatencyHours": 69.76075
+      },
+      {
+        "targetCellId": 77,
+        "label": "Forward Post Cell #77",
+        "travelHours": 286.89432,
+        "projectedHavenLatencyHours": 69.67433
+      },
+      {
+        "targetCellId": 81,
+        "label": "Forward Post Cell #81",
+        "travelHours": 286.89456,
+        "projectedHavenLatencyHours": 69.67439
+      }
+    ]
+  },
+  "knownSettlements": [
+    {
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "cellId": 82,
+      "isHq": true
+    }
+  ],
+  "surveyedRoads": [
+    {
+      "edgeId": 296,
+      "fromCellId": 82,
+      "toCellId": 85,
+      "infraKey": "foot_trail",
+      "washedOut": false,
+      "riverEdge": false,
+      "bridgeCapKg": null
+    },
+    {
+      "edgeId": 285,
+      "fromCellId": 82,
+      "toCellId": 78,
+      "infraKey": "foot_trail",
+      "washedOut": false,
+      "riverEdge": false,
+      "bridgeCapKg": null
+    },
+    {
+      "edgeId": 283,
+      "fromCellId": 82,
+      "toCellId": 77,
+      "infraKey": "foot_trail",
+      "washedOut": false,
+      "riverEdge": false,
+      "bridgeCapKg": null
+    },
+    {
+      "edgeId": 295,
+      "fromCellId": 82,
+      "toCellId": 81,
+      "infraKey": "foot_trail",
+      "washedOut": false,
+      "riverEdge": true,
+      "bridgeCapKg": null
+    }
+  ],
+  "trackedConvoys": [],
+  "observedWeather": [
+    {
+      "cellId": 77,
+      "observedTick": 72,
+      "precipMmHr": 1.694868,
+      "mudIndex01": 0.42312875,
+      "tempC": 6.318962,
+      "visibility01": 0.8053605,
+      "floodStage01": 0.18256076,
+      "snowDepthM": 0.0,
+      "iceThicknessM": 0.0,
+      "windUMps": 2.7509995,
+      "windVMps": 1.1394169
+    },
+    {
+      "cellId": 78,
+      "observedTick": 72,
+      "precipMmHr": 2.0965075,
+      "mudIndex01": 0.54857945,
+      "tempC": 10.388947,
+      "visibility01": 0.7871042,
+      "floodStage01": 0.33379203,
+      "snowDepthM": 0.0,
+      "iceThicknessM": 0.0,
+      "windUMps": 6.0373096,
+      "windVMps": 2.9374967
+    },
+    {
+      "cellId": 81,
+      "observedTick": 72,
+      "precipMmHr": 1.826294,
+      "mudIndex01": 0.43882906,
+      "tempC": 7.087344,
+      "visibility01": 0.7993866,
+      "floodStage01": 0.26972872,
+      "snowDepthM": 0.0,
+      "iceThicknessM": 0.0,
+      "windUMps": 5.188573,
+      "windVMps": 0.57029295
+    },
+    {
+      "cellId": 82,
+      "observedTick": 72,
+      "precipMmHr": 1.9769884,
+      "mudIndex01": 0.55866504,
+      "tempC": 11.444458,
+      "visibility01": 0.79253685,
+      "floodStage01": 0.24916206,
+      "snowDepthM": 0.0,
+      "iceThicknessM": 0.0,
+      "windUMps": 6.867199,
+      "windVMps": 1.5516
+    },
+    {
+      "cellId": 85,
+      "observedTick": 72,
+      "precipMmHr": 2.31847,
+      "mudIndex01": 0.61663276,
+      "tempC": 13.626162,
+      "visibility01": 0.777015,
+      "floodStage01": 0.2975362,
+      "snowDepthM": 0.0,
+      "iceThicknessM": 0.0,
+      "windUMps": 7.614108,
+      "windVMps": 0.9013698
+    },
+    {
+      "cellId": 207,
+      "observedTick": 72,
+      "precipMmHr": 0.11876084,
+      "mudIndex01": 0.0,
+      "tempC": 12.535644,
+      "visibility01": 0.89019823,
+      "floodStage01": 0.0,
+      "snowDepthM": 0.0,
+      "iceThicknessM": 0.0,
+      "windUMps": 9.05301,
+      "windVMps": 2.9659042
+    },
+    {
+      "cellId": 212,
+      "observedTick": 72,
+      "precipMmHr": 1.7668602,
+      "mudIndex01": 0.0,
+      "tempC": 14.549062,
+      "visibility01": 0.82983446,
+      "floodStage01": 0.0,
+      "snowDepthM": 0.0,
+      "iceThicknessM": 0.0,
+      "windUMps": 8.487253,
+      "windVMps": 1.6983359
+    }
+  ],
+  "ledgerRows": [
+    {
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "commodityKey": "raw_grain",
+      "commodityName": "Raw Grain",
+      "reportedMassKg": 6628.676653222409,
+      "minEstKg": 6628.676653222409,
+      "maxEstKg": 6628.676653222409,
+      "observedTick": 72,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "category": "Food",
+      "confidence01": 1.0,
+      "reporterName": "HQ Quartermaster"
+    },
+    {
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "commodityKey": "potable_water",
+      "commodityName": "Potable Cistern Water",
+      "reportedMassKg": 5904.889907885589,
+      "minEstKg": 5904.889907885589,
+      "maxEstKg": 5904.889907885589,
+      "observedTick": 72,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "category": "Water",
+      "confidence01": 1.0,
+      "reporterName": "HQ Quartermaster"
+    },
+    {
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "commodityKey": "colony_precision_tools",
+      "commodityName": "Pre-Landing Precision Toolkits",
+      "reportedMassKg": 378.8804,
+      "minEstKg": 378.8804,
+      "maxEstKg": 378.8804,
+      "observedTick": 72,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "category": "Tools",
+      "confidence01": 1.0,
+      "reporterName": "HQ Quartermaster"
+    },
+    {
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "commodityKey": "forged_hand_tools",
+      "commodityName": "Forged Hand Tools",
+      "reportedMassKg": 152.95735663375018,
+      "minEstKg": 152.95735663375018,
+      "maxEstKg": 152.95735663375018,
+      "observedTick": 72,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "category": "Tools",
+      "confidence01": 1.0,
+      "reporterName": "HQ Quartermaster"
+    },
+    {
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "commodityKey": "timber",
+      "commodityName": "Felled Timber",
+      "reportedMassKg": 1159.5127641895333,
+      "minEstKg": 1159.5127641895333,
+      "maxEstKg": 1159.5127641895333,
+      "observedTick": 72,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "category": "Structural",
+      "confidence01": 1.0,
+      "reporterName": "HQ Quartermaster"
+    },
+    {
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "commodityKey": "charcoal",
+      "commodityName": "Hardwood Charcoal",
+      "reportedMassKg": 621.5294597032187,
+      "minEstKg": 621.5294597032187,
+      "maxEstKg": 621.5294597032187,
+      "observedTick": 72,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "category": "Fuel",
+      "confidence01": 1.0,
+      "reporterName": "HQ Quartermaster"
+    },
+    {
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "commodityKey": "wrought_iron",
+      "commodityName": "Wrought Iron",
+      "reportedMassKg": 305.1644715374318,
+      "minEstKg": 305.1644715374318,
+      "maxEstKg": 305.1644715374318,
+      "observedTick": 72,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "category": "Metal",
+      "confidence01": 1.0,
+      "reporterName": "HQ Quartermaster"
+    },
+    {
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "commodityKey": "hematite_ore",
+      "commodityName": "Hematite Iron Ore",
+      "reportedMassKg": 431.29199945926666,
+      "minEstKg": 431.29199945926666,
+      "maxEstKg": 431.29199945926666,
+      "observedTick": 72,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "category": "Ore",
+      "confidence01": 1.0,
+      "reporterName": "HQ Quartermaster"
+    },
+    {
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "commodityKey": "simple_clothing",
+      "commodityName": "Homespun Weather Clothing",
+      "reportedMassKg": 450.2314778083963,
+      "minEstKg": 450.2314778083963,
+      "maxEstKg": 450.2314778083963,
+      "observedTick": 72,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "category": "Consumer",
+      "confidence01": 1.0,
+      "reporterName": "HQ Quartermaster"
+    },
+    {
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "commodityKey": "timber",
+      "commodityName": "Felled Timber",
+      "reportedMassKg": 784.6648569675622,
+      "minEstKg": 784.6648569675622,
+      "maxEstKg": 784.6648569675622,
+      "observedTick": 72,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "category": "Structural",
+      "confidence01": 1.0,
+      "reporterName": "HQ Quartermaster"
+    },
+    {
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "commodityKey": "hematite_ore",
+      "commodityName": "Hematite Iron Ore",
+      "reportedMassKg": 183.5858415845966,
+      "minEstKg": 183.5858415845966,
+      "maxEstKg": 183.5858415845966,
+      "observedTick": 72,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "category": "Ore",
+      "confidence01": 1.0,
+      "reporterName": "HQ Quartermaster"
+    },
+    {
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "commodityKey": "slag_tailings",
+      "commodityName": "Smelter Slag & Quarry Tailings",
+      "reportedMassKg": 41.44536039984226,
+      "minEstKg": 41.44536039984226,
+      "maxEstKg": 41.44536039984226,
+      "observedTick": 72,
+      "provenanceLabel": "Direct Observation (HQ)",
+      "category": "Waste",
+      "confidence01": 1.0,
+      "reporterName": "HQ Quartermaster"
+    }
+  ],
+  "delegationTree": {
+    "leaderTitle": "Colony Commander",
+    "capacityAttention": 100.0,
+    "usedAttention": 0.0,
+    "subordinates": [
+      {
+        "characterId": 1,
+        "displayName": "Henrik Solberg",
+        "roleTitle": "Master Artificer",
+        "competence": 0.82,
+        "homeSettlementId": 0,
+        "homeCellId": 82,
+        "precision01": 0.8,
+        "loyaltyLabel": "Candid",
+        "allocatedAttention": 0.0,
+        "assignedMandates": []
+      },
+      {
+        "characterId": 2,
+        "displayName": "Ines Valdez",
+        "roleTitle": "Acting Quartermaster & Clerk",
+        "competence": 0.56,
+        "homeSettlementId": 0,
+        "homeCellId": 82,
+        "precision01": 0.6,
+        "loyaltyLabel": "Pliant",
+        "allocatedAttention": 0.0,
+        "assignedMandates": []
+      },
+      {
+        "characterId": 3,
+        "displayName": "Mara Chen",
+        "roleTitle": "Chief Agricultural Steward",
+        "competence": 0.8,
+        "homeSettlementId": 0,
+        "homeCellId": 82,
+        "precision01": 0.86,
+        "loyaltyLabel": "Candid",
+        "allocatedAttention": 0.0,
+        "assignedMandates": []
+      },
+      {
+        "characterId": 4,
+        "displayName": "Tomasz Kowalski",
+        "roleTitle": "Survey & Mining Warden",
+        "competence": 0.76,
+        "homeSettlementId": 0,
+        "homeCellId": 82,
+        "precision01": 0.9,
+        "loyaltyLabel": "Candid",
+        "allocatedAttention": 0.0,
+        "assignedMandates": []
+      }
+    ],
+    "clericalOverhead": 0.0,
+    "overloadRatio": 0.0,
+    "focusedMandateId": null,
+    "focusedAttentionShare": 0.0,
+    "activeMandates": []
+  },
+  "dispatchInbox": [],
+  "clockAndNotifications": {
+    "tick": 72,
+    "calendarText": "Year 1, Thaw 04 (00:00)",
+    "paused": false,
+    "speedMultiplier": 1,
+    "activeAlertCount": 0,
+    "autoPauseReason": null
+  },
+  "populationRows": [
+    {
+      "cohortId": 1,
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "vocationKey": "agronomist",
+      "vocationName": "Field Agronomist & Cultivator",
+      "reportedHeadcount": 70,
+      "minHeadcount": 70,
+      "maxHeadcount": 70,
+      "meanSkill01": 0.5967888,
+      "literacy01": 0.7,
+      "nutrition01": 0.9,
+      "unrestStage": "Compliant",
+      "observedTick": 72,
+      "confidence01": 1.0,
+      "provenanceLabel": "Direct Observation (HQ)"
+    },
+    {
+      "cohortId": 2,
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "vocationKey": "artificer",
+      "vocationName": "Timberwright & Artificer",
+      "reportedHeadcount": 50,
+      "minHeadcount": 50,
+      "maxHeadcount": 50,
+      "meanSkill01": 0.5925869,
+      "literacy01": 0.7,
+      "nutrition01": 0.9,
+      "unrestStage": "Compliant",
+      "observedTick": 72,
+      "confidence01": 1.0,
+      "provenanceLabel": "Direct Observation (HQ)"
+    },
+    {
+      "cohortId": 3,
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "vocationKey": "miner",
+      "vocationName": "Prospector & Quarryman",
+      "reportedHeadcount": 40,
+      "minHeadcount": 40,
+      "maxHeadcount": 40,
+      "meanSkill01": 0.5946874,
+      "literacy01": 0.7,
+      "nutrition01": 0.9,
+      "unrestStage": "Compliant",
+      "observedTick": 72,
+      "confidence01": 1.0,
+      "provenanceLabel": "Direct Observation (HQ)"
+    },
+    {
+      "cohortId": 4,
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "vocationKey": "smith",
+      "vocationName": "Smelter & Ironwright",
+      "reportedHeadcount": 25,
+      "minHeadcount": 25,
+      "maxHeadcount": 25,
+      "meanSkill01": 0.59048724,
+      "literacy01": 0.7,
+      "nutrition01": 0.9,
+      "unrestStage": "Compliant",
+      "observedTick": 72,
+      "confidence01": 1.0,
+      "provenanceLabel": "Direct Observation (HQ)"
+    },
+    {
+      "cohortId": 5,
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "vocationKey": "courier",
+      "vocationName": "Signal Runner & Scout",
+      "reportedHeadcount": 25,
+      "minHeadcount": 25,
+      "maxHeadcount": 25,
+      "meanSkill01": 0.5960738,
+      "literacy01": 0.7,
+      "nutrition01": 0.9,
+      "unrestStage": "Compliant",
+      "observedTick": 72,
+      "confidence01": 1.0,
+      "provenanceLabel": "Direct Observation (HQ)"
+    }
+  ],
+  "facilityRows": [
+    {
+      "facilityId": 1,
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "processKey": "subsistence_farming",
+      "processName": "Clearland Grain Cultivation",
+      "assignedWorkers": 48,
+      "toolCondition01": 1.0,
+      "weatherHalted": false,
+      "shaftWater01": 0.0,
+      "observedTick": 72,
+      "provenanceLabel": "Reported Operations"
+    },
+    {
+      "facilityId": 2,
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "processKey": "well_and_cistern_draw",
+      "processName": "Wellhead & Stream Cistern Draw",
+      "assignedWorkers": 14,
+      "toolCondition01": 1.0,
+      "weatherHalted": false,
+      "shaftWater01": 0.0,
+      "observedTick": 72,
+      "provenanceLabel": "Reported Operations"
+    },
+    {
+      "facilityId": 3,
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "processKey": "logging_camp",
+      "processName": "Timber Felling & Milling",
+      "assignedWorkers": 30,
+      "toolCondition01": 1.0,
+      "weatherHalted": false,
+      "shaftWater01": 0.0,
+      "observedTick": 72,
+      "provenanceLabel": "Reported Operations"
+    },
+    {
+      "facilityId": 4,
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "processKey": "textile_and_hide_tailoring",
+      "processName": "Fiber Weaving & Weather Garments",
+      "assignedWorkers": 6,
+      "toolCondition01": 1.0,
+      "weatherHalted": false,
+      "shaftWater01": 0.0,
+      "observedTick": 72,
+      "provenanceLabel": "Reported Operations"
+    },
+    {
+      "facilityId": 5,
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "processKey": "charcoal_burning",
+      "processName": "Earth Mound Charcoal Burning",
+      "assignedWorkers": 14,
+      "toolCondition01": 1.0,
+      "weatherHalted": false,
+      "shaftWater01": 0.0,
+      "observedTick": 72,
+      "provenanceLabel": "Reported Operations"
+    },
+    {
+      "facilityId": 6,
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "processKey": "surface_ore_quarrying",
+      "processName": "Surface Hematite Quarrying",
+      "assignedWorkers": 20,
+      "toolCondition01": 1.0,
+      "weatherHalted": false,
+      "shaftWater01": 0.0,
+      "observedTick": 72,
+      "provenanceLabel": "Reported Operations"
+    },
+    {
+      "facilityId": 7,
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "processKey": "pump_and_drain_mine_shaft",
+      "processName": "Timber-Lined Sump Pumping",
+      "assignedWorkers": 6,
+      "toolCondition01": 1.0,
+      "weatherHalted": false,
+      "shaftWater01": 0.0,
+      "observedTick": 72,
+      "provenanceLabel": "Reported Operations"
+    },
+    {
+      "facilityId": 8,
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "processKey": "bloomery_smelting",
+      "processName": "Bloomery Iron Reduction",
+      "assignedWorkers": 10,
+      "toolCondition01": 1.0,
+      "weatherHalted": false,
+      "shaftWater01": 0.0,
+      "observedTick": 72,
+      "provenanceLabel": "Reported Operations"
+    },
+    {
+      "facilityId": 9,
+      "settlementId": 0,
+      "settlementName": "Haven Landing Perimeter",
+      "processKey": "forge_replacement_hand_tools",
+      "processName": "Forge Replacement Hand Tools",
+      "assignedWorkers": 8,
+      "toolCondition01": 1.0,
+      "weatherHalted": false,
+      "shaftWater01": 0.0,
+      "observedTick": 72,
+      "provenanceLabel": "Reported Operations"
+    }
+  ],
+  "timeSeries": [
+    {
+      "seriesKey": "attention_load",
+      "label": "HQ Attention Load",
+      "unit": "pct",
+      "points": [
+        {
+          "tick": 0,
+          "value": 0.0,
+          "minBound": 0.0,
+          "maxBound": 0.0,
+          "isConfirmed": true
+        },
+        {
+          "tick": 24,
+          "value": 0.0,
+          "minBound": 0.0,
+          "maxBound": 0.0,
+          "isConfirmed": true
+        },
+        {
+          "tick": 48,
+          "value": 0.0,
+          "minBound": 0.0,
+          "maxBound": 0.0,
+          "isConfirmed": true
+        },
+        {
+          "tick": 72,
+          "value": 0.0,
+          "minBound": 0.0,
+          "maxBound": 0.0,
+          "isConfirmed": true
+        }
+      ]
+    },
+    {
+      "seriesKey": "grain_stock",
+      "label": "Reported Grain Reserve",
+      "unit": "kg",
+      "points": [
+        {
+          "tick": 0,
+          "value": 5600.0,
+          "minBound": 5376.0,
+          "maxBound": 5824.0,
+          "isConfirmed": true
+        },
+        {
+          "tick": 24,
+          "value": 5919.427732150018,
+          "minBound": 5682.650622864016,
+          "maxBound": 6156.204841436019,
+          "isConfirmed": true
+        },
+        {
+          "tick": 48,
+          "value": 6262.769231843801,
+          "minBound": 6012.258462570049,
+          "maxBound": 6513.280001117553,
+          "isConfirmed": true
+        },
+        {
+          "tick": 72,
+          "value": 6628.676653222409,
+          "minBound": 6363.529587093512,
+          "maxBound": 6893.823719351306,
+          "isConfirmed": true
+        }
+      ]
+    },
+    {
+      "seriesKey": "iron_stock",
+      "label": "Reported Iron Ingots",
+      "unit": "kg",
+      "points": [
+        {
+          "tick": 0,
+          "value": 320.0,
+          "minBound": 304.0,
+          "maxBound": 336.0,
+          "isConfirmed": true
+        },
+        {
+          "tick": 24,
+          "value": 315.0541083263911,
+          "minBound": 299.30140291007154,
+          "maxBound": 330.80681374271063,
+          "isConfirmed": true
+        },
+        {
+          "tick": 48,
+          "value": 310.10895176949236,
+          "minBound": 294.60350418101774,
+          "maxBound": 325.614399357967,
+          "isConfirmed": true
+        },
+        {
+          "tick": 72,
+          "value": 305.1644715374318,
+          "minBound": 289.90624796056017,
+          "maxBound": 320.4226951143034,
+          "isConfirmed": true
+        }
+      ]
+    },
+    {
+      "seriesKey": "population_total",
+      "label": "Colony Headcount",
+      "unit": "people",
+      "points": [
+        {
+          "tick": 0,
+          "value": 210.0,
+          "minBound": 208.0,
+          "maxBound": 212.0,
+          "isConfirmed": true
+        },
+        {
+          "tick": 24,
+          "value": 210.0,
+          "minBound": 208.0,
+          "maxBound": 212.0,
+          "isConfirmed": true
+        },
+        {
+          "tick": 48,
+          "value": 210.0,
+          "minBound": 208.0,
+          "maxBound": 212.0,
+          "isConfirmed": true
+        },
+        {
+          "tick": 72,
+          "value": 210.0,
+          "minBound": 208.0,
+          "maxBound": 212.0,
+          "isConfirmed": true
+        }
+      ]
+    }
+  ],
+  "openProposals": [],
+  "notificationRules": [
+    {
+      "eventClassKey": "mandate_escalation",
+      "displayName": "Subordinate Bottleneck Escalation",
+      "behavior": "LogOnly"
+    },
+    {
+      "eventClassKey": "mandate_issued_log",
+      "displayName": "Written Mandate Dispatched",
+      "behavior": "LogOnly"
+    },
+    {
+      "eventClassKey": "mine_flooding_halt",
+      "displayName": "Subsurface Shaft Flooding Halt",
+      "behavior": "DispatchPopup"
+    },
+    {
+      "eventClassKey": "overdue_expedition",
+      "displayName": "Overdue Expedition or Convoy",
+      "behavior": "DispatchPopupAndAutoPause"
+    },
+    {
+      "eventClassKey": "survey_report_arrived",
+      "displayName": "Survey Report Arrived at HQ",
+      "behavior": "BannerAlert"
+    },
+    {
+      "eventClassKey": "tool_reserve_critical",
+      "displayName": "Precision Tooling Critical Wear",
+      "behavior": "DispatchPopup"
+    },
+    {
+      "eventClassKey": "unrest_escalation",
+      "displayName": "Cohort Grievance & Labor Unrest",
+      "behavior": "DispatchPopupAndAutoPause"
+    },
+    {
+      "eventClassKey": "winter_crop_blight",
+      "displayName": "Field Crop Weather & Frost Stress",
+      "behavior": "BannerAlert"
+    }
+  ],
+  "auditDiscrepancies": []
+}

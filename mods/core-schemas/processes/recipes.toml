@@ -5,15 +5,21 @@ required_vocation = "agronomist"
 cycle_hours = 24
 workforce_hours_required = 16.0
 tool_commodity = "forged_hand_tools"
-weather_halt_mud_threshold = 0.85
+fallback_tool_commodity = "colony_precision_tools"
+weather_halt_mud_threshold = 0.92
+is_crop_cultivation = true
+min_temp_c = 4.0
+max_temp_c = 38.0
+optimal_moisture_01 = 0.58
+tool_wear_intensity = 0.85
 
 [[processes.inputs]]
 commodity = "timber"
-amount_kg = 0.5
+amount_kg = 0.08
 
 [[processes.outputs]]
 commodity = "raw_grain"
-amount_kg = 4.0
+amount_kg = 18.0
 
 [[processes]]
 id = "logging_camp"
@@ -22,11 +28,13 @@ required_vocation = "artificer"
 cycle_hours = 24
 workforce_hours_required = 12.0
 tool_commodity = "colony_precision_tools"
-weather_halt_mud_threshold = 0.90
+fallback_tool_commodity = "forged_hand_tools"
+weather_halt_mud_threshold = 0.95
+tool_wear_intensity = 1.0
 
 [[processes.outputs]]
 commodity = "timber"
-amount_kg = 6.0
+amount_kg = 9.5
 
 [[processes]]
 id = "charcoal_burning"
@@ -34,7 +42,7 @@ display_name = "Earth Mound Charcoal Burning"
 required_vocation = "artificer"
 cycle_hours = 24
 workforce_hours_required = 10.0
-weather_halt_mud_threshold = 0.92
+weather_halt_mud_threshold = 0.95
 
 [[processes.inputs]]
 commodity = "timber"
@@ -42,7 +50,7 @@ amount_kg = 4.0
 
 [[processes.outputs]]
 commodity = "charcoal"
-amount_kg = 1.6
+amount_kg = 2.0
 
 [[processes]]
 id = "surface_ore_quarrying"
@@ -51,7 +59,11 @@ required_vocation = "miner"
 cycle_hours = 24
 workforce_hours_required = 18.0
 tool_commodity = "colony_precision_tools"
-weather_halt_mud_threshold = 0.78
+fallback_tool_commodity = "forged_hand_tools"
+waste_commodity = "slag_tailings"
+weather_halt_mud_threshold = 0.88
+is_underground_mine = true
+tool_wear_intensity = 1.25
 
 [[processes.outputs]]
 commodity = "hematite_ore"
@@ -64,7 +76,10 @@ required_vocation = "smith"
 cycle_hours = 24
 workforce_hours_required = 20.0
 tool_commodity = "forged_hand_tools"
+fallback_tool_commodity = "colony_precision_tools"
+waste_commodity = "slag_tailings"
 weather_halt_mud_threshold = 0.98
+tool_wear_intensity = 1.15
 
 [[processes.inputs]]
 commodity = "hematite_ore"
@@ -77,3 +92,116 @@ amount_kg = 1.5
 [[processes.outputs]]
 commodity = "wrought_iron"
 amount_kg = 1.4
+
+[[processes]]
+id = "forge_replacement_hand_tools"
+display_name = "Forge Replacement Hand Tools"
+required_vocation = "smith"
+cycle_hours = 24
+workforce_hours_required = 16.0
+tool_commodity = "colony_precision_tools"
+fallback_tool_commodity = "forged_hand_tools"
+waste_commodity = "slag_tailings"
+weather_halt_mud_threshold = 0.98
+tool_wear_intensity = 0.90
+
+[[processes.inputs]]
+commodity = "wrought_iron"
+amount_kg = 2.0
+
+[[processes.inputs]]
+commodity = "charcoal"
+amount_kg = 1.0
+
+[[processes.inputs]]
+commodity = "timber"
+amount_kg = 0.6
+
+[[processes.outputs]]
+commodity = "forged_hand_tools"
+amount_kg = 2.2
+
+[[processes]]
+id = "pump_and_drain_mine_shaft"
+display_name = "Timber-Lined Sump Pumping"
+required_vocation = "miner"
+cycle_hours = 24
+workforce_hours_required = 12.0
+tool_commodity = "forged_hand_tools"
+fallback_tool_commodity = "colony_precision_tools"
+weather_halt_mud_threshold = 0.99
+is_mine_drainage = true
+tool_wear_intensity = 0.75
+
+[[processes.inputs]]
+commodity = "timber"
+amount_kg = 0.8
+
+[[processes.inputs]]
+commodity = "charcoal"
+amount_kg = 0.4
+
+[[processes.outputs]]
+commodity = "potable_water"
+amount_kg = 12.0
+
+[[processes]]
+id = "grade_drained_roadbed"
+display_name = "Grade Crushed-Stone Roadbed"
+required_vocation = "artificer"
+cycle_hours = 24
+workforce_hours_required = 20.0
+tool_commodity = "forged_hand_tools"
+fallback_tool_commodity = "colony_precision_tools"
+weather_halt_mud_threshold = 0.72
+is_outdoor_construction = true
+min_temp_c = 0.5
+max_temp_c = 45.0
+tool_wear_intensity = 1.30
+
+[[processes.inputs]]
+commodity = "timber"
+amount_kg = 4.0
+
+[[processes.inputs]]
+commodity = "wrought_iron"
+amount_kg = 0.5
+
+[[processes.outputs]]
+commodity = "slag_tailings"
+amount_kg = 1.5
+
+[[processes]]
+id = "well_and_cistern_draw"
+display_name = "Wellhead & Stream Cistern Draw"
+required_vocation = "agronomist"
+cycle_hours = 24
+workforce_hours_required = 6.0
+weather_halt_mud_threshold = 1.0
+
+[[processes.outputs]]
+commodity = "potable_water"
+amount_kg = 32.0
+
+[[processes]]
+id = "textile_and_hide_tailoring"
+display_name = "Fiber Weaving & Weather Garments"
+required_vocation = "agronomist"
+cycle_hours = 24
+workforce_hours_required = 12.0
+tool_commodity = "forged_hand_tools"
+fallback_tool_commodity = "colony_precision_tools"
+weather_halt_mud_threshold = 0.99
+tool_wear_intensity = 0.35
+
+[[processes.inputs]]
+commodity = "raw_grain"
+amount_kg = 0.4
+
+[[processes.inputs]]
+commodity = "timber"
+amount_kg = 0.3
+
+[[processes.outputs]]
+commodity = "simple_clothing"
+amount_kg = 2.6

@@ -836,8 +836,13 @@ impl CommandPort for SimWorld {
             SpinePlayerCommand::SetPaused(p) => self.paused = p,
             SpinePlayerCommand::StepSingleTick => {}
             SpinePlayerCommand::SetSpeedMultiplier(m) => self.speed_multiplier = m.max(1),
-            SpinePlayerCommand::AcknowledgeNotification(_) => {}
-            SpinePlayerCommand::StubPing { .. } => {}
+            SpinePlayerCommand::AcknowledgeNotification(_)
+            | SpinePlayerCommand::StubPing { .. }
+            | SpinePlayerCommand::IssueMandate { .. }
+            | SpinePlayerCommand::ResolveArbitrationProposal { .. }
+            | SpinePlayerCommand::SetPersonalAttentionZoom { .. }
+            | SpinePlayerCommand::RelocateHq { .. }
+            | SpinePlayerCommand::UpdateNotificationRule { .. } => {}
         }
     }
 }

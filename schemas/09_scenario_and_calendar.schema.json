@@ -139,6 +139,16 @@
     "StartingCharacterRecord": {
       "type": "object",
       "properties": {
+        "adaptability_01": {
+          "type": "number",
+          "format": "float",
+          "default": 0.5
+        },
+        "ambition_01": {
+          "type": "number",
+          "format": "float",
+          "default": 0.25
+        },
         "caution_vs_alarmism": {
           "type": "number",
           "format": "float"
@@ -150,6 +160,11 @@
         "display_name": {
           "type": "string"
         },
+        "greed_skimming_01": {
+          "type": "number",
+          "format": "float",
+          "default": 0.25
+        },
         "home_settlement": {
           "type": "string"
         },
@@ -159,6 +174,16 @@
         },
         "id": {
           "type": "string"
+        },
+        "initiative_01": {
+          "type": "number",
+          "format": "float",
+          "default": 0.5
+        },
+        "loyalty_01": {
+          "type": "number",
+          "format": "float",
+          "default": 0.699999988079071
         },
         "precision_01": {
           "type": "number",
@@ -212,6 +237,12 @@
     "StartingFacilityRecord": {
       "type": "object",
       "properties": {
+        "owner_actor_id": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 0,
+          "minimum": 0
+        },
         "process": {
           "type": "string"
         },
@@ -260,6 +291,11 @@
           "format": "uint32",
           "minimum": 0
         },
+        "initial_shaft_water_01": {
+          "type": "number",
+          "format": "float",
+          "default": 0.0
+        },
         "stockpiles": {
           "type": "array",
           "default": [],
@@ -289,6 +325,11 @@
         "purity": {
           "type": "number",
           "format": "float"
+        },
+        "roof_protection_01": {
+          "type": "number",
+          "format": "float",
+          "default": 0.949999988079071
         }
       },
       "additionalProperties": false,

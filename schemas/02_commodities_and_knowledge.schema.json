@@ -30,6 +30,11 @@
     "CommodityRecord": {
       "type": "object",
       "properties": {
+        "caloric_mcal_per_kg": {
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
         "category": {
           "type": "string"
         },
@@ -41,8 +46,21 @@
           "format": "double",
           "default": 0.0
         },
+        "heating_mj_per_kg": {
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
         "id": {
           "type": "string"
+        },
+        "is_clothing": {
+          "type": "boolean",
+          "default": false
+        },
+        "is_slag_or_waste": {
+          "type": "boolean",
+          "default": false
         },
         "is_tool": {
           "type": "boolean",
@@ -52,6 +70,11 @@
           "type": "number",
           "format": "double"
         },
+        "potable_liters_per_kg": {
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
         "spoilage_rate_per_hour": {
           "type": "number",
           "format": "double"
@@ -60,6 +83,11 @@
           "type": "number",
           "format": "double",
           "default": 0.0
+        },
+        "tool_hardness_rating": {
+          "type": "number",
+          "format": "float",
+          "default": 0.75
         },
         "tool_wear_per_hour": {
           "type": "number",

@@ -11,24 +11,64 @@ unexplored_surrounding_cells = true
 
 [[starting_settlements]]
 id = "haven_landing"
-display_name = "First Landing Perimeter"
+display_name = "Haven Landing Perimeter"
 cell_index = 0
 initial_population = 210
+initial_shaft_water_01 = 0.08
 
 [[starting_settlements.stockpiles]]
 commodity = "raw_grain"
-mass_kg = 2850.0
+mass_kg = 5600.0
 purity = 0.94
+roof_protection_01 = 0.96
+
+[[starting_settlements.stockpiles]]
+commodity = "potable_water"
+mass_kg = 4500.0
+purity = 0.98
+roof_protection_01 = 0.98
 
 [[starting_settlements.stockpiles]]
 commodity = "colony_precision_tools"
 mass_kg = 380.0
 purity = 0.99
+roof_protection_01 = 0.99
+
+[[starting_settlements.stockpiles]]
+commodity = "forged_hand_tools"
+mass_kg = 120.0
+purity = 0.92
+roof_protection_01 = 0.95
 
 [[starting_settlements.stockpiles]]
 commodity = "timber"
-mass_kg = 1100.0
+mass_kg = 1400.0
 purity = 0.92
+roof_protection_01 = 0.80
+
+[[starting_settlements.stockpiles]]
+commodity = "charcoal"
+mass_kg = 650.0
+purity = 0.91
+roof_protection_01 = 0.92
+
+[[starting_settlements.stockpiles]]
+commodity = "wrought_iron"
+mass_kg = 320.0
+purity = 0.90
+roof_protection_01 = 0.95
+
+[[starting_settlements.stockpiles]]
+commodity = "hematite_ore"
+mass_kg = 480.0
+purity = 0.85
+roof_protection_01 = 0.10
+
+[[starting_settlements.stockpiles]]
+commodity = "simple_clothing"
+mass_kg = 420.0
+purity = 0.90
+roof_protection_01 = 0.96
 
 [[starting_settlements.cohorts]]
 archetype = "founding_colonist_adult"
@@ -57,15 +97,48 @@ count = 25
 
 [[starting_settlements.initial_facilities]]
 process = "subsistence_farming"
-workers = 44
+workers = 48
+owner_actor_id = 1
+
+[[starting_settlements.initial_facilities]]
+process = "well_and_cistern_draw"
+workers = 14
+owner_actor_id = 1
 
 [[starting_settlements.initial_facilities]]
 process = "logging_camp"
-workers = 28
+workers = 30
+owner_actor_id = 1
+
+[[starting_settlements.initial_facilities]]
+process = "textile_and_hide_tailoring"
+workers = 6
+owner_actor_id = 1
 
 [[starting_settlements.initial_facilities]]
 process = "charcoal_burning"
 workers = 14
+owner_actor_id = 1
+
+[[starting_settlements.initial_facilities]]
+process = "surface_ore_quarrying"
+workers = 20
+owner_actor_id = 1
+
+[[starting_settlements.initial_facilities]]
+process = "pump_and_drain_mine_shaft"
+workers = 6
+owner_actor_id = 1
+
+[[starting_settlements.initial_facilities]]
+process = "bloomery_smelting"
+workers = 10
+owner_actor_id = 1
+
+[[starting_settlements.initial_facilities]]
+process = "forge_replacement_hand_tools"
+workers = 8
+owner_actor_id = 1
 
 [[starting_characters]]
 id = "mara_chen"
@@ -76,6 +149,11 @@ competence = 0.80
 precision_01 = 0.86
 honesty_vs_sycophancy = 0.74
 caution_vs_alarmism = 0.15
+initiative_01 = 0.68
+adaptability_01 = 0.72
+ambition_01 = 0.28
+loyalty_01 = 0.86
+greed_skimming_01 = 0.04
 traits = ["pragmatic_overseer"]
 
 [[starting_characters]]
@@ -87,6 +165,11 @@ competence = 0.76
 precision_01 = 0.90
 honesty_vs_sycophancy = 0.68
 caution_vs_alarmism = 0.22
+initiative_01 = 0.75
+adaptability_01 = 0.64
+ambition_01 = 0.34
+loyalty_01 = 0.82
+greed_skimming_01 = 0.06
 traits = ["meticulous_surveyor"]
 
 [[starting_characters]]
@@ -98,6 +181,11 @@ competence = 0.82
 precision_01 = 0.80
 honesty_vs_sycophancy = 0.45
 caution_vs_alarmism = -0.05
+initiative_01 = 0.62
+adaptability_01 = 0.58
+ambition_01 = 0.42
+loyalty_01 = 0.74
+greed_skimming_01 = 0.12
 traits = ["pragmatic_overseer"]
 
 [[starting_characters]]
@@ -109,4 +197,9 @@ competence = 0.56
 precision_01 = 0.60
 honesty_vs_sycophancy = -0.35
 caution_vs_alarmism = -0.25
+initiative_01 = 0.40
+adaptability_01 = 0.48
+ambition_01 = 0.66
+loyalty_01 = 0.58
+greed_skimming_01 = 0.34
 traits = ["eager_sycophant"]

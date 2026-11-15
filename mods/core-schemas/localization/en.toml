@@ -13,3 +13,19 @@ text = "Precision pre-landing equipment at {settlement_label} has degraded below
 [[strings]]
 id = "dispatch.mandate_escalation"
 text = "Overseer {character_label} reports a bottleneck requiring allocation review."
+
+[[strings]]
+id = "dispatch.unrest_escalation"
+text = "Labor grievance at {settlement_label} escalated to {stage_label}."
+
+[[strings]]
+id = "dispatch.mine_flooding_halt"
+text = "Sump seepage flooded subsurface workings at {settlement_label}; extraction halted pending drainage."
+
+[[strings]]
+id = "dispatch.winter_crop_blight"
+text = "Seasonal temperature or moisture stress depressed harvests across {settlement_label}."
+
+[[strings]]
+id = "dispatch.mandate_issued_log"
+text = "Sealed mandate issued to {character_label} for sector {sector_label}."

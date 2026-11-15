@@ -17,7 +17,7 @@ import {
   Vec3,
 } from "../spine";
 import { GlobeOrbitalCamera } from "./camera";
-import { GlobeFeatureOverlayGroup } from "./features";
+import { FeatureOverlayRenderSummary, GlobeFeatureOverlayGroup } from "./features";
 import { buildGoldbergGlobeGeometry, GoldbergMeshBuild, verifyGoldbergManifold } from "./mesh";
 import { createGlobeShaderController, GlobeShaderController } from "./shaders";
 
@@ -25,6 +25,7 @@ export { buildGoldbergGlobeGeometry, verifyGoldbergManifold } from "./mesh";
 export type { ManifoldVerificationReport } from "./mesh";
 export { GlobeOrbitalCamera } from "./camera";
 export { createGlobeShaderController } from "./shaders";
+export type { FeatureOverlayRenderSummary } from "./features";
 
 export interface FramePixelSample {
   readonly width: number;
@@ -42,6 +43,8 @@ export interface GlobeViewportStatus {
   readonly lastFrameTimeMs: number;
   readonly activeDataTexIndex: number;
   readonly cartographicBlend: number;
+  readonly activeOverlayMode: string;
+  readonly featureSummary: FeatureOverlayRenderSummary;
 }
 
 export interface GlobeViewportOptions {
@@ -113,7 +116,9 @@ export async function initializeGlobeViewport(
 
   let hoveredCellId: number | null = null;
   let selectedCellId: number | null = null;
+  let activeOverlayMode = "terrain";
   let weatherOverlayActive = false;
+  let previewDestinationCellId: number | null = null;
 
   const overlayRootId = "globe-overlay-root";
   let overlayRoot = document.getElementById(overlayRootId);
@@ -292,6 +297,13 @@ export async function initializeGlobeViewport(
           label: `Unexplored Territory (Cell #${nearestCellId})`,
         };
       }
+      if (known.tier === "rumored") {
+        return {
+          hitKind: "cell",
+          cellId: nearestCellId,
+          label: `Rumored Terrain (Cell #${nearestCellId}, est. ${Math.round(known.elevationM)}m, ${Math.round(known.confidence01 * 100)}% conf)`,
+        };
+      }
       if (known.tier === "stale") {
         return {
           hitKind: "cell",
@@ -452,7 +464,17 @@ export async function initializeGlobeViewport(
       features.setPalette(intent.bundle.globePalette);
       renderOnce();
     } else if (intent.kind === "SwitchMapOverlayMode") {
+      activeOverlayMode = intent.modeId;
       weatherOverlayActive = intent.modeId === "weather";
+      if (currentSnapshot) {
+        features.rebuild(currentSnapshot, topology, activeOverlayMode, previewDestinationCellId);
+      }
+      renderOnce();
+    } else if (intent.kind === "PreviewHqLatencyRoute") {
+      previewDestinationCellId = intent.destinationCellId;
+      if (currentSnapshot) {
+        features.rebuild(currentSnapshot, topology, activeOverlayMode, previewDestinationCellId);
+      }
       renderOnce();
     } else if (intent.kind === "HoverMapFeature") {
       hoveredCellId = intent.hit?.cellId ?? null;
@@ -476,7 +498,7 @@ export async function initializeGlobeViewport(
       meshBuild = nextBuild;
     }
     shaderCtrl.uploadSnapshot(snapshot, selectedCellId, hoveredCellId);
-    features.rebuild(snapshot, topology);
+    features.rebuild(snapshot, topology, activeOverlayMode, previewDestinationCellId);
     for (const layer of layers) {
       layer.onSnapshotUpdate(snapshot);
     }
@@ -515,6 +537,12 @@ export async function initializeGlobeViewport(
     },
     get cartographicBlend() {
       return orbitalCamera.getCartographicBlend();
+    },
+    get activeOverlayMode() {
+      return activeOverlayMode;
+    },
+    get featureSummary() {
+      return features.getSummary();
     },
   };
 

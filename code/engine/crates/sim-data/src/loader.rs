@@ -8,10 +8,11 @@ use std::path::{Path, PathBuf};
 use schemars::schema_for;
 use serde::{Deserialize, Serialize};
 use sim_spine::{
-    CalendarConfigView, CarrierClassId, CarrierDefView, CommodityDefView, CommodityId,
-    EventClassId, InfraClassId, InfraDefView, ModRegistryPort, NaturalBoundsView,
-    PlanetGenConfigView, ProcessDefView, ProcessId, ProcessQuantityView, ScenarioCharacterSeed,
-    ScenarioInitView, ScenarioSettlementSeed, VocationDefView, VocationId,
+    ActorId, CalendarConfigView, CarrierClassId, CarrierDefView, CohortArchetypeDefView,
+    CommodityDefView, CommodityId, EventClassId, InfraClassId, InfraDefView, ModRegistryPort,
+    NaturalBoundsView, NotificationBehaviorKind, PlanetGenConfigView, ProcessDefView, ProcessId,
+    ProcessQuantityView, ScenarioArchetypeKind, ScenarioCharacterSeed, ScenarioInitView,
+    ScenarioSettlementSeed, VocationDefView, VocationId,
 };
 
 use crate::schema::{
@@ -81,9 +82,15 @@ pub struct CompiledModBundle {
     commodity_by_key: BTreeMap<String, CommodityId>,
     process_defs: Vec<ProcessDefView>,
     carrier_defs: Vec<CarrierDefView>,
+    carrier_by_key: BTreeMap<String, CarrierClassId>,
     infra_defs: Vec<InfraDefView>,
+    infra_by_key: BTreeMap<String, InfraClassId>,
     vocation_defs: Vec<VocationDefView>,
+    archetype_defs: Vec<CohortArchetypeDefView>,
     event_by_key: BTreeMap<String, EventClassId>,
+    notification_default_by_key: BTreeMap<String, NotificationBehaviorKind>,
+    notification_list: Vec<(EventClassId, String, String, NotificationBehaviorKind)>,
+    localization_by_key: BTreeMap<String, String>,
     calendar_view: CalendarConfigView,
     planet_gen_view: PlanetGenConfigView,
     scenario_view: ScenarioInitView,
@@ -124,16 +131,56 @@ impl ModRegistryPort for CompiledModBundle {
         self.carrier_defs.get(id.get() as usize)
     }
 
+    fn carrier_count(&self) -> usize {
+        self.carrier_defs.len()
+    }
+
+    fn carrier_id_by_key(&self, key: &str) -> Option<CarrierClassId> {
+        self.carrier_by_key.get(key).copied()
+    }
+
     fn infra_def(&self, id: InfraClassId) -> Option<&InfraDefView> {
         self.infra_defs.get(id.get() as usize)
+    }
+
+    fn infra_count(&self) -> usize {
+        self.infra_defs.len()
+    }
+
+    fn infra_id_by_key(&self, key: &str) -> Option<InfraClassId> {
+        self.infra_by_key.get(key).copied()
     }
 
     fn vocation_def(&self, id: VocationId) -> Option<&VocationDefView> {
         self.vocation_defs.get(id.get() as usize)
     }
 
+    fn vocation_count(&self) -> usize {
+        self.vocation_defs.len()
+    }
+
+    fn cohort_archetype_count(&self) -> usize {
+        self.archetype_defs.len()
+    }
+
+    fn cohort_archetype_def(&self, idx: usize) -> Option<&CohortArchetypeDefView> {
+        self.archetype_defs.get(idx)
+    }
+
     fn event_class_id(&self, key: &str) -> Option<EventClassId> {
         self.event_by_key.get(key).copied()
+    }
+
+    fn notification_default_behavior(&self, key: &str) -> Option<NotificationBehaviorKind> {
+        self.notification_default_by_key.get(key).copied()
+    }
+
+    fn notification_classes(&self) -> Vec<(EventClassId, String, String, NotificationBehaviorKind)> {
+        self.notification_list.clone()
+    }
+
+    fn localization_template(&self, key: &str) -> Option<&str> {
+        self.localization_by_key.get(key).map(String::as_str)
     }
 
     fn calendar_config(&self) -> &CalendarConfigView {
@@ -1107,9 +1154,13 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
         ("formation_templates", formation_templates.len()),
         ("doctrines", doctrines.len()),
         ("event_classes", event_classes.len()),
+        ("strings", strings.len()),
         ("starting_settlements", starting_settlements.len()),
     ] {
-        if len == 0 && !array_buckets.contains_key(section) {
+        let bucket_has_records = array_buckets
+            .get(section)
+            .is_some_and(|bucket| !bucket.is_empty());
+        if len == 0 && !bucket_has_records {
             diagnostics.push(ModDiagnostic {
                 severity: DiagnosticSeverity::Error,
                 layer: "Bundle".to_string(),
@@ -1306,6 +1357,7 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
     let commodity_keys: BTreeSet<&str> = commodities.iter().map(|c| c.id.as_str()).collect();
     let vocation_keys: BTreeSet<&str> = vocations.iter().map(|v| v.id.as_str()).collect();
     let process_keys: BTreeSet<&str> = processes.iter().map(|p| p.id.as_str()).collect();
+    let infra_keys: BTreeSet<&str> = infra_classes.iter().map(|i| i.id.as_str()).collect();
     let archetype_keys: BTreeSet<&str> = cohort_archetypes.iter().map(|a| a.id.as_str()).collect();
     let trait_keys: BTreeSet<&str> = traits.iter().map(|t| t.id.as_str()).collect();
     let settlement_keys: BTreeSet<&str> = starting_settlements.iter().map(|s| s.id.as_str()).collect();
@@ -1325,15 +1377,44 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
             );
         }
         if let Some(tool) = &p.tool_commodity
-            && !commodity_keys.contains(tool.as_str()) {
-                push_field_diag(
-                    &mut diagnostics,
-                    "processes",
-                    rec,
-                    "tool_commodity",
-                    format!("Process '{}' references undefined tool commodity '{}'", p.id, tool),
-                );
-            }
+            && !commodity_keys.contains(tool.as_str())
+        {
+            push_field_diag(
+                &mut diagnostics,
+                "processes",
+                rec,
+                "tool_commodity",
+                format!("Process '{}' references undefined tool commodity '{}'", p.id, tool),
+            );
+        }
+        if let Some(fb) = &p.fallback_tool_commodity
+            && !commodity_keys.contains(fb.as_str())
+        {
+            push_field_diag(
+                &mut diagnostics,
+                "processes",
+                rec,
+                "fallback_tool_commodity",
+                format!(
+                    "Process '{}' references undefined fallback tool commodity '{}'",
+                    p.id, fb
+                ),
+            );
+        }
+        if let Some(waste) = &p.waste_commodity
+            && !commodity_keys.contains(waste.as_str())
+        {
+            push_field_diag(
+                &mut diagnostics,
+                "processes",
+                rec,
+                "waste_commodity",
+                format!(
+                    "Process '{}' references undefined waste commodity '{}'",
+                    p.id, waste
+                ),
+            );
+        }
         for (idx, inp) in p.inputs.iter().enumerate() {
             if !commodity_keys.contains(inp.commodity.as_str()) {
                 push_field_diag(
@@ -1368,6 +1449,34 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
                 format!(
                     "Carrier '{}' references undefined fuel commodity '{}'",
                     car.id, car.fodder_or_fuel_commodity
+                ),
+            );
+        }
+        for (idx, inf) in car.allowed_infra_classes.iter().enumerate() {
+            if !infra_keys.contains(inf.as_str()) {
+                push_field_diag(
+                    &mut diagnostics,
+                    "carriers",
+                    rec,
+                    &format!("allowed_infra_classes[{idx}]"),
+                    format!(
+                        "Carrier '{}' references undefined infra class '{}'",
+                        car.id, inf
+                    ),
+                );
+            }
+        }
+        if let Some(spare) = &car.spare_parts_commodity
+            && !commodity_keys.contains(spare.as_str())
+        {
+            push_field_diag(
+                &mut diagnostics,
+                "carriers",
+                rec,
+                "spare_parts_commodity",
+                format!(
+                    "Carrier '{}' references undefined spare parts commodity '{}'",
+                    car.id, spare
                 ),
             );
         }
@@ -1536,7 +1645,7 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
             infra_classes: infra_classes.clone(),
         },
         population: PopulationDomain {
-            cohort_archetypes,
+            cohort_archetypes: cohort_archetypes.clone(),
             vocations: vocations.clone(),
         },
         characters: CharactersDomain {
@@ -1544,7 +1653,7 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
             succession_rules,
         },
         governance: GovernanceDomain {
-            governance_models,
+            governance_models: governance_models.clone(),
             policy_laws,
         },
         warfare: WarfareDomain {
@@ -1559,7 +1668,7 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
         },
         notifications_and_loc: NotificationsAndLocDomain {
             event_classes: event_classes.clone(),
-            strings,
+            strings: strings.clone(),
         },
         skin_ref: SkinRefDomain {
             skin_reference: Some(skin_rec),
@@ -1584,8 +1693,16 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
             mass_per_unit_kg: c.mass_per_unit_kg,
             volume_per_unit_m3: c.volume_per_unit_m3,
             spoilage_rate_per_hour: c.spoilage_rate_per_hour,
+            energy_mj_per_kg: c.energy_mj_per_kg,
+            structural_strength: c.structural_strength,
             is_tool: c.is_tool,
             tool_wear_per_hour: c.tool_wear_per_hour,
+            caloric_mcal_per_kg: c.caloric_mcal_per_kg,
+            potable_liters_per_kg: c.potable_liters_per_kg,
+            heating_mj_per_kg: c.heating_mj_per_kg,
+            is_clothing: c.is_clothing,
+            tool_hardness_rating: c.tool_hardness_rating,
+            is_slag_or_waste: c.is_slag_or_waste,
         });
     }
 
@@ -1603,6 +1720,26 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
         });
     }
 
+    let mut archetype_defs = Vec::with_capacity(cohort_archetypes.len());
+    let mut archetype_by_key = BTreeMap::new();
+    for (idx, a) in cohort_archetypes.iter().enumerate() {
+        archetype_by_key.insert(a.id.clone(), idx);
+        archetype_defs.push(CohortArchetypeDefView {
+            index: idx as u16,
+            key: a.id.clone(),
+            display_name: a.display_name.clone(),
+            daily_grain_need_kg: a.daily_grain_need_kg,
+            daily_water_need_kg: a.daily_water_need_kg,
+            daily_fuel_need_kg_below_10c: a.daily_fuel_need_kg_below_10c,
+            daily_clothing_wear_kg: a.daily_clothing_wear_kg,
+            base_fertility_annual: a.base_fertility_annual,
+            base_mortality_annual: a.base_mortality_annual,
+            initial_literacy: a.initial_literacy,
+            dependents_share_01: a.dependents_share_01,
+            elders_share_01: a.elders_share_01,
+        });
+    }
+
     let mut process_defs = Vec::with_capacity(processes.len());
     let mut process_by_key = BTreeMap::new();
     for (idx, p) in processes.iter().enumerate() {
@@ -1616,7 +1753,20 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
             cycle_hours: p.cycle_hours,
             workforce_hours_required: p.workforce_hours_required,
             tool_commodity: p.tool_commodity.as_ref().map(|k| commodity_by_key[k.as_str()]),
+            fallback_tool_commodity: p
+                .fallback_tool_commodity
+                .as_ref()
+                .map(|k| commodity_by_key[k.as_str()]),
+            waste_commodity: p.waste_commodity.as_ref().map(|k| commodity_by_key[k.as_str()]),
             weather_halt_mud_threshold: p.weather_halt_mud_threshold,
+            is_outdoor_construction: p.is_outdoor_construction,
+            is_underground_mine: p.is_underground_mine,
+            is_crop_cultivation: p.is_crop_cultivation,
+            is_mine_drainage: p.is_mine_drainage,
+            min_temp_c: p.min_temp_c,
+            max_temp_c: p.max_temp_c,
+            optimal_moisture_01: p.optimal_moisture_01,
+            tool_wear_intensity: p.tool_wear_intensity,
             inputs: p
                 .inputs
                 .iter()
@@ -1636,11 +1786,28 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
         });
     }
 
-    let carrier_defs = carriers
-        .iter()
-        .enumerate()
-        .map(|(idx, car)| CarrierDefView {
-            id: CarrierClassId(idx as u16),
+    let mut infra_defs = Vec::with_capacity(infra_classes.len());
+    let mut infra_by_key = BTreeMap::new();
+    for (idx, inf) in infra_classes.iter().enumerate() {
+        let iid = InfraClassId(idx as u16);
+        infra_by_key.insert(inf.id.clone(), iid);
+        infra_defs.push(InfraDefView {
+            id: iid,
+            key: inf.id.clone(),
+            display_name: inf.display_name.clone(),
+            throughput_tonnes_per_hour: inf.throughput_tonnes_per_hour,
+            speed_multiplier: inf.speed_multiplier,
+            mud_shield_factor: inf.mud_shield_factor,
+        });
+    }
+
+    let mut carrier_defs = Vec::with_capacity(carriers.len());
+    let mut carrier_by_key = BTreeMap::new();
+    for (idx, car) in carriers.iter().enumerate() {
+        let cid = CarrierClassId(idx as u16);
+        carrier_by_key.insert(car.id.clone(), cid);
+        carrier_defs.push(CarrierDefView {
+            id: cid,
             key: car.id.clone(),
             display_name: car.display_name.clone(),
             max_payload_kg: car.max_payload_kg,
@@ -1651,27 +1818,49 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
             crew_required: car.crew_required,
             fodder_or_fuel_commodity: commodity_by_key[car.fodder_or_fuel_commodity.as_str()],
             fuel_burn_kg_per_hour: car.fuel_burn_kg_per_hour,
-        })
+            allowed_infra_classes: car
+                .allowed_infra_classes
+                .iter()
+                .map(|k| infra_by_key[k.as_str()])
+                .collect(),
+            is_watercraft: car.is_watercraft,
+            uses_wind_sail: car.uses_wind_sail,
+            max_ice_thickness_m: car.max_ice_thickness_m,
+            spare_parts_commodity: car
+                .spare_parts_commodity
+                .as_ref()
+                .map(|k| commodity_by_key[k.as_str()]),
+            spare_parts_wear_per_km: car.spare_parts_wear_per_km,
+        });
+    }
+
+    let mut event_by_key = BTreeMap::new();
+    let mut notification_default_by_key = BTreeMap::new();
+    let mut notification_list = Vec::with_capacity(event_classes.len());
+    for (idx, ev) in event_classes.iter().enumerate() {
+        let eid = EventClassId(idx as u16);
+        let tier = NotificationBehaviorKind::from_mod_str(&ev.default_tier);
+        event_by_key.insert(ev.id.clone(), eid);
+        notification_default_by_key.insert(ev.id.clone(), tier);
+        notification_list.push((eid, ev.id.clone(), ev.display_name.clone(), tier));
+    }
+
+    let localization_by_key: BTreeMap<String, String> = strings
+        .into_iter()
+        .map(|s| (s.id, s.text))
         .collect();
 
-    let infra_defs = infra_classes
+    let gov_model = governance_models
         .iter()
-        .enumerate()
-        .map(|(idx, inf)| InfraDefView {
-            id: InfraClassId(idx as u16),
-            key: inf.id.clone(),
-            display_name: inf.display_name.clone(),
-            throughput_tonnes_per_hour: inf.throughput_tonnes_per_hour,
-            speed_multiplier: inf.speed_multiplier,
-            mud_shield_factor: inf.mud_shield_factor,
-        })
-        .collect();
-
-    let event_by_key = event_classes
-        .iter()
-        .enumerate()
-        .map(|(idx, ev)| (ev.id.clone(), EventClassId(idx as u16)))
-        .collect();
+        .find(|g| g.id == scenario_rec.governance_model);
+    let (gov_base_attention, gov_clerical_overhead, gov_hop_latency) = match gov_model {
+        Some(g) => (
+            g.base_attention_capacity,
+            g.clerical_overhead_per_mandate,
+            g.hierarchy_hop_latency_hours,
+        ),
+        None => (100.0, 8.0, 4),
+    };
 
     let calendar_view = CalendarConfigView {
         hours_per_day: calendar_rec.hours_per_day,
@@ -1711,10 +1900,14 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
     let scenario_view = ScenarioInitView {
         scenario_key: scenario_rec.id,
         display_name: scenario_rec.display_name,
+        archetype: ScenarioArchetypeKind::from_profile_str(&scenario_rec.starting_profile),
         hq_settlement_key: scenario_rec.hq_settlement_id,
         hq_sight_radius_cells: scenario_rec.hq_sight_radius_cells,
         unexplored_surrounding_cells: scenario_rec.unexplored_surrounding_cells,
         goldberg_subdivision: planet_rec.goldberg_subdivision,
+        governance_base_attention: gov_base_attention,
+        clerical_overhead_per_mandate: gov_clerical_overhead,
+        hierarchy_hop_latency_hours: gov_hop_latency,
         settlements: starting_settlements
             .iter()
             .map(|st| ScenarioSettlementSeed {
@@ -1727,16 +1920,28 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
                     .iter()
                     .map(|sp| (commodity_by_key[sp.commodity.as_str()], sp.mass_kg, sp.purity))
                     .collect(),
+                stockpile_roofs_01: st.stockpiles.iter().map(|sp| sp.roof_protection_01).collect(),
                 cohorts: st
                     .cohorts
                     .iter()
                     .map(|ch| (vocation_by_key[ch.vocation.as_str()], ch.count))
+                    .collect(),
+                cohort_archetype_indices: st
+                    .cohorts
+                    .iter()
+                    .map(|ch| archetype_by_key[ch.archetype.as_str()])
                     .collect(),
                 initial_facilities: st
                     .initial_facilities
                     .iter()
                     .map(|fac| (process_by_key[fac.process.as_str()], fac.workers))
                     .collect(),
+                initial_facility_owners: st
+                    .initial_facilities
+                    .iter()
+                    .map(|fac| ActorId(fac.owner_actor_id))
+                    .collect(),
+                initial_shaft_water_01: st.initial_shaft_water_01,
             })
             .collect(),
         characters: starting_characters
@@ -1750,6 +1955,11 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
                 precision_01: ch.precision_01,
                 honesty_vs_sycophancy: ch.honesty_vs_sycophancy,
                 caution_vs_alarmism: ch.caution_vs_alarmism,
+                initiative_01: ch.initiative_01,
+                adaptability_01: ch.adaptability_01,
+                ambition_01: ch.ambition_01,
+                loyalty_01: ch.loyalty_01,
+                greed_skimming_01: ch.greed_skimming_01,
             })
             .collect(),
     };
@@ -1760,9 +1970,15 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
         commodity_by_key,
         process_defs,
         carrier_defs,
+        carrier_by_key,
         infra_defs,
+        infra_by_key,
         vocation_defs,
+        archetype_defs,
         event_by_key,
+        notification_default_by_key,
+        notification_list,
+        localization_by_key,
         calendar_view,
         planet_gen_view,
         scenario_view,

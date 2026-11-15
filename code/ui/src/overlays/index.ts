@@ -5,9 +5,25 @@ import {
   GlobeRayHit,
   MapLayerPlugin,
   UiIntentBus,
+  describeProvenanceBadge,
 } from "../spine";
 
-/** Baseline map overlay plugin cartridge for M0 shell verification. */
+export interface OverlayTelemetrySummary {
+  readonly activeModeId: string;
+  readonly unexploredCount: number;
+  readonly rumoredCount: number;
+  readonly staleCount: number;
+  readonly surveyedCount: number;
+  readonly liveSightCount: number;
+  readonly weatherStationCount: number;
+  readonly stormAlertCount: number;
+  readonly windVectorCount: number;
+  readonly convoyCount: number;
+  readonly projectedConvoyCount: number;
+  readonly overdueConvoyCount: number;
+}
+
+/** Baseline map overlay plugin cartridge for M0..M4 shell verification. */
 export function createBaselineOverlayPlugin(): MapLayerPlugin {
   return {
     layerId: "epistemic_fog_stub",
@@ -46,6 +62,274 @@ export function createOperationalWarfareStubLayer(): MapLayerPlugin {
   };
 }
 
+/**
+ * Computes real-time diegetic overlay metrics strictly from `DiegeticSnapshot`
+ * without ever referencing hidden engine ground truth (`UI-MAP-001`..`004`).
+ */
+export function summarizeOverlaySnapshot(
+  snapshot: DiegeticSnapshot,
+  activeModeId = "terrain",
+): OverlayTelemetrySummary {
+  let unexploredCount = 0;
+  let rumoredCount = 0;
+  let staleCount = 0;
+  let surveyedCount = 0;
+  let liveSightCount = 0;
+
+  for (const cell of snapshot.knownCells) {
+    if (cell.tier === "unexplored") unexploredCount += 1;
+    else if (cell.tier === "rumored") rumoredCount += 1;
+    else if (cell.tier === "stale") staleCount += 1;
+    else {
+      surveyedCount += 1;
+      if (cell.isLiveHqSight) liveSightCount += 1;
+    }
+  }
+
+  let stormAlertCount = 0;
+  let windVectorCount = 0;
+  for (const w of snapshot.observedWeather) {
+    if (w.precipMmHr > 1.5 || (w.floodStage01 ?? 0) > 0.25) {
+      stormAlertCount += 1;
+    }
+    if (Math.hypot(w.windUMps ?? 0, w.windVMps ?? 0) > 0.4) {
+      windVectorCount += 1;
+    }
+  }
+
+  let projectedConvoyCount = 0;
+  let overdueConvoyCount = 0;
+  for (const convoy of snapshot.trackedConvoys) {
+    const s = convoy.status.toLowerCase();
+    if (s.includes("overdue")) overdueConvoyCount += 1;
+    else if (!s.includes("confirmed") && !s.includes("live")) projectedConvoyCount += 1;
+  }
+
+  return {
+    activeModeId,
+    unexploredCount,
+    rumoredCount,
+    staleCount,
+    surveyedCount,
+    liveSightCount,
+    weatherStationCount: snapshot.observedWeather.length,
+    stormAlertCount,
+    windVectorCount,
+    convoyCount: snapshot.trackedConvoys.length,
+    projectedConvoyCount,
+    overdueConvoyCount,
+  };
+}
+
+/** Epistemic Currency & HQ Courier Delay Contour map layer (`UI-MAP-001`). */
+export class EpistemicCurrencyOverlayLayer implements MapLayerPlugin {
+  readonly layerId = "epistemic_currency";
+  readonly displayName = "Epistemic Horizon & Delay";
+  private lastSummary: OverlayTelemetrySummary | null = null;
+
+  public supportsMode(modeId: string): boolean {
+    return modeId === "epistemic" || modeId === "terrain";
+  }
+
+  public mount(_host: GlobeLayerHost, store: DiegeticStoreAccess, _bus: UiIntentBus): void {
+    const snap = store.getSnapshot();
+    if (snap) this.onSnapshotUpdate(snap);
+  }
+
+  public onSnapshotUpdate(snapshot: DiegeticSnapshot): void {
+    this.lastSummary = summarizeOverlaySnapshot(snapshot, "epistemic");
+  }
+
+  public onFrameRender(_cameraAltitudeNorm: number, _elapsedSec: number): void {}
+
+  public getSummary(): OverlayTelemetrySummary | null {
+    return this.lastSummary;
+  }
+
+  public dispose(): void {
+    this.lastSummary = null;
+  }
+}
+
+/** Observed Weather & Hydrology overlay plugin (`UI-MAP-004`). */
+export class WeatherHydrologyOverlayLayer implements MapLayerPlugin {
+  readonly layerId = "weather_hydrology";
+  readonly displayName = "Weather & Hydrology";
+  private lastSummary: OverlayTelemetrySummary | null = null;
+
+  public supportsMode(modeId: string): boolean {
+    return modeId === "weather";
+  }
+
+  public mount(_host: GlobeLayerHost, store: DiegeticStoreAccess, _bus: UiIntentBus): void {
+    const snap = store.getSnapshot();
+    if (snap) this.onSnapshotUpdate(snap);
+  }
+
+  public onSnapshotUpdate(snapshot: DiegeticSnapshot): void {
+    this.lastSummary = summarizeOverlaySnapshot(snapshot, "weather");
+  }
+
+  public onFrameRender(_cameraAltitudeNorm: number, _elapsedSec: number): void {}
+
+  public getSummary(): OverlayTelemetrySummary | null {
+    return this.lastSummary;
+  }
+
+  public dispose(): void {
+    this.lastSummary = null;
+  }
+}
+
+/** Dead-Reckoning Logistics & Convoys overlay plugin (`UI-MAP-002`). */
+export class LogisticsConvoyOverlayLayer implements MapLayerPlugin {
+  readonly layerId = "logistics_convoys";
+  readonly displayName = "Logistics & Dead-Reckoning";
+  private lastSummary: OverlayTelemetrySummary | null = null;
+
+  public supportsMode(modeId: string): boolean {
+    return modeId === "logistics";
+  }
+
+  public mount(_host: GlobeLayerHost, store: DiegeticStoreAccess, _bus: UiIntentBus): void {
+    const snap = store.getSnapshot();
+    if (snap) this.onSnapshotUpdate(snap);
+  }
+
+  public onSnapshotUpdate(snapshot: DiegeticSnapshot): void {
+    this.lastSummary = summarizeOverlaySnapshot(snapshot, "logistics");
+  }
+
+  public onFrameRender(_cameraAltitudeNorm: number, _elapsedSec: number): void {}
+
+  public getSummary(): OverlayTelemetrySummary | null {
+    return this.lastSummary;
+  }
+
+  public dispose(): void {
+    this.lastSummary = null;
+  }
+}
+
+/** Diegetic bottom-left map overlay lens selector & legend rendered over the globe (`UI-MAP-001`..`004`). */
+export class OverlayToolbarLayer implements MapLayerPlugin {
+  readonly layerId = "overlay_mode_switcher";
+  readonly displayName = "Map Lens Selector";
+  private rootEl: HTMLDivElement | null = null;
+  private legendEl: HTMLDivElement | null = null;
+  private activeModeId = "terrain";
+  private latestSnapshot: DiegeticSnapshot | null = null;
+  private unsubs: Array<() => void> = [];
+
+  public supportsMode(): boolean {
+    return true;
+  }
+
+  public mount(host: GlobeLayerHost, store: DiegeticStoreAccess, bus: UiIntentBus): void {
+    this.dispose();
+    const canvas = host.getCanvasElement();
+    const overlayRoot = document.getElementById(host.overlayRootId) ?? canvas.parentElement ?? document.body;
+
+    const bar = document.createElement("div");
+    bar.id = "map-overlay-toolbar";
+    bar.className = "ng-overlay-legend ng-hud-chrome-interactive";
+    bar.setAttribute("data-chrome-occluder", "true");
+    bar.setAttribute("role", "region");
+    bar.setAttribute("aria-label", "Map Lens Modes");
+
+    const modes = [
+      { id: "terrain", label: "Terrain" },
+      { id: "epistemic", label: "Recon & Delay" },
+      { id: "weather", label: "Weather" },
+      { id: "logistics", label: "Logistics" },
+    ];
+
+    const buttons = new Map<string, HTMLButtonElement>();
+    const syncButtons = () => {
+      for (const [id, btn] of buttons) {
+        btn.setAttribute("aria-pressed", id === this.activeModeId ? "true" : "false");
+        btn.classList.toggle("is-active", id === this.activeModeId);
+      }
+    };
+
+    for (const mode of modes) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ng-hud-btn";
+      btn.dataset.overlayMode = mode.id;
+      btn.textContent = mode.label;
+      btn.addEventListener("click", () => {
+        this.activeModeId = mode.id;
+        syncButtons();
+        this.refreshLegend();
+        bus.emit({ kind: "SwitchMapOverlayMode", modeId: mode.id });
+        bus.emit({ kind: "PlayUiFoley", cueId: "clock_step" });
+      });
+      buttons.set(mode.id, btn);
+      bar.appendChild(btn);
+    }
+
+    const legend = document.createElement("div");
+    legend.id = "map-overlay-legend-summary";
+    legend.className = "ng-hud-stat";
+    bar.appendChild(legend);
+
+    overlayRoot.appendChild(bar);
+    this.rootEl = bar;
+    this.legendEl = legend;
+    syncButtons();
+
+    this.unsubs.push(
+      bus.subscribe((intent) => {
+        if (intent.kind === "SwitchMapOverlayMode") {
+          this.activeModeId = intent.modeId;
+          syncButtons();
+          this.refreshLegend();
+        }
+      }),
+    );
+
+    const snap = store.getSnapshot();
+    if (snap) {
+      this.onSnapshotUpdate(snap);
+    }
+  }
+
+  private refreshLegend(): void {
+    if (!this.legendEl || !this.latestSnapshot) return;
+    const summary = summarizeOverlaySnapshot(this.latestSnapshot, this.activeModeId);
+    if (this.activeModeId === "weather") {
+      this.legendEl.textContent =
+        `Obs ${summary.weatherStationCount} · Storms ${summary.stormAlertCount} · Wind Vectors ${summary.windVectorCount}`;
+    } else if (this.activeModeId === "logistics") {
+      this.legendEl.textContent =
+        `Convoys ${summary.convoyCount} · Projected ${summary.projectedConvoyCount} · Overdue ${summary.overdueConvoyCount}`;
+    } else if (this.activeModeId === "epistemic") {
+      this.legendEl.textContent =
+        `Live ${summary.liveSightCount} · Surveyed ${summary.surveyedCount} · Stale ${summary.staleCount} · Rumored ${summary.rumoredCount}`;
+    } else {
+      this.legendEl.textContent =
+        `Surveyed ${summary.surveyedCount} · Unexplored ${summary.unexploredCount}`;
+    }
+  }
+
+  public onSnapshotUpdate(snapshot: DiegeticSnapshot): void {
+    this.latestSnapshot = snapshot;
+    this.refreshLegend();
+  }
+
+  public onFrameRender(_cameraAltitudeNorm: number, _elapsedSec: number): void {}
+
+  public dispose(): void {
+    while (this.unsubs.length > 0) {
+      this.unsubs.pop()?.();
+    }
+    this.rootEl?.remove();
+    this.rootEl = null;
+    this.legendEl = null;
+  }
+}
+
 function clientPointToNdc(canvas: HTMLCanvasElement, clientX: number, clientY: number): {
   readonly ndcX: number;
   readonly ndcY: number;
@@ -60,6 +344,35 @@ function clientPointToNdc(canvas: HTMLCanvasElement, clientX: number, clientY: n
   return { ndcX, ndcY };
 }
 
+function formatHoverTooltipText(hit: GlobeRayHit, snapshot: DiegeticSnapshot | null): string {
+  if (!snapshot) return hit.label;
+  const currentTick = snapshot.clockAndNotifications.tick;
+  if (hit.hitKind === "convoy") {
+    const convoy = snapshot.trackedConvoys.find((c) => c.convoyId === hit.convoyId);
+    if (convoy && convoy.provenanceLabel) {
+      const desc = describeProvenanceBadge({
+        currentTick,
+        observedTick: convoy.departureTick ?? currentTick,
+        confidence01: convoy.confidence01 ?? 0.65,
+        provenanceLabel: convoy.provenanceLabel,
+      });
+      return `${hit.label} — ${convoy.status} (${desc.badgeText})`;
+    }
+  }
+  const cell = snapshot.knownCells.find((k) => k.cellId === hit.cellId);
+  if (cell && cell.tier !== "unexplored") {
+    const desc = describeProvenanceBadge({
+      currentTick,
+      observedTick: cell.observedTick,
+      confidence01: cell.confidence01,
+      provenanceLabel: cell.provenanceLabel,
+      isLiveSight: cell.tier === "surveyed" ? cell.isLiveHqSight : false,
+    });
+    return `${hit.label} [${desc.badgeText}]`;
+  }
+  return hit.label;
+}
+
 /**
  * Chrome-occlusion-aware ray-picking & hover tooltip controller (`UI-MAP-005`).
  * Aborts hover/click picking whenever a floating window, HUD bar, or modal dialog
@@ -71,13 +384,15 @@ export class OcclusionAwareCellPicker implements MapLayerPlugin {
   private tooltip: HTMLDivElement | null = null;
   private cleanups: Array<() => void> = [];
   private lastHoveredHit: GlobeRayHit | null = null;
+  private latestSnapshot: DiegeticSnapshot | null = null;
 
   public supportsMode(): boolean {
     return true;
   }
 
-  public mount(host: GlobeLayerHost, _store: DiegeticStoreAccess, bus: UiIntentBus): void {
+  public mount(host: GlobeLayerHost, store: DiegeticStoreAccess, bus: UiIntentBus): void {
     this.dispose();
+    this.latestSnapshot = store.getSnapshot();
     const canvas = host.getCanvasElement();
     const overlayRoot = document.getElementById(host.overlayRootId) ?? canvas.parentElement ?? document.body;
 
@@ -119,7 +434,7 @@ export class OcclusionAwareCellPicker implements MapLayerPlugin {
       this.lastHoveredHit = hit;
       if (hit && this.tooltip) {
         this.tooltip.hidden = false;
-        this.tooltip.textContent = hit.label;
+        this.tooltip.textContent = formatHoverTooltipText(hit, this.latestSnapshot);
         this.tooltip.style.left = `${Math.round(ev.clientX + 14)}px`;
         this.tooltip.style.top = `${Math.round(ev.clientY + 14)}px`;
       } else if (this.tooltip) {
@@ -183,7 +498,9 @@ export class OcclusionAwareCellPicker implements MapLayerPlugin {
     });
   }
 
-  public onSnapshotUpdate(_snapshot: DiegeticSnapshot): void {}
+  public onSnapshotUpdate(snapshot: DiegeticSnapshot): void {
+    this.latestSnapshot = snapshot;
+  }
 
   public onFrameRender(_cameraAltitudeNorm: number, _elapsedSec: number): void {}
 
@@ -194,5 +511,6 @@ export class OcclusionAwareCellPicker implements MapLayerPlugin {
     }
     this.tooltip = null;
     this.lastHoveredHit = null;
+    this.latestSnapshot = null;
   }
 }

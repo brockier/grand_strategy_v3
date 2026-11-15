@@ -67,6 +67,7 @@ export interface UiSpineContext {
   readonly audioPrefs?: AudioPreferencesPort;
   readonly layoutPresets?: LayoutPresetPort;
   readonly readPreferences?: () => Promise<UserPreferencesDto>;
+  readonly writePreferences?: (prefs: UserPreferencesDto) => Promise<void>;
 }
 
 export interface WindowContentPlugin {

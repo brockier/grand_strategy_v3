@@ -41,6 +41,13 @@
         "display_name": {
           "type": "string"
         },
+        "fallback_tool_commodity": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
         "id": {
           "type": "string"
         },
@@ -50,6 +57,37 @@
           "items": {
             "$ref": "#/$defs/ProcessQuantityRecord"
           }
+        },
+        "is_crop_cultivation": {
+          "type": "boolean",
+          "default": false
+        },
+        "is_mine_drainage": {
+          "type": "boolean",
+          "default": false
+        },
+        "is_outdoor_construction": {
+          "type": "boolean",
+          "default": false
+        },
+        "is_underground_mine": {
+          "type": "boolean",
+          "default": false
+        },
+        "max_temp_c": {
+          "type": "number",
+          "format": "float",
+          "default": 50.0
+        },
+        "min_temp_c": {
+          "type": "number",
+          "format": "float",
+          "default": -40.0
+        },
+        "optimal_moisture_01": {
+          "type": "number",
+          "format": "float",
+          "default": 0.44999998807907104
         },
         "outputs": {
           "type": "array",
@@ -62,6 +100,18 @@
           "type": "string"
         },
         "tool_commodity": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "tool_wear_intensity": {
+          "type": "number",
+          "format": "double",
+          "default": 1.0
+        },
+        "waste_commodity": {
           "type": [
             "string",
             "null"

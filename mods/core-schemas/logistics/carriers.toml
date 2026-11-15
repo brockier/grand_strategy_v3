@@ -9,6 +9,7 @@ mud_penalty_factor = 0.45
 crew_required = 8
 fodder_or_fuel_commodity = "raw_grain"
 fuel_burn_kg_per_hour = 0.6
+allowed_infra_classes = ["foot_trail", "metalled_road", "timber_bridge"]
 
 [[carriers]]
 id = "mounted_dispatch_rider"
@@ -21,3 +22,55 @@ mud_penalty_factor = 0.60
 crew_required = 1
 fodder_or_fuel_commodity = "raw_grain"
 fuel_burn_kg_per_hour = 0.35
+allowed_infra_classes = ["foot_trail", "metalled_road", "timber_bridge"]
+
+[[carriers]]
+id = "ox_freight_wagon"
+display_name = "Ox-Drawn Heavy Freight Wagon"
+max_payload_kg = 1800.0
+max_payload_m3 = 3.8
+base_speed_km_hr = 3.4
+max_grade_rad = 0.20
+mud_penalty_factor = 0.70
+crew_required = 4
+fodder_or_fuel_commodity = "raw_grain"
+fuel_burn_kg_per_hour = 1.4
+allowed_infra_classes = ["metalled_road", "timber_bridge"]
+spare_parts_commodity = "timber"
+spare_parts_wear_per_km = 0.08
+
+[[carriers]]
+id = "river_cargo_barge"
+display_name = "Shallow-Draft Cargo Barge"
+max_payload_kg = 8500.0
+max_payload_m3 = 18.0
+base_speed_km_hr = 6.2
+max_grade_rad = 0.08
+mud_penalty_factor = 0.0
+crew_required = 6
+fodder_or_fuel_commodity = "charcoal"
+fuel_burn_kg_per_hour = 0.9
+allowed_infra_classes = ["river_channel"]
+is_watercraft = true
+uses_wind_sail = false
+max_ice_thickness_m = 0.14
+spare_parts_commodity = "timber"
+spare_parts_wear_per_km = 0.12
+
+[[carriers]]
+id = "coastal_sail_cutter"
+display_name = "Coastal Sail Packet Cutter"
+max_payload_kg = 12000.0
+max_payload_m3 = 26.0
+base_speed_km_hr = 9.5
+max_grade_rad = 0.05
+mud_penalty_factor = 0.0
+crew_required = 10
+fodder_or_fuel_commodity = "timber"
+fuel_burn_kg_per_hour = 0.25
+allowed_infra_classes = ["river_channel"]
+is_watercraft = true
+uses_wind_sail = true
+max_ice_thickness_m = 0.14
+spare_parts_commodity = "timber"
+spare_parts_wear_per_km = 0.15

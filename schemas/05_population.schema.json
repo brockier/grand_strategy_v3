@@ -43,12 +43,37 @@
           "type": "number",
           "format": "float"
         },
+        "daily_clothing_wear_kg": {
+          "type": "number",
+          "format": "double",
+          "default": 0.005
+        },
+        "daily_fuel_need_kg_below_10c": {
+          "type": "number",
+          "format": "double",
+          "default": 1.2
+        },
         "daily_grain_need_kg": {
           "type": "number",
           "format": "double"
         },
+        "daily_water_need_kg": {
+          "type": "number",
+          "format": "double",
+          "default": 2.0
+        },
+        "dependents_share_01": {
+          "type": "number",
+          "format": "float",
+          "default": 0.20000000298023224
+        },
         "display_name": {
           "type": "string"
+        },
+        "elders_share_01": {
+          "type": "number",
+          "format": "float",
+          "default": 0.11999999731779099
         },
         "id": {
           "type": "string"

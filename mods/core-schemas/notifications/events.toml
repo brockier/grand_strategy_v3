@@ -21,3 +21,27 @@ id = "mandate_escalation"
 display_name = "Subordinate Bottleneck Escalation"
 default_tier = "LogOnly"
 template_key = "dispatch.mandate_escalation"
+
+[[event_classes]]
+id = "unrest_escalation"
+display_name = "Cohort Grievance & Labor Unrest"
+default_tier = "DispatchPopupAutoPause"
+template_key = "dispatch.unrest_escalation"
+
+[[event_classes]]
+id = "mine_flooding_halt"
+display_name = "Subsurface Shaft Flooding Halt"
+default_tier = "DispatchPopup"
+template_key = "dispatch.mine_flooding_halt"
+
+[[event_classes]]
+id = "winter_crop_blight"
+display_name = "Field Crop Weather & Frost Stress"
+default_tier = "BannerAlert"
+template_key = "dispatch.winter_crop_blight"
+
+[[event_classes]]
+id = "mandate_issued_log"
+display_name = "Written Mandate Dispatched"
+default_tier = "LogOnly"
+template_key = "dispatch.mandate_issued_log"

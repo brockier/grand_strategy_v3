@@ -23,6 +23,13 @@
     "CarrierRecord": {
       "type": "object",
       "properties": {
+        "allowed_infra_classes": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
         "base_speed_km_hr": {
           "type": "number",
           "format": "float"
@@ -45,9 +52,18 @@
         "id": {
           "type": "string"
         },
+        "is_watercraft": {
+          "type": "boolean",
+          "default": false
+        },
         "max_grade_rad": {
           "type": "number",
           "format": "float"
+        },
+        "max_ice_thickness_m": {
+          "type": "number",
+          "format": "float",
+          "default": 0.15000000596046448
         },
         "max_payload_kg": {
           "type": "number",
@@ -60,6 +76,22 @@
         "mud_penalty_factor": {
           "type": "number",
           "format": "float"
+        },
+        "spare_parts_commodity": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        },
+        "spare_parts_wear_per_km": {
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        },
+        "uses_wind_sail": {
+          "type": "boolean",
+          "default": false
         }
       },
       "additionalProperties": false,

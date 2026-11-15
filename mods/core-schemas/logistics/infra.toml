@@ -13,3 +13,19 @@ throughput_tonnes_per_hour = 18.0
 speed_multiplier = 1.5
 mud_shield_factor = 0.72
 maintenance_timber_kg_per_week = 12.0
+
+[[infra_classes]]
+id = "river_channel"
+display_name = "Navigable River & Coastal Channel"
+throughput_tonnes_per_hour = 65.0
+speed_multiplier = 1.35
+mud_shield_factor = 1.0
+maintenance_timber_kg_per_week = 0.0
+
+[[infra_classes]]
+id = "timber_bridge"
+display_name = "Trussed Timber River Crossing"
+throughput_tonnes_per_hour = 12.0
+speed_multiplier = 1.25
+mud_shield_factor = 0.90
+maintenance_timber_kg_per_week = 18.0

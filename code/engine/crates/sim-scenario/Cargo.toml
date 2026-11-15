@@ -11,9 +11,13 @@ player-view = { path = "../player-view" }
 rand_core.workspace = true
 rayon.workspace = true
 sim-clock = { path = "../sim-clock" }
+sim-command = { path = "../sim-command" }
 sim-core = { path = "../sim-core" }
 sim-data = { path = "../sim-data" }
+sim-economy = { path = "../sim-economy" }
+sim-logistics = { path = "../sim-logistics" }
 sim-planet = { path = "../sim-planet" }
+sim-pop = { path = "../sim-pop" }
 sim-spine = { path = "../sim-spine" }
 sim-weather = { path = "../sim-weather" }
 
