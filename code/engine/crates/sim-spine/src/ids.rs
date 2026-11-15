@@ -42,3 +42,4 @@ define_spine_id!(TheoryDomainId, u16, "Theoretical Know-Why scientific domain id
 define_spine_id!(FormationId, u32, "Military division, corps, or field detachment identifier.");
 define_spine_id!(TheaterId, u16, "Operational military theater identifier.");
 define_spine_id!(EventClassId, u16, "Interned notification and auto-pause event category index.");
+define_spine_id!(ProceduralMaterialId, u16, "World-sampled procedural ore, flux, fuel, crop, fauna, or pathogen identifier.");

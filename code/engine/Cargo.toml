@@ -3,8 +3,12 @@ resolver = "2"
 members = [
     "crates/sim-spine",
     "crates/sim-data",
+    "crates/sim-clock",
+    "crates/sim-planet",
+    "crates/sim-weather",
     "crates/sim-core",
     "crates/player-view",
+    "crates/sim-scenario",
     "crates/steam-adapter",
     "crates/sim-cli",
     "tools/xtask",
@@ -24,3 +28,19 @@ toml_edit = "0.22"
 schemars = "1.2"
 blake3 = "1.8"
 thiserror = "2.0"
+rayon = "1.12"
+rand_chacha = { version = "0.9", default-features = false, features = ["std"] }
+rand_core = "0.9"
+lz4_flex = { version = "0.14", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package.sim-planet]
+opt-level = 2
+
+[profile.dev.package.sim-weather]
+opt-level = 2
+
+[profile.dev.package.sim-clock]
+opt-level = 2

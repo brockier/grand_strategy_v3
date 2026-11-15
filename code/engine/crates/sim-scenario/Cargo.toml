@@ -1,0 +1,22 @@
+[package]
+name = "sim-scenario"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+blake3.workspace = true
+player-view = { path = "../player-view" }
+rand_core.workspace = true
+rayon.workspace = true
+sim-clock = { path = "../sim-clock" }
+sim-core = { path = "../sim-core" }
+sim-data = { path = "../sim-data" }
+sim-planet = { path = "../sim-planet" }
+sim-spine = { path = "../sim-spine" }
+sim-weather = { path = "../sim-weather" }
+
+[dev-dependencies]
+rand_chacha.workspace = true
+

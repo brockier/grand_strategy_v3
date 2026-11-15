@@ -9,9 +9,9 @@ use schemars::schema_for;
 use serde::{Deserialize, Serialize};
 use sim_spine::{
     CalendarConfigView, CarrierClassId, CarrierDefView, CommodityDefView, CommodityId,
-    EventClassId, InfraClassId, InfraDefView, ModRegistryPort, ProcessDefView, ProcessId,
-    ProcessQuantityView, ScenarioCharacterSeed, ScenarioInitView, ScenarioSettlementSeed,
-    VocationDefView, VocationId,
+    EventClassId, InfraClassId, InfraDefView, ModRegistryPort, NaturalBoundsView,
+    PlanetGenConfigView, ProcessDefView, ProcessId, ProcessQuantityView, ScenarioCharacterSeed,
+    ScenarioInitView, ScenarioSettlementSeed, VocationDefView, VocationId,
 };
 
 use crate::schema::{
@@ -85,7 +85,9 @@ pub struct CompiledModBundle {
     vocation_defs: Vec<VocationDefView>,
     event_by_key: BTreeMap<String, EventClassId>,
     calendar_view: CalendarConfigView,
+    planet_gen_view: PlanetGenConfigView,
     scenario_view: ScenarioInitView,
+    digest_bytes: [u8; 32],
     digest_hex: String,
 }
 
@@ -136,6 +138,14 @@ impl ModRegistryPort for CompiledModBundle {
 
     fn calendar_config(&self) -> &CalendarConfigView {
         &self.calendar_view
+    }
+
+    fn planet_gen_config(&self) -> &PlanetGenConfigView {
+        &self.planet_gen_view
+    }
+
+    fn bundle_blake3_bytes(&self) -> [u8; 32] {
+        self.digest_bytes
     }
 
     fn scenario_init(&self) -> &ScenarioInitView {
@@ -1557,7 +1567,9 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
     };
 
     let canonical_bytes = serde_json::to_vec(&merged_doc).unwrap_or_default();
-    let digest_hex = blake3::hash(&canonical_bytes).to_hex().to_string();
+    let digest_hash = blake3::hash(&canonical_bytes);
+    let digest_bytes = *digest_hash.as_bytes();
+    let digest_hex = digest_hash.to_hex().to_string();
 
     let mut commodity_defs = Vec::with_capacity(commodities.len());
     let mut commodity_by_key = BTreeMap::new();
@@ -1670,6 +1682,32 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
         month_lengths: calendar_rec.month_lengths,
     };
 
+    let planet_gen_view = PlanetGenConfigView {
+        id: planet_rec.id.clone(),
+        goldberg_subdivision: planet_rec.goldberg_subdivision,
+        tectonic_plate_count: planet_rec.tectonic_plate_count,
+        land_fraction_target: planet_rec.land_fraction_target,
+        axial_tilt_deg: planet_rec.axial_tilt_deg,
+        solar_constant_w_m2: planet_rec.solar_constant_w_m2,
+        rotation_period_hours: planet_rec.rotation_period_hours,
+        mean_radius_km: planet_rec.mean_radius_km,
+        base_sea_level_m: planet_rec.base_sea_level_m,
+        max_orogenic_uplift_m: planet_rec.max_orogenic_uplift_m,
+        planetary_density_kg_m3: planet_rec.planetary_density_kg_m3,
+        natural_bounds: NaturalBoundsView {
+            ore_count: planet_rec.natural_bounds.ore_count,
+            flux_count: planet_rec.natural_bounds.flux_count,
+            fuel_count: planet_rec.natural_bounds.fuel_count,
+            crop_count: planet_rec.natural_bounds.crop_count,
+            fauna_count: planet_rec.natural_bounds.fauna_count,
+            pathogen_count: planet_rec.natural_bounds.pathogen_count,
+            ore_melting_k_range: planet_rec.natural_bounds.ore_melting_k_range,
+            ore_purity_range: planet_rec.natural_bounds.ore_purity_range,
+            fuel_enthalpy_mj_kg_range: planet_rec.natural_bounds.fuel_enthalpy_mj_kg_range,
+            crop_opt_temp_c_range: planet_rec.natural_bounds.crop_opt_temp_c_range,
+        },
+    };
+
     let scenario_view = ScenarioInitView {
         scenario_key: scenario_rec.id,
         display_name: scenario_rec.display_name,
@@ -1726,7 +1764,9 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
         vocation_defs,
         event_by_key,
         calendar_view,
+        planet_gen_view,
         scenario_view,
+        digest_bytes,
         digest_hex,
     })
 }

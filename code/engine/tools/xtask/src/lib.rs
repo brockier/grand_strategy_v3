@@ -374,7 +374,19 @@ pub fn check_isolation(
             }
         }
 
-        if ["sim-spine", "sim-data", "sim-core", "player-view", "sim-cli"].contains(&name) {
+        if [
+            "sim-spine",
+            "sim-data",
+            "sim-clock",
+            "sim-planet",
+            "sim-weather",
+            "sim-core",
+            "player-view",
+            "sim-scenario",
+            "sim-cli",
+        ]
+        .contains(&name)
+        {
             for dep in &pkg.dependencies {
                 if dep.name.contains("steam") {
                     errors.push(format!(
@@ -387,7 +399,16 @@ pub fn check_isolation(
     }
 
     // Source scan guarding against accidental Steamworks symbol leakage inside core simulation crates.
-    for core_crate in ["sim-spine", "sim-data", "sim-core", "player-view"] {
+    for core_crate in [
+        "sim-spine",
+        "sim-data",
+        "sim-clock",
+        "sim-planet",
+        "sim-weather",
+        "sim-core",
+        "player-view",
+        "sim-scenario",
+    ] {
         let src_dir = engine_dir.join("crates").join(core_crate).join("src");
         if src_dir.exists() {
             let mut files = Vec::new();

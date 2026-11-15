@@ -5,15 +5,20 @@
 use std::collections::BTreeMap;
 
 use sim_spine::{
-    ActorId, AttentionLoadView, CellGeologyView, CellId, CharacterId, CharacterSnapshotView,
+    codec::{
+        read_f32_bits, read_f64_bits, read_str, read_u16_le, read_u32_le, read_u64_le, read_u8,
+        write_f32_bits, write_f64_bits, write_str, write_u16_le, write_u32_le, write_u64_le,
+        write_u8,
+    },
+    ActorId, AttentionLoadView, CanonicalSaveablePort, CellId, CharacterId, CharacterSnapshotView,
     CohortDelta, CohortId, CohortSnapshotView, CommandPort, CommodityId, EdgeId, FacilityId,
     GovernanceFrictionPlugPort, KnowledgeModifierPlugPort, LedgerCommand, LedgerReceipt,
-    MandateView, ModRegistryPort, NeutralGovernanceFrictionPlug, NeutralKnowledgeModifierPlug,
-    NeutralNonStateEconomyPlug, NeutralOperationalCombatPlug, NeutralSuccessionPlug,
-    NonStateEconomyPlugPort, OperationalCombatPlugPort, PhysicalLedgerPort, PlanetGeometryPort,
+    MandateId, MandateView, ModRegistryPort, NeutralGovernanceFrictionPlug,
+    NeutralKnowledgeModifierPlug, NeutralNonStateEconomyPlug, NeutralOperationalCombatPlug,
+    NeutralSuccessionPlug, NonStateEconomyPlugPort, OperationalCombatPlugPort, PhysicalLedgerPort,
     PopulationPort, ProcessId, SettlementId, SettlementSummaryView, SpinePlayerCommand,
-    StockpileEntryView, StockpileId, SuccessionPlugPort, SurfaceConditionSnapshot,
-    SurfaceConditionsPort, Tick, TickPhase, VocationId,
+    StockpileEntryView, StockpileId, SuccessionPlugPort, SurfaceConditionsPort, Tick, TickPhase,
+    VocationId,
 };
 
 #[derive(Clone, Debug)]
@@ -52,8 +57,6 @@ pub struct SimWorld {
     settlement_cohort_ids: BTreeMap<SettlementId, Vec<CohortId>>,
     characters: Vec<CharacterSnapshotView>,
     active_mandates: Vec<MandateView>,
-    neighbors_scratch: Vec<CellId>,
-    empty_neighbors: Vec<CellId>,
     non_state_eco: Box<dyn NonStateEconomyPlugPort>,
     governance_friction: Box<dyn GovernanceFrictionPlugPort>,
     knowledge_mod: Box<dyn KnowledgeModifierPlugPort>,
@@ -166,12 +169,6 @@ impl SimWorld {
             });
         }
 
-        let neighbors_scratch = if cell_count > 1 {
-            vec![CellId(1), CellId((2).min(cell_count - 1))]
-        } else {
-            Vec::new()
-        };
-
         Self {
             current_tick: Tick(0),
             paused: false,
@@ -189,14 +186,83 @@ impl SimWorld {
             settlement_cohort_ids,
             characters,
             active_mandates: Vec::new(),
-            neighbors_scratch,
-            empty_neighbors: Vec::new(),
             non_state_eco: Box::new(NeutralNonStateEconomyPlug),
             governance_friction: Box::new(NeutralGovernanceFrictionPlug),
             knowledge_mod: Box::new(NeutralKnowledgeModifierPlug),
             combat_plug: Box::new(NeutralOperationalCombatPlug),
             succession_plug: Box::new(NeutralSuccessionPlug),
         }
+    }
+
+    /// Synchronizes planetary cell count from `sim-planet` into core validation bounds.
+    pub fn set_planet_cell_count(&mut self, cell_count: u32) {
+        self.cell_count = cell_count.max(1);
+    }
+
+    /// Relocates a settlement to `new_cell` and keeps `hq_cell` synchronized when applicable.
+    pub fn relocate_settlement_cell(&mut self, settlement_id: SettlementId, new_cell: CellId) {
+        for s in &mut self.settlements {
+            if s.id == settlement_id {
+                s.cell_id = new_cell;
+            }
+        }
+        if self.hq_settlement == Some(settlement_id) {
+            self.hq_cell = new_cell;
+        }
+    }
+
+    /// Synchronizes clock tick and pause state into `SimWorld`.
+    pub fn sync_clock_tick(&mut self, tick: Tick, paused: bool, speed_multiplier: u32) {
+        self.current_tick = tick;
+        self.paused = paused;
+        self.speed_multiplier = speed_multiplier.max(1);
+    }
+
+    /// Runs Phase 3 hourly combat update.
+    pub fn step_hourly_combat_phase(&mut self, tick: Tick) -> u32 {
+        self.combat_plug.step_hourly_combat(tick);
+        0
+    }
+
+    /// Runs Phase 5 daily private-actor/market update.
+    pub fn step_daily_markets_phase(&mut self, tick: Tick) -> u32 {
+        self.non_state_eco.step_private_actors(tick);
+        self.settlements.len() as u32
+    }
+
+    /// Runs Phase 7 weekly/monthly demographics & succession check.
+    pub fn step_weekly_demographics_phase(&mut self, tick: Tick) -> u32 {
+        if tick.get().is_multiple_of(168) {
+            let _ = self
+                .succession_plug
+                .check_succession_transition(tick, self.hq_cell);
+            return self.cohorts.len() as u32;
+        }
+        0
+    }
+
+    /// Total headcount across all cohorts.
+    #[must_use]
+    pub fn total_population(&self) -> u64 {
+        self.cohorts.values().map(|c| u64::from(c.headcount)).sum()
+    }
+
+    /// Total material mass stored across all stockpiles (`kg`).
+    #[must_use]
+    pub fn total_stockpile_mass_kg(&self) -> f64 {
+        self.stock_lots.values().map(|l| l.mass_kg).sum()
+    }
+
+    /// Number of initialized production/extraction facilities.
+    #[must_use]
+    pub fn facility_count(&self) -> usize {
+        self.facilities.len()
+    }
+
+    /// Number of active demographic cohorts.
+    #[must_use]
+    pub fn cohort_count(&self) -> usize {
+        self.cohorts.len()
     }
 
     /// Returns current discrete simulation hour tick.
@@ -239,8 +305,7 @@ impl SimWorld {
                     self.non_state_eco.step_private_actors(tick);
                 }
                 TickPhase::DailyBucketExtractionProductionConstruction => {
-                    self.run_daily_facility_bucket(tick, registry);
-                    self.apply_hourly_spoilage(registry);
+                    let _ = self.step_daily_production_with_weather(tick, registry, None);
                 }
                 TickPhase::WeeklyMonthlyBucketDemographicsMandatesResearch => {
                     if tick.get().is_multiple_of(168) {
@@ -268,22 +333,47 @@ impl SimWorld {
         }
     }
 
-    fn run_daily_facility_bucket(&mut self, tick: Tick, registry: &dyn ModRegistryPort) {
+    /// Executes staggered daily production & extraction bucket (with optional surface mud halt checks) plus hourly spoilage, returning the count of due facilities evaluated.
+    pub fn step_daily_production_with_weather(
+        &mut self,
+        tick: Tick,
+        registry: &dyn ModRegistryPort,
+        weather: Option<&dyn SurfaceConditionsPort>,
+    ) -> u32 {
         let primary_actor = ActorId(1);
+        let mut evaluated = 0u32;
         for fac_idx in 0..self.facilities.len() {
             let fac_id = self.facilities[fac_idx].id;
             if u64::from(fac_id.get()) % 24 != tick.get() % 24 {
                 continue;
             }
+            evaluated += 1;
             let process_id = self.facilities[fac_idx].process;
             let settlement_id = self.facilities[fac_idx].settlement;
             let workers = self.facilities[fac_idx].workers;
-            if !self.knowledge_mod.process_prerequisites_met(settlement_id, process_id) {
+            if !self
+                .knowledge_mod
+                .process_prerequisites_met(settlement_id, process_id)
+            {
                 continue;
             }
             let Some(proc_def) = registry.process_def(process_id) else {
                 continue;
             };
+            if let Some(w_port) = weather
+                && proc_def.weather_halt_mud_threshold > 0.0
+            {
+                let settlement_cell = self
+                    .settlements
+                    .iter()
+                    .find(|s| s.id == settlement_id)
+                    .map(|s| s.cell_id)
+                    .unwrap_or(self.hq_cell);
+                let surf = w_port.surface(settlement_cell);
+                if surf.mud_index_01 >= proc_def.weather_halt_mud_threshold {
+                    continue;
+                }
+            }
             let Some(stock_id) = self
                 .settlement_stockpile_ids
                 .get(&settlement_id)
@@ -343,21 +433,16 @@ impl SimWorld {
                 entry.mass_kg += out.amount_kg * max_affordable_ratio;
             }
         }
+        self.apply_hourly_spoilage(registry);
+        evaluated
     }
 
     /// Computes a deterministic Blake3 digest of the full physical world state.
     #[must_use]
     pub fn state_digest_hex(&self) -> String {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(&self.current_tick.get().to_le_bytes());
-        hasher.update(&self.world_seed.to_le_bytes());
-        for ((stock, cid, owner), lot) in &self.stock_lots {
-            hasher.update(&stock.get().to_le_bytes());
-            hasher.update(&cid.get().to_le_bytes());
-            hasher.update(&owner.get().to_le_bytes());
-            hasher.update(&lot.mass_kg.to_bits().to_le_bytes());
-        }
-        hasher.finalize().to_hex().to_string()
+        let mut buf = Vec::with_capacity(4096);
+        self.write_canonical_state(&mut buf);
+        blake3::hash(&buf).to_hex().to_string()
     }
 
     /// Reads current vocational skill multiplier if present (placeholder for M3/M4 hooks).
@@ -384,57 +469,232 @@ impl SimWorld {
     }
 }
 
-impl PlanetGeometryPort for SimWorld {
-    fn cell_count(&self) -> u32 {
-        self.cell_count
+impl CanonicalSaveablePort for SimWorld {
+    fn cartridge_tag(&self) -> &'static str {
+        "sim-core"
     }
 
-    fn cell_neighbors(&self, cell: CellId) -> &[CellId] {
-        if cell.get() == 0 {
-            &self.neighbors_scratch
+    fn write_canonical_state(&self, out: &mut Vec<u8>) {
+        write_u64_le(out, self.current_tick.get());
+        write_u8(out, u8::from(self.paused));
+        write_u32_le(out, self.speed_multiplier);
+        write_u64_le(out, self.world_seed);
+        write_u32_le(out, self.cell_count);
+        match self.hq_settlement {
+            None => {
+                write_u8(out, 0);
+                write_u32_le(out, 0);
+            }
+            Some(sid) => {
+                write_u8(out, 1);
+                write_u32_le(out, sid.get());
+            }
+        }
+        write_u32_le(out, self.hq_cell.get());
+        write_u8(out, self.hq_sight_radius_cells);
+
+        write_u32_le(out, self.settlements.len() as u32);
+        for s in &self.settlements {
+            write_u32_le(out, s.id.get());
+            write_str(out, &s.key);
+            write_str(out, &s.display_name);
+            write_u32_le(out, s.cell_id.get());
+            write_u32_le(out, s.owner.get());
+        }
+
+        write_u32_le(out, self.settlement_stockpile_ids.len() as u32);
+        for (sid, stocks) in &self.settlement_stockpile_ids {
+            write_u32_le(out, sid.get());
+            write_u32_le(out, stocks.len() as u32);
+            for st in stocks {
+                write_u32_le(out, st.get());
+            }
+        }
+
+        write_u32_le(out, self.stock_lots.len() as u32);
+        for lot in self.stock_lots.values() {
+            write_u32_le(out, lot.stockpile.get());
+            write_u32_le(out, lot.settlement.get());
+            write_u16_le(out, lot.commodity.get());
+            write_u32_le(out, lot.owner.get());
+            write_f64_bits(out, lot.mass_kg);
+            write_f32_bits(out, lot.purity);
+        }
+
+        write_u32_le(out, self.facilities.len() as u32);
+        for f in &self.facilities {
+            write_u32_le(out, f.id.get());
+            write_u32_le(out, f.settlement.get());
+            write_u16_le(out, f.process.get());
+            write_u32_le(out, f.workers);
+        }
+
+        write_u32_le(out, self.cohorts.len() as u32);
+        for coh in self.cohorts.values() {
+            write_u32_le(out, coh.id.get());
+            write_u32_le(out, coh.settlement.get());
+            write_u16_le(out, coh.vocation.get());
+            write_u32_le(out, coh.headcount);
+            write_f32_bits(out, coh.mean_skill_01);
+        }
+
+        write_u32_le(out, self.settlement_cohort_ids.len() as u32);
+        for (sid, ids) in &self.settlement_cohort_ids {
+            write_u32_le(out, sid.get());
+            write_u32_le(out, ids.len() as u32);
+            for cid in ids {
+                write_u32_le(out, cid.get());
+            }
+        }
+
+        write_u32_le(out, self.characters.len() as u32);
+        for ch in &self.characters {
+            write_u32_le(out, ch.id.get());
+            write_str(out, &ch.key);
+            write_str(out, &ch.display_name);
+            write_str(out, &ch.role_title);
+            write_u32_le(out, ch.home_settlement.get());
+            write_f32_bits(out, ch.competence);
+            write_f32_bits(out, ch.precision_01);
+            write_f32_bits(out, ch.honesty_vs_sycophancy);
+            write_f32_bits(out, ch.caution_vs_alarmism);
+        }
+
+        write_u32_le(out, self.active_mandates.len() as u32);
+        for m in &self.active_mandates {
+            write_u64_le(out, m.id.get());
+            write_u32_le(out, m.issuer.get());
+            write_u32_le(out, m.assignee.get());
+            write_u32_le(out, m.target_settlement.get());
+            write_str(out, &m.summary);
+            write_str(out, &m.status);
+        }
+    }
+
+    fn read_canonical_state(&mut self, input: &mut &[u8]) -> Result<(), String> {
+        self.current_tick = Tick(read_u64_le(input)?);
+        self.paused = read_u8(input)? != 0;
+        self.speed_multiplier = read_u32_le(input)?;
+        self.world_seed = read_u64_le(input)?;
+        self.cell_count = read_u32_le(input)?;
+        let has_hq = read_u8(input)? != 0;
+        let hq_raw = read_u32_le(input)?;
+        self.hq_settlement = if has_hq {
+            Some(SettlementId(hq_raw))
         } else {
-            &self.empty_neighbors
+            None
+        };
+        self.hq_cell = CellId(read_u32_le(input)?);
+        self.hq_sight_radius_cells = read_u8(input)?;
+
+        let n_set = read_u32_le(input)? as usize;
+        self.settlements.clear();
+        self.settlements.reserve(n_set);
+        for _ in 0..n_set {
+            self.settlements.push(SettlementSummaryView {
+                id: SettlementId(read_u32_le(input)?),
+                key: read_str(input)?,
+                display_name: read_str(input)?,
+                cell_id: CellId(read_u32_le(input)?),
+                owner: ActorId(read_u32_le(input)?),
+            });
         }
-    }
 
-    fn cell_edge(&self, _from: CellId, _to: CellId) -> Option<EdgeId> {
-        Some(EdgeId(0))
-    }
-
-    fn cell_elevation_m(&self, _cell: CellId) -> f32 {
-        120.0
-    }
-
-    fn cell_slope_rad(&self, _edge: EdgeId) -> f32 {
-        0.05
-    }
-
-    fn cell_biome_and_strata(&self, cell: CellId) -> CellGeologyView {
-        CellGeologyView {
-            cell_id: cell,
-            elevation_m: 120.0,
-            strata_label: String::new(),
-            biome_key: String::new(),
-            is_ocean: false,
+        let n_ss = read_u32_le(input)? as usize;
+        self.settlement_stockpile_ids.clear();
+        for _ in 0..n_ss {
+            let sid = SettlementId(read_u32_le(input)?);
+            let cnt = read_u32_le(input)? as usize;
+            let mut stocks = Vec::with_capacity(cnt);
+            for _ in 0..cnt {
+                stocks.push(StockpileId(read_u32_le(input)?));
+            }
+            self.settlement_stockpile_ids.insert(sid, stocks);
         }
-    }
 
-    fn watershed_downstream(&self, _cell: CellId) -> Option<CellId> {
-        None
-    }
-
-    fn great_circle_km(&self, a: CellId, b: CellId) -> f32 {
-        if a == b {
-            0.0
-        } else {
-            42.0
+        let n_lots = read_u32_le(input)? as usize;
+        self.stock_lots.clear();
+        for _ in 0..n_lots {
+            let lot = InternalStockLot {
+                stockpile: StockpileId(read_u32_le(input)?),
+                settlement: SettlementId(read_u32_le(input)?),
+                commodity: CommodityId(read_u16_le(input)?),
+                owner: ActorId(read_u32_le(input)?),
+                mass_kg: read_f64_bits(input)?,
+                purity: read_f32_bits(input)?,
+            };
+            self.stock_lots
+                .insert((lot.stockpile, lot.commodity, lot.owner), lot);
         }
-    }
-}
 
-impl SurfaceConditionsPort for SimWorld {
-    fn surface(&self, _cell: CellId) -> SurfaceConditionSnapshot {
-        SurfaceConditionSnapshot::default()
+        let n_fac = read_u32_le(input)? as usize;
+        self.facilities.clear();
+        self.facilities.reserve(n_fac);
+        for _ in 0..n_fac {
+            self.facilities.push(InternalFacility {
+                id: FacilityId(read_u32_le(input)?),
+                settlement: SettlementId(read_u32_le(input)?),
+                process: ProcessId(read_u16_le(input)?),
+                workers: read_u32_le(input)?,
+            });
+        }
+
+        let n_coh = read_u32_le(input)? as usize;
+        self.cohorts.clear();
+        for _ in 0..n_coh {
+            let coh = CohortSnapshotView {
+                id: CohortId(read_u32_le(input)?),
+                settlement: SettlementId(read_u32_le(input)?),
+                vocation: VocationId(read_u16_le(input)?),
+                headcount: read_u32_le(input)?,
+                mean_skill_01: read_f32_bits(input)?,
+            };
+            self.cohorts.insert(coh.id, coh);
+        }
+
+        let n_sc = read_u32_le(input)? as usize;
+        self.settlement_cohort_ids.clear();
+        for _ in 0..n_sc {
+            let sid = SettlementId(read_u32_le(input)?);
+            let cnt = read_u32_le(input)? as usize;
+            let mut ids = Vec::with_capacity(cnt);
+            for _ in 0..cnt {
+                ids.push(CohortId(read_u32_le(input)?));
+            }
+            self.settlement_cohort_ids.insert(sid, ids);
+        }
+
+        let n_ch = read_u32_le(input)? as usize;
+        self.characters.clear();
+        self.characters.reserve(n_ch);
+        for _ in 0..n_ch {
+            self.characters.push(CharacterSnapshotView {
+                id: CharacterId(read_u32_le(input)?),
+                key: read_str(input)?,
+                display_name: read_str(input)?,
+                role_title: read_str(input)?,
+                home_settlement: SettlementId(read_u32_le(input)?),
+                competence: read_f32_bits(input)?,
+                precision_01: read_f32_bits(input)?,
+                honesty_vs_sycophancy: read_f32_bits(input)?,
+                caution_vs_alarmism: read_f32_bits(input)?,
+            });
+        }
+
+        let n_man = read_u32_le(input)? as usize;
+        self.active_mandates.clear();
+        self.active_mandates.reserve(n_man);
+        for _ in 0..n_man {
+            self.active_mandates.push(MandateView {
+                id: MandateId(read_u64_le(input)?),
+                issuer: CharacterId(read_u32_le(input)?),
+                assignee: CharacterId(read_u32_le(input)?),
+                target_settlement: SettlementId(read_u32_le(input)?),
+                summary: read_str(input)?,
+                status: read_str(input)?,
+            });
+        }
+        Ok(())
     }
 }
 

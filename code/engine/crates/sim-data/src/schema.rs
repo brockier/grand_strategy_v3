@@ -30,6 +30,79 @@ pub struct PackManifest {
 
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct NaturalWorldBoundsRecord {
+    #[serde(default = "default_ore_count")]
+    pub ore_count: u16,
+    #[serde(default = "default_flux_count")]
+    pub flux_count: u16,
+    #[serde(default = "default_fuel_count")]
+    pub fuel_count: u16,
+    #[serde(default = "default_crop_count")]
+    pub crop_count: u16,
+    #[serde(default = "default_fauna_count")]
+    pub fauna_count: u16,
+    #[serde(default = "default_pathogen_count")]
+    pub pathogen_count: u16,
+    #[serde(default = "default_ore_melting_k_range")]
+    pub ore_melting_k_range: [f32; 2],
+    #[serde(default = "default_ore_purity_range")]
+    pub ore_purity_range: [f32; 2],
+    #[serde(default = "default_fuel_enthalpy_range")]
+    pub fuel_enthalpy_mj_kg_range: [f32; 2],
+    #[serde(default = "default_crop_temp_range")]
+    pub crop_opt_temp_c_range: [f32; 2],
+}
+
+fn default_ore_count() -> u16 {
+    6
+}
+fn default_flux_count() -> u16 {
+    3
+}
+fn default_fuel_count() -> u16 {
+    4
+}
+fn default_crop_count() -> u16 {
+    5
+}
+fn default_fauna_count() -> u16 {
+    4
+}
+fn default_pathogen_count() -> u16 {
+    3
+}
+fn default_ore_melting_k_range() -> [f32; 2] {
+    [1150.0, 1850.0]
+}
+fn default_ore_purity_range() -> [f32; 2] {
+    [0.18, 0.72]
+}
+fn default_fuel_enthalpy_range() -> [f32; 2] {
+    [14.0, 44.0]
+}
+fn default_crop_temp_range() -> [f32; 2] {
+    [8.0, 30.0]
+}
+
+impl Default for NaturalWorldBoundsRecord {
+    fn default() -> Self {
+        Self {
+            ore_count: default_ore_count(),
+            flux_count: default_flux_count(),
+            fuel_count: default_fuel_count(),
+            crop_count: default_crop_count(),
+            fauna_count: default_fauna_count(),
+            pathogen_count: default_pathogen_count(),
+            ore_melting_k_range: default_ore_melting_k_range(),
+            ore_purity_range: default_ore_purity_range(),
+            fuel_enthalpy_mj_kg_range: default_fuel_enthalpy_range(),
+            crop_opt_temp_c_range: default_crop_temp_range(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct PlanetGenerationRecord {
     pub id: String,
     pub goldberg_subdivision: u8,
@@ -42,6 +115,8 @@ pub struct PlanetGenerationRecord {
     pub base_sea_level_m: f32,
     pub max_orogenic_uplift_m: f32,
     pub planetary_density_kg_m3: f32,
+    #[serde(default)]
+    pub natural_bounds: NaturalWorldBoundsRecord,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema)]

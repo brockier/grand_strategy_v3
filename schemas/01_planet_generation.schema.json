@@ -16,6 +16,106 @@
   },
   "additionalProperties": false,
   "$defs": {
+    "NaturalWorldBoundsRecord": {
+      "type": "object",
+      "properties": {
+        "crop_count": {
+          "type": "integer",
+          "format": "uint16",
+          "default": 5,
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "crop_opt_temp_c_range": {
+          "type": "array",
+          "default": [
+            8.0,
+            30.0
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "fauna_count": {
+          "type": "integer",
+          "format": "uint16",
+          "default": 4,
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "flux_count": {
+          "type": "integer",
+          "format": "uint16",
+          "default": 3,
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "fuel_count": {
+          "type": "integer",
+          "format": "uint16",
+          "default": 4,
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "fuel_enthalpy_mj_kg_range": {
+          "type": "array",
+          "default": [
+            14.0,
+            44.0
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "ore_count": {
+          "type": "integer",
+          "format": "uint16",
+          "default": 6,
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "ore_melting_k_range": {
+          "type": "array",
+          "default": [
+            1150.0,
+            1850.0
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "ore_purity_range": {
+          "type": "array",
+          "default": [
+            0.18000000715255737,
+            0.7200000286102295
+          ],
+          "items": {
+            "type": "number",
+            "format": "float"
+          },
+          "maxItems": 2,
+          "minItems": 2
+        },
+        "pathogen_count": {
+          "type": "integer",
+          "format": "uint16",
+          "default": 3,
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
     "PlanetGenerationRecord": {
       "type": "object",
       "properties": {
@@ -47,6 +147,33 @@
         "mean_radius_km": {
           "type": "number",
           "format": "float"
+        },
+        "natural_bounds": {
+          "$ref": "#/$defs/NaturalWorldBoundsRecord",
+          "default": {
+            "crop_count": 5,
+            "crop_opt_temp_c_range": [
+              8.0,
+              30.0
+            ],
+            "fauna_count": 4,
+            "flux_count": 3,
+            "fuel_count": 4,
+            "fuel_enthalpy_mj_kg_range": [
+              14.0,
+              44.0
+            ],
+            "ore_count": 6,
+            "ore_melting_k_range": [
+              1150.0,
+              1850.0
+            ],
+            "ore_purity_range": [
+              0.18000000715255737,
+              0.7200000286102295
+            ],
+            "pathogen_count": 3
+          }
         },
         "planetary_density_kg_m3": {
           "type": "number",

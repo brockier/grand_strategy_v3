@@ -2,8 +2,8 @@
 
 use crate::ids::{
     ActorId, CarrierClassId, CellId, CharacterId, CohortId, CommodityId, ConvoyId, DispatchId,
-    EdgeId, EventClassId, InfraClassId, MandateId, ProcessId, SettlementId, StockpileId, Tick,
-    VocationId,
+    EdgeId, EventClassId, InfraClassId, MandateId, ProceduralMaterialId, ProcessId, SettlementId,
+    StockpileId, Tick, VocationId,
 };
 
 /// Ordered execution phases for each discrete hourly simulation tick.
@@ -17,6 +17,76 @@ pub enum TickPhase {
     DailyBucketExtractionProductionConstruction = 6,
     WeeklyMonthlyBucketDemographicsMandatesResearch = 7,
     CompileDiegeticPlayerViewAndNotifications = 8,
+}
+
+impl TickPhase {
+    /// Returns all eight phases in deterministic sequential barrier order.
+    #[must_use]
+    pub const fn ordered() -> [Self; 8] {
+        [
+            Self::IngestPlayerCommands,
+            Self::HourlyWeatherAndHydrology,
+            Self::HourlyCombatStep,
+            Self::HourlyCourierAndSignalStep,
+            Self::DailyBucketLogisticsAndMarkets,
+            Self::DailyBucketExtractionProductionConstruction,
+            Self::WeeklyMonthlyBucketDemographicsMandatesResearch,
+            Self::CompileDiegeticPlayerViewAndNotifications,
+        ]
+    }
+
+    /// Returns the zero-based phase index (`0..8`).
+    #[must_use]
+    pub const fn index(self) -> usize {
+        (self as usize) - 1
+    }
+
+    /// Returns a stable machine-readable subsystem key for profiling telemetry.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::IngestPlayerCommands => "ingest_player_commands",
+            Self::HourlyWeatherAndHydrology => "weather",
+            Self::HourlyCombatStep => "combat",
+            Self::HourlyCourierAndSignalStep => "transport",
+            Self::DailyBucketLogisticsAndMarkets => "logistics_and_markets",
+            Self::DailyBucketExtractionProductionConstruction => "production",
+            Self::WeeklyMonthlyBucketDemographicsMandatesResearch => "population",
+            Self::CompileDiegeticPlayerViewAndNotifications => "player_view",
+        }
+    }
+}
+
+/// Physical bounds controlling procedural generation of planetary ores, fluxes, fuels, crops, fauna, and pathogens.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NaturalBoundsView {
+    pub ore_count: u16,
+    pub flux_count: u16,
+    pub fuel_count: u16,
+    pub crop_count: u16,
+    pub fauna_count: u16,
+    pub pathogen_count: u16,
+    pub ore_melting_k_range: [f32; 2],
+    pub ore_purity_range: [f32; 2],
+    pub fuel_enthalpy_mj_kg_range: [f32; 2],
+    pub crop_opt_temp_c_range: [f32; 2],
+}
+
+/// Read-only planetary generation parameter view loaded from `sim-data`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlanetGenConfigView {
+    pub id: String,
+    pub goldberg_subdivision: u8,
+    pub tectonic_plate_count: u16,
+    pub land_fraction_target: f32,
+    pub axial_tilt_deg: f32,
+    pub solar_constant_w_m2: f32,
+    pub rotation_period_hours: f32,
+    pub mean_radius_km: f32,
+    pub base_sea_level_m: f32,
+    pub max_orogenic_uplift_m: f32,
+    pub planetary_density_kg_m3: f32,
+    pub natural_bounds: NaturalBoundsView,
 }
 
 /// Read-only view of an interned external commodity definition.
@@ -155,7 +225,35 @@ pub trait ModRegistryPort: Send + Sync {
     fn vocation_def(&self, id: VocationId) -> Option<&VocationDefView>;
     fn event_class_id(&self, key: &str) -> Option<EventClassId>;
     fn calendar_config(&self) -> &CalendarConfigView;
+    fn planet_gen_config(&self) -> &PlanetGenConfigView;
+    fn bundle_blake3_bytes(&self) -> [u8; 32];
     fn scenario_init(&self) -> &ScenarioInitView;
+}
+
+/// Surface rock geological strata classification visible cleanly across public surface ports.
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub enum RockStrataClass {
+    OceanicBasalt = 0,
+    IgneousOrogenic = 1,
+    VolcanicArc = 2,
+    MetamorphicShield = 3,
+    SedimentaryBasin = 4,
+    AlluvialPlain = 5,
+}
+
+impl RockStrataClass {
+    /// Returns a human-readable strata identifier string.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OceanicBasalt => "OceanicBasalt",
+            Self::IgneousOrogenic => "IgneousOrogenic",
+            Self::VolcanicArc => "VolcanicArc",
+            Self::MetamorphicShield => "MetamorphicShield",
+            Self::SedimentaryBasin => "SedimentaryBasin",
+            Self::AlluvialPlain => "AlluvialPlain",
+        }
+    }
 }
 
 /// Geological cell surface summary without revealing private planet arrays.
@@ -178,6 +276,41 @@ pub trait PlanetGeometryPort: Send + Sync {
     fn cell_biome_and_strata(&self, cell: CellId) -> CellGeologyView;
     fn watershed_downstream(&self, cell: CellId) -> Option<CellId>;
     fn great_circle_km(&self, a: CellId, b: CellId) -> f32;
+    fn cell_unit_xyz(&self, cell: CellId) -> [f32; 3];
+    fn cell_lat_lon_rad(&self, cell: CellId) -> [f32; 2];
+    fn cell_area_km2(&self, cell: CellId) -> f32;
+    fn cell_drainage_area_km2(&self, cell: CellId) -> f32;
+    fn cell_base_precip_mm_yr(&self, cell: CellId) -> f32;
+    fn edge_length_km(&self, edge: EdgeId) -> f32;
+    fn topo_sorted_land_cells(&self) -> &[CellId];
+}
+
+/// Procedural subsurface commodity family stored in sealed mineral deposits.
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub enum ProceduralDepositCategory {
+    MetallicOre = 0,
+    SmeltingFlux = 1,
+    SolidFuel = 2,
+    LiquidFuel = 3,
+}
+
+/// Ground-truth hidden mineral/fuel deposit record sealed behind `SubsurfaceDepositTruthPort`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HiddenDepositView {
+    pub cell: CellId,
+    pub material_id: ProceduralMaterialId,
+    pub category: ProceduralDepositCategory,
+    pub total_mass_tonnes: f64,
+    pub average_purity_01: f32,
+    pub overburden_depth_m: f32,
+    pub aquifer_flood_risk_01: f32,
+}
+
+/// Ground-truth subsurface mineral veins and fossil beds.
+/// Readable ONLY by `sim-core` extraction and survey mechanics — never exposed to `player-view`.
+pub trait SubsurfaceDepositTruthPort: Send + Sync {
+    fn deposits_in_cell(&self, cell: CellId) -> &[HiddenDepositView];
+    fn all_deposits(&self) -> &[HiddenDepositView];
 }
 
 /// Hourly physical surface state reported by `sim-weather`.
@@ -406,4 +539,64 @@ pub trait PlatformIntegrationPort: Send + Sync {
     fn ensure_launched_via_store(&self) -> Result<(), PlatformError>;
     fn unlock_milestone_flag(&self, key: &str);
     fn tick_callbacks(&mut self);
+}
+
+/// Projected date/time derived cleanly from `Tick` and scenario `CalendarConfigView`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CalendarDateTime {
+    pub tick: Tick,
+    pub year: i32,
+    pub month_index: usize,
+    pub month_name: String,
+    pub day_of_year: u32,
+    pub day_of_month: u32,
+    pub hour_of_day: u32,
+    pub solar_longitude_rad: f64,
+    pub diurnal_angle_rad: f64,
+}
+
+/// Player or coordinator control command adjusting simulation clock rate or state.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub enum ClockControlCommand {
+    Pause,
+    Resume,
+    StepSingleHour,
+    SetSpeedMultiplier(u32),
+}
+
+/// Signal emitted when a notification triggers automatic pause at the exact tick end.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub struct AutoPauseSignal {
+    pub reason_event: EventClassId,
+    pub tick: Tick,
+}
+
+/// Timing and bucket sample captured for a single completed hourly tick.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PhaseTimingSample {
+    pub tick: Tick,
+    pub phase_ns: [u64; 8],
+    pub total_ns: u64,
+    pub bucket_entities_processed: [u32; 8],
+}
+
+/// Exportable summary telemetry returned by `TickTelemetryPort`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TickTelemetrySummary {
+    pub sample_count: usize,
+    pub total_ticks_profiled: u64,
+    pub cumulative_phase_ns: [u64; 8],
+    pub latest_sample: Option<PhaseTimingSample>,
+}
+
+/// Profiling port exposed by `sim-clock` for CLI and diagnostic inspection.
+pub trait TickTelemetryPort: Send + Sync {
+    fn telemetry_summary(&self) -> TickTelemetrySummary;
+}
+
+/// Canonical byte-level serialization port allowing lossless deterministic save/load across independent cartridges.
+pub trait CanonicalSaveablePort {
+    fn cartridge_tag(&self) -> &'static str;
+    fn write_canonical_state(&self, out: &mut Vec<u8>);
+    fn read_canonical_state(&mut self, input: &mut &[u8]) -> Result<(), String>;
 }

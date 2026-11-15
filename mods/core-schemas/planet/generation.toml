@@ -10,3 +10,15 @@ mean_radius_km = 6371.0
 base_sea_level_m = 0.0
 max_orogenic_uplift_m = 6800.0
 planetary_density_kg_m3 = 5514.0
+
+[planet_generation.natural_bounds]
+ore_count = 6
+flux_count = 3
+fuel_count = 4
+crop_count = 5
+fauna_count = 4
+pathogen_count = 3
+ore_melting_k_range = [1150.0, 1850.0]
+ore_purity_range = [0.18, 0.72]
+fuel_enthalpy_mj_kg_range = [14.0, 44.0]
+crop_opt_temp_c_range = [8.0, 30.0]

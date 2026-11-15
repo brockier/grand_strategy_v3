@@ -6,8 +6,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 use sim_spine::{
-    CellId, ModRegistryPort, PhysicalLedgerPort, PlanetGeometryPort, PopulationPort,
-    SurfaceConditionsPort, Tick,
+    codec::{
+        read_f32_bits, read_str, read_u32_le, read_u64_le, read_u8, write_f32_bits, write_str,
+        write_u32_le, write_u64_le, write_u8,
+    },
+    CanonicalSaveablePort, CellId, ModRegistryPort, PhysicalLedgerPort, PlanetGeometryPort,
+    PopulationPort, SurfaceConditionsPort, Tick,
 };
 
 /// IPC-safe mod diagnostic payload compatible with `UI-SHL-004`.
@@ -235,24 +239,16 @@ impl PlayerKnowledgeArchive {
         )
     }
 
-    /// Compiles a strictly air-gapped `DiegeticSnapshot` reading exclusively through Spine ports.
-    #[allow(clippy::too_many_arguments)]
-    pub fn compile_snapshot(
+    /// Refreshes the player's local survey archive within the HQ optical sight radius and returns the live visible cell set.
+    pub fn observe_hq_halo(
         &mut self,
         tick: Tick,
-        paused: bool,
-        registry: &dyn ModRegistryPort,
         planet: &dyn PlanetGeometryPort,
-        weather: &dyn SurfaceConditionsPort,
         ledger: &dyn PhysicalLedgerPort,
-        population: &dyn PopulationPort,
-    ) -> DiegeticSnapshot {
-        let scenario = registry.scenario_init();
+    ) -> BTreeSet<u32> {
         let hq_cell = ledger.hq_cell();
         let sight_radius = ledger.hq_sight_radius_cells();
-        let total_cells = planet.cell_count();
 
-        // BFS within immediate HQ sight radius
         let mut live_cells = BTreeSet::new();
         let mut frontier = vec![(hq_cell, 0u8)];
         live_cells.insert(hq_cell.get());
@@ -263,6 +259,17 @@ impl PlayerKnowledgeArchive {
                         frontier.push((nbr, dist + 1));
                     }
                 }
+            }
+        }
+
+        for (&cid_u32, entry) in &mut self.surveyed_cells {
+            if !live_cells.contains(&cid_u32)
+                && let KnownCellDto::Surveyed {
+                    ref mut is_live_hq_sight,
+                    ..
+                } = *entry
+            {
+                *is_live_hq_sight = false;
             }
         }
 
@@ -281,11 +288,37 @@ impl PlayerKnowledgeArchive {
             );
         }
 
-        // Strict air-gap: unvisited surrounding cells remain Unexplored with zero terrain fields.
-        let sample_limit = total_cells.min(64);
-        let mut known_cells = Vec::with_capacity(sample_limit as usize);
+        live_cells
+    }
+
+    /// Compiles a strictly air-gapped `DiegeticSnapshot` reading exclusively through Spine ports.
+    #[allow(clippy::too_many_arguments)]
+    pub fn compile_snapshot(
+        &mut self,
+        tick: Tick,
+        paused: bool,
+        registry: &dyn ModRegistryPort,
+        planet: &dyn PlanetGeometryPort,
+        weather: &dyn SurfaceConditionsPort,
+        ledger: &dyn PhysicalLedgerPort,
+        population: &dyn PopulationPort,
+    ) -> DiegeticSnapshot {
+        let scenario = registry.scenario_init();
+        let hq_cell = ledger.hq_cell();
+        let sight_radius = ledger.hq_sight_radius_cells();
+        let total_cells = planet.cell_count();
+
+        let live_cells = self.observe_hq_halo(tick, planet, ledger);
+
+        // Strict air-gap: union of sampled globe cells, live HQ sight halo, and previously surveyed cells.
+        // Unvisited cells remain `Unexplored` with zero terrain, weather, or strata fields.
+        let mut emitted_cells: BTreeSet<u32> = (0..total_cells.min(64)).collect();
+        emitted_cells.extend(&live_cells);
+        emitted_cells.extend(self.surveyed_cells.keys().copied());
+
+        let mut known_cells = Vec::with_capacity(emitted_cells.len());
         let mut observed_weather = Vec::new();
-        for cid_u32 in 0..sample_limit {
+        for cid_u32 in emitted_cells {
             if live_cells.contains(&cid_u32) {
                 let st = weather.surface(CellId(cid_u32));
                 observed_weather.push(ObservedWeatherDto {
@@ -386,5 +419,65 @@ impl PlayerKnowledgeArchive {
                 active_alert_count: 0,
             },
         }
+    }
+}
+
+impl CanonicalSaveablePort for PlayerKnowledgeArchive {
+    fn cartridge_tag(&self) -> &'static str {
+        "player-view"
+    }
+
+    fn write_canonical_state(&self, out: &mut Vec<u8>) {
+        write_u32_le(out, self.surveyed_cells.len() as u32);
+        for (&cid, entry) in &self.surveyed_cells {
+            write_u32_le(out, cid);
+            match entry {
+                KnownCellDto::Unexplored { cell_id } => {
+                    write_u8(out, 0);
+                    write_u32_le(out, *cell_id);
+                }
+                KnownCellDto::Surveyed {
+                    cell_id,
+                    observed_tick,
+                    is_live_hq_sight,
+                    elevation_m,
+                    confidence_01,
+                    provenance_label,
+                } => {
+                    write_u8(out, 1);
+                    write_u32_le(out, *cell_id);
+                    write_u64_le(out, *observed_tick);
+                    write_u8(out, u8::from(*is_live_hq_sight));
+                    write_f32_bits(out, *elevation_m);
+                    write_f32_bits(out, *confidence_01);
+                    write_str(out, provenance_label);
+                }
+            }
+        }
+    }
+
+    fn read_canonical_state(&mut self, input: &mut &[u8]) -> Result<(), String> {
+        let count = read_u32_le(input)? as usize;
+        self.surveyed_cells.clear();
+        for _ in 0..count {
+            let key = read_u32_le(input)?;
+            let tag = read_u8(input)?;
+            let dto = match tag {
+                0 => KnownCellDto::Unexplored {
+                    cell_id: read_u32_le(input)?,
+                },
+                1 => KnownCellDto::Surveyed {
+                    cell_id: read_u32_le(input)?,
+                    observed_tick: read_u64_le(input)?,
+                    is_live_hq_sight: read_u8(input)? != 0,
+                    elevation_m: read_f32_bits(input)?,
+                    confidence_01: read_f32_bits(input)?,
+                    provenance_label: read_str(input)?,
+                },
+                other => return Err(format!("invalid KnownCellDto tag {other}")),
+            };
+            self.surveyed_cells.insert(key, dto);
+        }
+        Ok(())
     }
 }
