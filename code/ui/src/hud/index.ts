@@ -2,10 +2,17 @@ import {
   DiegeticStoreAccess,
   UiIntentBus,
   selectClockAndNotifications,
+  selectDelegationTree,
   selectHqPresence,
 } from "../spine";
 
-/** Top command HUD bar displaying simulated calendar hour and live HQ location. */
+const SPEED_TIERS: readonly number[] = [1, 4, 24, 168];
+
+/**
+ * Top command HUD bar displaying scenario identity, clickable HQ fly-to anchor,
+ * Personal Attention summary, pause/resume toggle, `+1 Hour` single step, discrete
+ * speed controls (`1x`/`4x`/`24x`/`168x`), compass north reset, and auto-pause banner (`UI-HUD-001`).
+ */
 export function mountCommandHud(
   host: HTMLElement,
   store: DiegeticStoreAccess,
@@ -13,33 +20,185 @@ export function mountCommandHud(
 ): () => void {
   const bar = document.createElement("header");
   bar.className = "ng-hud-bar";
+  bar.setAttribute("data-chrome-occluder", "true");
+
+  const leftCluster = document.createElement("div");
+  leftCluster.className = "ng-hud-cluster";
 
   const scenarioLabel = document.createElement("strong");
   scenarioLabel.id = "hud-scenario-title";
   scenarioLabel.textContent = "Awaiting scenario";
 
+  const hqLinkBtn = document.createElement("button");
+  hqLinkBtn.type = "button";
+  hqLinkBtn.id = "hud-hq-link";
+  hqLinkBtn.className = "ng-hud-link";
+  hqLinkBtn.textContent = "HQ: Unknown";
+
+  const attentionBadge = document.createElement("span");
+  attentionBadge.id = "hud-attention-badge";
+  attentionBadge.className = "ng-hud-badge";
+  attentionBadge.textContent = "Attention: 0/0";
+
+  leftCluster.append(scenarioLabel, hqLinkBtn, attentionBadge);
+
+  const clockCluster = document.createElement("div");
+  clockCluster.className = "ng-hud-cluster";
+
   const clockLabel = document.createElement("span");
   clockLabel.id = "hud-clock-text";
+  clockLabel.className = "ng-hud-badge";
   clockLabel.textContent = "Year 1";
+
+  const pauseBtn = document.createElement("button");
+  pauseBtn.type = "button";
+  pauseBtn.id = "hud-pause-btn";
+  pauseBtn.className = "ng-btn";
+  pauseBtn.setAttribute("aria-pressed", "false");
+  pauseBtn.textContent = "Pause";
 
   const stepBtn = document.createElement("button");
   stepBtn.type = "button";
   stepBtn.id = "hud-step-btn";
   stepBtn.className = "ng-btn";
   stepBtn.textContent = "+1 Hour";
-  stepBtn.addEventListener("click", () => {
-    bus.emit({ kind: "DispatchSimCommand", command: { kind: "stepSingleTick" } });
+
+  const speedButtons = new Map<number, HTMLButtonElement>();
+  for (const tier of SPEED_TIERS) {
+    const sBtn = document.createElement("button");
+    sBtn.type = "button";
+    sBtn.className = "ng-btn";
+    sBtn.setAttribute("data-speed-tier", String(tier));
+    sBtn.setAttribute("aria-pressed", tier === 1 ? "true" : "false");
+    sBtn.textContent = `${tier}x`;
+    sBtn.addEventListener("click", () => {
+      bus.emit({
+        kind: "DispatchSimCommand",
+        command: { kind: "setSpeedMultiplier", multiplier: tier },
+      });
+      bus.emit({ kind: "PlayUiFoley", cueId: "clock_step" });
+    });
+    speedButtons.set(tier, sBtn);
+  }
+
+  const compassBtn = document.createElement("button");
+  compassBtn.type = "button";
+  compassBtn.id = "hud-compass-btn";
+  compassBtn.className = "ng-btn";
+  compassBtn.textContent = "N 0°";
+  compassBtn.setAttribute("aria-label", "Realign camera north");
+  compassBtn.addEventListener("click", () => {
+    bus.emit({ kind: "ResetGlobeNorth" });
+    bus.emit({ kind: "PlayUiFoley", cueId: "clock_step" });
   });
 
-  bar.appendChild(scenarioLabel);
-  bar.appendChild(clockLabel);
-  bar.appendChild(stepBtn);
+  const autoPauseBanner = document.createElement("div");
+  autoPauseBanner.id = "hud-autopause-banner";
+  autoPauseBanner.className = "ng-hud-autopause-banner";
+  autoPauseBanner.setAttribute("role", "status");
+  autoPauseBanner.hidden = true;
+
+  clockCluster.append(
+    clockLabel,
+    pauseBtn,
+    stepBtn,
+    ...speedButtons.values(),
+    compassBtn,
+    autoPauseBanner,
+  );
+
+  const windowsCluster = document.createElement("div");
+  windowsCluster.className = "ng-hud-cluster";
+  const launchers: ReadonlyArray<{ readonly pluginId: string; readonly label: string }> = [
+    { pluginId: "physical_ledger", label: "Ledger" },
+    { pluginId: "entity_inspector", label: "Inspector" },
+    { pluginId: "dispatch_inbox", label: "Dispatches" },
+    { pluginId: "skin_appearance", label: "Skins" },
+    { pluginId: "audio_mixer", label: "Audio" },
+    { pluginId: "layout_presets", label: "Layouts" },
+  ];
+
+  for (const item of launchers) {
+    const wBtn = document.createElement("button");
+    wBtn.type = "button";
+    wBtn.className = "ng-btn";
+    wBtn.setAttribute("data-open-plugin", item.pluginId);
+    wBtn.textContent = item.label;
+    wBtn.addEventListener("click", () => {
+      bus.emit({ kind: "OpenSystemWindow", pluginId: item.pluginId });
+    });
+    windowsCluster.appendChild(wBtn);
+  }
+
+  bar.append(leftCluster, clockCluster, windowsCluster);
   host.appendChild(bar);
 
-  return store.subscribe((snap) => {
+  let currentHqCellId = 0;
+  let currentlyPaused = false;
+
+  hqLinkBtn.addEventListener("click", () => {
+    bus.emit({ kind: "FlyGlobeToCell", cellId: currentHqCellId });
+    bus.emit({
+      kind: "FocusEntityInspector",
+      entityKind: "settlement",
+      entityId: 0,
+    });
+  });
+
+  pauseBtn.addEventListener("click", () => {
+    bus.emit({
+      kind: "DispatchSimCommand",
+      command: { kind: "setPaused", paused: !currentlyPaused },
+    });
+    bus.emit({ kind: "PlayUiFoley", cueId: "clock_step" });
+  });
+
+  stepBtn.addEventListener("click", () => {
+    bus.emit({ kind: "DispatchSimCommand", command: { kind: "stepSingleTick" } });
+    bus.emit({ kind: "PlayUiFoley", cueId: "clock_step" });
+  });
+
+  const unsubStore = store.subscribe((snap) => {
     const hq = selectHqPresence(store);
     const clk = selectClockAndNotifications(store);
+    const delegation = selectDelegationTree(store);
+
+    currentHqCellId = hq?.cellId ?? 0;
     scenarioLabel.textContent = `${snap.scenarioName} — HQ: ${hq?.settlementName ?? "Unknown"}`;
-    clockLabel.textContent = clk ? `${clk.calendarText} [Tick ${clk.tick}]` : "";
+    hqLinkBtn.textContent = hq ? `HQ: ${hq.settlementName} (#${hq.cellId})` : "HQ: Unknown";
+
+    if (delegation) {
+      attentionBadge.textContent = `Attention: ${delegation.usedAttention.toFixed(1)}/${delegation.capacityAttention.toFixed(1)}`;
+    }
+
+    if (clk) {
+      currentlyPaused = clk.paused;
+      clockLabel.textContent = `${clk.calendarText} [Tick ${clk.tick}]`;
+      pauseBtn.setAttribute("aria-pressed", clk.paused ? "true" : "false");
+      pauseBtn.textContent = clk.paused ? "Resume" : "Pause";
+      for (const [tier, btn] of speedButtons.entries()) {
+        btn.setAttribute("aria-pressed", clk.speedMultiplier === tier ? "true" : "false");
+      }
+      if (clk.autoPauseReason && clk.autoPauseReason.trim().length > 0) {
+        autoPauseBanner.hidden = false;
+        autoPauseBanner.textContent = `Auto-Paused: ${clk.autoPauseReason}`;
+      } else {
+        autoPauseBanner.hidden = true;
+        autoPauseBanner.textContent = "";
+      }
+    }
   });
+
+  const unsubBus = bus.subscribe((intent) => {
+    if (intent.kind === "UpdateCameraTelemetry") {
+      const deg = Math.round((intent.telemetry.headingRad * 180) / Math.PI);
+      compassBtn.textContent = `N ${deg}°`;
+    }
+  });
+
+  return () => {
+    unsubStore();
+    unsubBus();
+    bar.remove();
+  };
 }

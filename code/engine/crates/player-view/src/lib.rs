@@ -57,7 +57,35 @@ pub enum KnownCellDto {
         confidence_01: f32,
         #[serde(rename = "provenanceLabel")]
         provenance_label: String,
+        #[serde(default, rename = "biomeKey")]
+        biome_key: String,
+        #[serde(default, rename = "isOcean")]
+        is_ocean: bool,
+        #[serde(default, rename = "riverDownstreamCellId")]
+        river_downstream_cell_id: Option<u32>,
+        #[serde(default, rename = "riverFlowNorm01")]
+        river_flow_norm_01: f32,
     },
+}
+
+/// Known physical settlement visible inside `DiegeticSnapshot`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownSettlementDto {
+    pub settlement_id: u32,
+    pub settlement_name: String,
+    pub cell_id: u32,
+    pub is_hq: bool,
+}
+
+/// Surveyed road or canal spline segment connecting two adjacent surveyed land cells.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SurveyedRoadEdgeDto {
+    pub edge_id: u32,
+    pub from_cell_id: u32,
+    pub to_cell_id: u32,
+    pub infra_key: String,
 }
 
 /// Physical HQ presence DTO.
@@ -155,6 +183,8 @@ pub struct ClockAndNotificationsDto {
     pub paused: bool,
     pub speed_multiplier: u32,
     pub active_alert_count: u32,
+    #[serde(default)]
+    pub auto_pause_reason: Option<String>,
 }
 
 /// Sole authorized IPC snapshot crossing from Rust into Electron renderer (`ENG-EPI-001`, `UI-SHL-002`).
@@ -167,6 +197,10 @@ pub struct DiegeticSnapshot {
     pub globe_topology: GlobeTopologyDto,
     pub known_cells: Vec<KnownCellDto>,
     pub hq_presence: HqPresenceDto,
+    #[serde(default)]
+    pub known_settlements: Vec<KnownSettlementDto>,
+    #[serde(default)]
+    pub surveyed_roads: Vec<SurveyedRoadEdgeDto>,
     pub tracked_convoys: Vec<TrackedConvoyDto>,
     pub observed_weather: Vec<ObservedWeatherDto>,
     pub ledger_rows: Vec<ReportedLedgerRowDto>,
@@ -176,6 +210,7 @@ pub struct DiegeticSnapshot {
 }
 
 /// Validated player command envelope received across IPC from Electron.
+/// `SetSpeedMultiplier` accepts discrete tiers `1..=64` or `168` (`UI-HUD-001`, `UI-SHL-002`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ValidatedPlayerCommand {
@@ -275,6 +310,13 @@ impl PlayerKnowledgeArchive {
 
         for &cid_u32 in &live_cells {
             let elev = planet.cell_elevation_m(CellId(cid_u32));
+            let geo = planet.cell_biome_and_strata(CellId(cid_u32));
+            let river_downstream_cell_id = planet.watershed_downstream(CellId(cid_u32)).map(CellId::get);
+            let river_flow_norm_01 = if geo.is_ocean {
+                0.0
+            } else {
+                (planet.cell_drainage_area_km2(CellId(cid_u32)) / 2500.0).clamp(0.0, 1.0)
+            };
             self.surveyed_cells.insert(
                 cid_u32,
                 KnownCellDto::Surveyed {
@@ -284,6 +326,10 @@ impl PlayerKnowledgeArchive {
                     elevation_m: elev,
                     confidence_01: 1.0,
                     provenance_label: "Direct Observation (HQ)".to_string(),
+                    biome_key: geo.biome_key,
+                    is_ocean: geo.is_ocean,
+                    river_downstream_cell_id,
+                    river_flow_norm_01,
                 },
             );
         }
@@ -291,12 +337,39 @@ impl PlayerKnowledgeArchive {
         live_cells
     }
 
-    /// Compiles a strictly air-gapped `DiegeticSnapshot` reading exclusively through Spine ports.
+    /// Compiles a strictly air-gapped `DiegeticSnapshot` with default running clock metadata.
     #[allow(clippy::too_many_arguments)]
     pub fn compile_snapshot(
         &mut self,
         tick: Tick,
         paused: bool,
+        registry: &dyn ModRegistryPort,
+        planet: &dyn PlanetGeometryPort,
+        weather: &dyn SurfaceConditionsPort,
+        ledger: &dyn PhysicalLedgerPort,
+        population: &dyn PopulationPort,
+    ) -> DiegeticSnapshot {
+        self.compile_snapshot_with_clock(
+            tick,
+            paused,
+            1,
+            None,
+            registry,
+            planet,
+            weather,
+            ledger,
+            population,
+        )
+    }
+
+    /// Compiles a strictly air-gapped `DiegeticSnapshot` reading exclusively through Spine ports.
+    #[allow(clippy::too_many_arguments)]
+    pub fn compile_snapshot_with_clock(
+        &mut self,
+        tick: Tick,
+        paused: bool,
+        speed_multiplier: u32,
+        auto_pause_reason: Option<String>,
         registry: &dyn ModRegistryPort,
         planet: &dyn PlanetGeometryPort,
         weather: &dyn SurfaceConditionsPort,
@@ -346,8 +419,21 @@ impl PlayerKnowledgeArchive {
         }
 
         let mut ledger_rows = Vec::new();
+        let hq_sid = ledger.hq_settlement();
+        let mut known_settlements = Vec::new();
+        let mut surveyed_settlement_cells = BTreeSet::new();
         for settlement in ledger.settlements() {
-            if !live_cells.contains(&settlement.cell_id.get()) {
+            let scell = settlement.cell_id.get();
+            if live_cells.contains(&scell) || self.surveyed_cells.contains_key(&scell) {
+                surveyed_settlement_cells.insert(scell);
+                known_settlements.push(KnownSettlementDto {
+                    settlement_id: settlement.id.get(),
+                    settlement_name: settlement.display_name.clone(),
+                    cell_id: scell,
+                    is_hq: hq_sid == Some(settlement.id),
+                });
+            }
+            if !live_cells.contains(&scell) {
                 continue;
             }
             for entry in ledger.settlement_inventory_entries(settlement.id) {
@@ -369,8 +455,32 @@ impl PlayerKnowledgeArchive {
             }
         }
 
-        let hq_name = ledger
-            .hq_settlement()
+        let mut surveyed_roads = Vec::new();
+        let mut seen_edges = BTreeSet::new();
+        for &s_cell in &surveyed_settlement_cells {
+            for &nbr in planet.cell_neighbors(CellId(s_cell)) {
+                let nbr_u32 = nbr.get();
+                if !self.surveyed_cells.contains_key(&nbr_u32) {
+                    continue;
+                }
+                let nbr_geo = planet.cell_biome_and_strata(nbr);
+                if nbr_geo.is_ocean {
+                    continue;
+                }
+                if let Some(eid) = planet.cell_edge(CellId(s_cell), nbr)
+                    && seen_edges.insert(eid.get())
+                {
+                    surveyed_roads.push(SurveyedRoadEdgeDto {
+                        edge_id: eid.get(),
+                        from_cell_id: s_cell,
+                        to_cell_id: nbr_u32,
+                        infra_key: "colonial_earth_track".to_string(),
+                    });
+                }
+            }
+        }
+
+        let hq_name = hq_sid
             .and_then(|sid| ledger.settlements().iter().find(|s| s.id == sid))
             .map(|s| s.display_name.clone())
             .unwrap_or_else(|| scenario.hq_settlement_key.clone());
@@ -385,6 +495,8 @@ impl PlayerKnowledgeArchive {
                 competence: ch.competence,
             })
             .collect();
+
+        let active_alert_count = u32::from(auto_pause_reason.is_some());
 
         DiegeticSnapshot {
             schema_version: 1,
@@ -401,6 +513,8 @@ impl PlayerKnowledgeArchive {
                 settlement_name: hq_name,
                 sight_radius_cells: sight_radius,
             },
+            known_settlements,
+            surveyed_roads,
             tracked_convoys: Vec::new(),
             observed_weather,
             ledger_rows,
@@ -415,8 +529,9 @@ impl PlayerKnowledgeArchive {
                 tick: tick.get(),
                 calendar_text: Self::format_calendar_tick(registry, tick),
                 paused,
-                speed_multiplier: 1,
-                active_alert_count: 0,
+                speed_multiplier: speed_multiplier.max(1),
+                active_alert_count,
+                auto_pause_reason,
             },
         }
     }
@@ -443,6 +558,10 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     elevation_m,
                     confidence_01,
                     provenance_label,
+                    biome_key,
+                    is_ocean,
+                    river_downstream_cell_id,
+                    river_flow_norm_01,
                 } => {
                     write_u8(out, 1);
                     write_u32_le(out, *cell_id);
@@ -451,6 +570,16 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     write_f32_bits(out, *elevation_m);
                     write_f32_bits(out, *confidence_01);
                     write_str(out, provenance_label);
+                    write_str(out, biome_key);
+                    write_u8(out, u8::from(*is_ocean));
+                    match river_downstream_cell_id {
+                        Some(downstream) => {
+                            write_u8(out, 1);
+                            write_u32_le(out, *downstream);
+                        }
+                        None => write_u8(out, 0),
+                    }
+                    write_f32_bits(out, *river_flow_norm_01);
                 }
             }
         }
@@ -473,6 +602,14 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     elevation_m: read_f32_bits(input)?,
                     confidence_01: read_f32_bits(input)?,
                     provenance_label: read_str(input)?,
+                    biome_key: read_str(input)?,
+                    is_ocean: read_u8(input)? != 0,
+                    river_downstream_cell_id: if read_u8(input)? != 0 {
+                        Some(read_u32_le(input)?)
+                    } else {
+                        None
+                    },
+                    river_flow_norm_01: read_f32_bits(input)?,
                 },
                 other => return Err(format!("invalid KnownCellDto tag {other}")),
             };

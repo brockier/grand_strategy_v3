@@ -1,9 +1,17 @@
-import { DiegeticSnapshot } from "./contracts";
+import {
+  AudioMixerSettings,
+  DiegeticSnapshot,
+  GlobeRayHit,
+  UserPreferencesDto,
+} from "./contracts";
 import { UiIntentBus } from "./intent-bus";
 import { DiegeticStoreAccess } from "./store";
 
 export interface GlobeLayerHost {
   readonly overlayRootId: string;
+  getCanvasElement(): HTMLCanvasElement;
+  pickGlobeAtNdc(ndcX: number, ndcY: number): GlobeRayHit | null;
+  isPointOccludedByChrome(clientX: number, clientY: number): boolean;
 }
 
 export interface MapLayerPlugin {
@@ -16,9 +24,49 @@ export interface MapLayerPlugin {
   dispose(): void;
 }
 
+export interface PortraitLookupQuery {
+  readonly characterId: number;
+  readonly ageBracket?: string;
+  readonly vocation?: string;
+  readonly eraTag?: string;
+  readonly healthBand?: string;
+}
+
+export interface AssetUrlResolverPort {
+  resolvePortrait(query: PortraitLookupQuery): string;
+  resolveIcon(key: string): string;
+  resolveDispatchPlate(key: string): string;
+  getAvailableSkinIds(): readonly string[];
+  getActiveSkinId(): string;
+}
+
+export interface AudioPreferencesPort {
+  getSettings(): AudioMixerSettings;
+  updateSettings(patch: Partial<AudioMixerSettings>): void;
+  getEffectiveGains(): {
+    readonly master: number;
+    readonly music: number;
+    readonly ambience: number;
+    readonly foley: number;
+    readonly surfaceEnv: number;
+    readonly orbitalEnv: number;
+  };
+}
+
+export interface LayoutPresetPort {
+  listPresetNames(): readonly string[];
+  exportCurrentLayoutJson(): string;
+  saveNamedPreset(name: string): void;
+  applyNamedPreset(name: string): boolean;
+}
+
 export interface UiSpineContext {
   readonly store: DiegeticStoreAccess;
   readonly bus: UiIntentBus;
+  readonly assetResolver?: AssetUrlResolverPort;
+  readonly audioPrefs?: AudioPreferencesPort;
+  readonly layoutPresets?: LayoutPresetPort;
+  readonly readPreferences?: () => Promise<UserPreferencesDto>;
 }
 
 export interface WindowContentPlugin {
@@ -28,6 +76,7 @@ export interface WindowContentPlugin {
   readonly minHeight: number;
   readonly maxWidth?: number;
   readonly maxHeight?: number;
+  readonly hotkey?: string;
   mountContent(container: HTMLElement, instanceKey: string, spine: UiSpineContext): () => void;
 }
 
@@ -50,5 +99,9 @@ export class PluginRegistry {
 
   public getWindowPlugin(pluginId: string): WindowContentPlugin | undefined {
     return this.windowPlugins.get(pluginId);
+  }
+
+  public listWindowPlugins(): readonly WindowContentPlugin[] {
+    return Array.from(this.windowPlugins.values());
   }
 }

@@ -6,8 +6,10 @@ import {
   GlobeTopologyDto,
   HqPresenceDto,
   KnownCellDto,
+  KnownSettlementDto,
   ObservedWeatherDto,
   ReportedLedgerRowDto,
+  SurveyedRoadEdgeDto,
   TrackedConvoyDto,
   isValidDiegeticSnapshot,
 } from "./contracts";
@@ -57,6 +59,14 @@ export function selectKnownCells(store: DiegeticStoreAccess): readonly KnownCell
 
 export function selectHqPresence(store: DiegeticStoreAccess): HqPresenceDto | null {
   return store.getSnapshot()?.hqPresence ?? null;
+}
+
+export function selectKnownSettlements(store: DiegeticStoreAccess): readonly KnownSettlementDto[] {
+  return store.getSnapshot()?.knownSettlements ?? [];
+}
+
+export function selectSurveyedRoads(store: DiegeticStoreAccess): readonly SurveyedRoadEdgeDto[] {
+  return store.getSnapshot()?.surveyedRoads ?? [];
 }
 
 export function selectTrackedConvoys(store: DiegeticStoreAccess): readonly TrackedConvoyDto[] {

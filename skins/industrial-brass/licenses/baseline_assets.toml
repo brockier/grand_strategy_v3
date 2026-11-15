@@ -1,0 +1,33 @@
+schema_version = 1
+
+[[fonts]]
+rel_path = "fonts/LiberationSerif-Regular.ttf"
+family_name = "Liberation Serif"
+spdx_license = "OFL-1.1"
+license_file = "licenses/OFL-1.1-Liberation.txt"
+copyright_notice = "Digitized data copyright (c) 2010 Google Corporation / Copyright (c) 2012 Red Hat, Inc."
+
+[[fonts]]
+rel_path = "fonts/LiberationMono-Regular.ttf"
+family_name = "Liberation Mono"
+spdx_license = "OFL-1.1"
+license_file = "licenses/OFL-1.1-Liberation.txt"
+copyright_notice = "Digitized data copyright (c) 2010 Google Corporation / Copyright (c) 2012 Red Hat, Inc."
+
+[[baseline_assets]]
+rel_path = "assets/fallback_silhouette_portrait.svg"
+spdx_license = "CC0-1.0"
+license_file = "licenses/CC0-1.0.txt"
+copyright_notice = "Project baseline vector icon (CC0-1.0)"
+
+[[baseline_assets]]
+rel_path = "assets/fallback_commodity.svg"
+spdx_license = "CC0-1.0"
+license_file = "licenses/CC0-1.0.txt"
+copyright_notice = "Project baseline vector icon (CC0-1.0)"
+
+[[baseline_assets]]
+rel_path = "assets/fallback_dispatch_plate.svg"
+spdx_license = "CC0-1.0"
+license_file = "licenses/CC0-1.0.txt"
+copyright_notice = "Project baseline vector icon (CC0-1.0)"

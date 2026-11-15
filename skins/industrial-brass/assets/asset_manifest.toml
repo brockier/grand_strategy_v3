@@ -1,0 +1,49 @@
+schema_version = 1
+
+[fallbacks]
+portrait = "assets/fallback_silhouette_portrait.svg"
+icon = "assets/fallback_commodity.svg"
+dispatch_plate = "assets/fallback_dispatch_plate.svg"
+
+[[portraits]]
+id = "steward_adult"
+rel_path = "assets/portrait_steward_adult.png"
+age_bracket = "adult"
+vocation = "agronomist"
+era_tag = "industrial_survey"
+health_band = "healthy"
+
+[[portraits]]
+id = "artificer_senior"
+rel_path = "assets/portrait_artificer_senior.png"
+age_bracket = "senior"
+vocation = "artificer"
+era_tag = "industrial_survey"
+health_band = "weathered"
+
+[[portraits]]
+id = "clerk_young"
+rel_path = "assets/portrait_clerk_young.png"
+age_bracket = "young"
+vocation = "quartermaster"
+era_tag = "industrial_survey"
+health_band = "healthy"
+
+[[icons]]
+key = "raw_grain"
+category = "commodity"
+rel_path = "assets/icon_grain.png"
+
+[[icons]]
+key = "timber"
+category = "commodity"
+rel_path = "assets/icon_timber.png"
+
+[[icons]]
+key = "colony_precision_tools"
+category = "commodity"
+rel_path = "assets/icon_tools.png"
+
+[[dispatch_plates]]
+key = "expedition_dispatch"
+rel_path = "assets/dispatch_header_seal.png"

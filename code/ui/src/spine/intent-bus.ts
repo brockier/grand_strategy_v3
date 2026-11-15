@@ -1,9 +1,15 @@
-import { ValidatedPlayerCommand } from "./contracts";
+import {
+  CameraTelemetry,
+  GlobeRayHit,
+  SkinManifestBundle,
+  ValidatedPlayerCommand,
+} from "./contracts";
 
 export type EntityKind = "settlement" | "character" | "convoy" | "facility" | "cell";
 
 export type UiIntent =
   | { readonly kind: "FlyGlobeToCell"; readonly cellId: number; readonly zoomAltitude?: number }
+  | { readonly kind: "ResetGlobeNorth" }
   | {
       readonly kind: "FocusEntityInspector";
       readonly entityKind: EntityKind;
@@ -20,7 +26,18 @@ export type UiIntent =
   | { readonly kind: "SwitchMapOverlayMode"; readonly modeId: string }
   | { readonly kind: "PreviewHqLatencyRoute"; readonly destinationCellId: number | null }
   | { readonly kind: "SwitchActiveSkin"; readonly skinId: string }
+  | { readonly kind: "SkinBundleUpdated"; readonly bundle: SkinManifestBundle }
   | { readonly kind: "PlayUiFoley"; readonly cueId: string }
+  | { readonly kind: "UpdateCameraTelemetry"; readonly telemetry: CameraTelemetry }
+  | {
+      readonly kind: "HoverMapFeature";
+      readonly hit: GlobeRayHit | null;
+      readonly clientX: number;
+      readonly clientY: number;
+    }
+  | { readonly kind: "SelectMapFeature"; readonly hit: GlobeRayHit }
+  | { readonly kind: "ApplyWindowLayoutPreset"; readonly presetName: string }
+  | { readonly kind: "SaveWindowLayoutPreset"; readonly presetName: string }
   | { readonly kind: "DispatchSimCommand"; readonly command: ValidatedPlayerCommand };
 
 export type UiIntentHandler = (intent: UiIntent) => void;

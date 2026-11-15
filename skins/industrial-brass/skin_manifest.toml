@@ -1,0 +1,23 @@
+schema_version = 1
+skin_id = "industrial-brass"
+display_name = "Industrial Brass & Slate"
+stylesheet = "theme.css"
+audio_manifest = "audio/audio_manifest.toml"
+asset_manifest = "assets/asset_manifest.toml"
+
+[globe_palette]
+ocean_shallow_hex = "#2a495c"
+ocean_deep_hex = "#12212b"
+land_low_hex = "#4e5c52"
+land_mid_hex = "#72786a"
+land_high_hex = "#8d7956"
+peak_snow_hex = "#d6dde3"
+river_water_hex = "#4594b8"
+road_ochre_hex = "#e47a30"
+settlement_marker_hex = "#d4a644"
+contour_ink_hex = "#d4a644"
+compass_rose_hex = "#e47a30"
+unexplored_vellum_hex = "#242c35"
+parchment_grain_texture = "textures/parchment_tile.png"
+hatch_pattern_texture = "textures/ink_hatch_tile.png"
+terrain_biome_texture = "textures/terrain_biome_tile.png"

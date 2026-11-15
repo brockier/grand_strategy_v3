@@ -398,13 +398,18 @@ impl ScenarioWorld {
     /// Compiles an IPC-safe air-gapped `DiegeticSnapshot` from the live world state.
     #[must_use]
     pub fn compile_diegetic_snapshot(&mut self, registry: &dyn ModRegistryPort) -> DiegeticSnapshot {
-        let paused = matches!(
-            self.clock.mode,
-            ClockRunMode::Paused | ClockRunMode::AutoPaused { .. }
-        );
-        self.archive.compile_snapshot(
+        let (paused, speed_multiplier, auto_pause_reason) = match self.clock.mode {
+            ClockRunMode::Paused | ClockRunMode::StepSingleTick => (true, 1, None),
+            ClockRunMode::Running { speed_multiplier } => (false, speed_multiplier, None),
+            ClockRunMode::AutoPaused { reason_event, .. } => {
+                (true, 1, Some(format!("EventClass #{}", reason_event.get())))
+            }
+        };
+        self.archive.compile_snapshot_with_clock(
             self.clock.current_tick,
             paused,
+            speed_multiplier,
+            auto_pause_reason,
             registry,
             &self.planet,
             &self.weather,

@@ -3,16 +3,24 @@ skin_id = "cartographer-parchment"
 
 [channels.ambient_surface]
 fade_start_altitude = 0.20
-fade_end_altitude = 0.55
+fade_end_altitude = 0.72
+wind_loop = "audio/wind_surface.wav"
+rain_loop = "audio/rain_surface.wav"
+settlement_loop = "audio/workshop_bustle.wav"
 
 [channels.ambient_map_study]
-fade_start_altitude = 0.35
-fade_end_altitude = 0.70
-
-[channels.ui_foley]
-cooldown_ms = 60
-cues = ["window_open", "window_close", "mandate_seal", "dialog_open"]
+fade_start_altitude = 0.25
+fade_end_altitude = 0.78
+study_loop = "audio/study_room_clock.wav"
 
 [channels.music]
 crossfade_ms = 1200
-stems = []
+stems = ["audio/music_colony_calm.wav"]
+
+[channels.ui_foley]
+cooldown_ms = 60
+window_open = "audio/foley_open.wav"
+window_close = "audio/foley_close.wav"
+clock_step = "audio/foley_step.wav"
+mandate_seal = "audio/foley_open.wav"
+dialog_open = "audio/foley_open.wav"

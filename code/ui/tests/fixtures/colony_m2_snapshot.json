@@ -1,0 +1,381 @@
+[
+  {
+    "schemaVersion": 1,
+    "scenarioKey": "unexplained_colony",
+    "scenarioName": "The Unexplained Colony",
+    "globeTopology": {
+      "subdivision": 3,
+      "cellCount": 642
+    },
+    "knownCells": [
+      {
+        "tier": "surveyed",
+        "cellId": 0,
+        "observedTick": 0,
+        "isLiveHqSight": true,
+        "elevationM": 210.0,
+        "confidence01": 1.0,
+        "provenanceLabel": "HQ Direct Observation (Live)",
+        "biomeKey": "temperate_forest",
+        "isOcean": false,
+        "riverDownstreamCellId": 1,
+        "riverFlowNorm01": 0.75
+      },
+      {
+        "tier": "surveyed",
+        "cellId": 1,
+        "observedTick": 0,
+        "isLiveHqSight": true,
+        "elevationM": -320.0,
+        "confidence01": 0.96,
+        "provenanceLabel": "HQ Direct Observation (Live)",
+        "biomeKey": "coastal_sea",
+        "isOcean": true,
+        "riverDownstreamCellId": null,
+        "riverFlowNorm01": 0.0
+      },
+      {
+        "tier": "surveyed",
+        "cellId": 2,
+        "observedTick": 0,
+        "isLiveHqSight": true,
+        "elevationM": 1850.0,
+        "confidence01": 0.92,
+        "provenanceLabel": "Quarry Outpost Telemetry",
+        "biomeKey": "alpine_mountain",
+        "isOcean": false,
+        "riverDownstreamCellId": 0,
+        "riverFlowNorm01": 0.45
+      },
+      {
+        "tier": "stale",
+        "cellId": 3,
+        "observedTick": 0,
+        "elevationM": 145.0,
+        "confidence01": 0.55,
+        "provenanceLabel": "Archived Reconnaissance Log",
+        "biomeKey": "temperate_grassland",
+        "isOcean": false
+      },
+      {
+        "tier": "surveyed",
+        "cellId": 4,
+        "observedTick": 0,
+        "isLiveHqSight": true,
+        "elevationM": 95.0,
+        "confidence01": 0.95,
+        "provenanceLabel": "HQ Patrol Sighting",
+        "biomeKey": "temperate_grassland",
+        "isOcean": false,
+        "riverDownstreamCellId": null,
+        "riverFlowNorm01": 0.0
+      },
+      { "tier": "unexplored", "cellId": 5 },
+      { "tier": "unexplored", "cellId": 6 },
+      { "tier": "unexplored", "cellId": 7 },
+      { "tier": "unexplored", "cellId": 8 }
+    ],
+    "hqPresence": {
+      "mode": "FixedSettlement",
+      "cellId": 0,
+      "settlementName": "First Landing Perimeter",
+      "sightRadiusCells": 2
+    },
+    "knownSettlements": [
+      {
+        "settlementId": 0,
+        "settlementName": "First Landing Perimeter",
+        "cellId": 0,
+        "isHq": true
+      },
+      {
+        "settlementId": 1,
+        "settlementName": "Highland Quarry Camp",
+        "cellId": 2,
+        "isHq": false
+      }
+    ],
+    "surveyedRoads": [
+      {
+        "edgeId": 10,
+        "fromCellId": 0,
+        "toCellId": 2,
+        "infraKey": "corduroy_track"
+      }
+    ],
+    "trackedConvoys": [
+      {
+        "convoyId": 11,
+        "label": "Timber Ox-Cart #1",
+        "status": "EnRoute",
+        "projectedCellId": 4
+      }
+    ],
+    "observedWeather": [
+      {
+        "cellId": 0,
+        "observedTick": 0,
+        "precipMmHr": 14.5,
+        "mudIndex01": 0.42,
+        "tempC": 11.2,
+        "visibility01": 0.72
+      }
+    ],
+    "ledgerRows": [
+      {
+        "settlementId": 0,
+        "settlementName": "First Landing Perimeter",
+        "commodityKey": "raw_grain",
+        "commodityName": "Raw Grain",
+        "reportedMassKg": 2840.0,
+        "minEstKg": 2760.0,
+        "maxEstKg": 2920.0,
+        "observedTick": 0,
+        "provenanceLabel": "Direct Perimeter Depot Weigh-In"
+      },
+      {
+        "settlementId": 0,
+        "settlementName": "First Landing Perimeter",
+        "commodityKey": "timber",
+        "commodityName": "Seasoned Timber",
+        "reportedMassKg": 1950.0,
+        "minEstKg": 1880.0,
+        "maxEstKg": 2030.0,
+        "observedTick": 0,
+        "provenanceLabel": "Direct Perimeter Depot Weigh-In"
+      },
+      {
+        "settlementId": 0,
+        "settlementName": "First Landing Perimeter",
+        "commodityKey": "colony_precision_tools",
+        "commodityName": "Colony Precision Tools",
+        "reportedMassKg": 240.0,
+        "minEstKg": 235.0,
+        "maxEstKg": 245.0,
+        "observedTick": 0,
+        "provenanceLabel": "Direct Perimeter Depot Weigh-In"
+      },
+      {
+        "settlementId": 1,
+        "settlementName": "Highland Quarry Camp",
+        "commodityKey": "timber",
+        "commodityName": "Mining Props",
+        "reportedMassKg": 620.0,
+        "minEstKg": 540.0,
+        "maxEstKg": 710.0,
+        "observedTick": 0,
+        "provenanceLabel": "Courier Tally"
+      },
+      {
+        "settlementId": 1,
+        "settlementName": "Highland Quarry Camp",
+        "commodityKey": "raw_grain",
+        "commodityName": "Camp Rations",
+        "reportedMassKg": 410.0,
+        "minEstKg": 370.0,
+        "maxEstKg": 460.0,
+        "observedTick": 0,
+        "provenanceLabel": "Courier Tally"
+      },
+      {
+        "settlementId": 1,
+        "settlementName": "Highland Quarry Camp",
+        "commodityKey": "colony_precision_tools",
+        "commodityName": "Quarry Chisels",
+        "reportedMassKg": 115.0,
+        "minEstKg": 102.0,
+        "maxEstKg": 128.0,
+        "observedTick": 0,
+        "provenanceLabel": "Courier Tally"
+      },
+      {
+        "settlementId": 0,
+        "settlementName": "First Landing Perimeter",
+        "commodityKey": "raw_grain",
+        "commodityName": "Winter Seed Reserve",
+        "reportedMassKg": 900.0,
+        "minEstKg": 880.0,
+        "maxEstKg": 920.0,
+        "observedTick": 0,
+        "provenanceLabel": "Granary Inventory"
+      },
+      {
+        "settlementId": 0,
+        "settlementName": "First Landing Perimeter",
+        "commodityKey": "timber",
+        "commodityName": "Hull Planking Stock",
+        "reportedMassKg": 1120.0,
+        "minEstKg": 1060.0,
+        "maxEstKg": 1180.0,
+        "observedTick": 0,
+        "provenanceLabel": "Yard Estimate"
+      }
+    ],
+    "delegationTree": {
+      "leaderTitle": "Colony Leader",
+      "capacityAttention": 4.0,
+      "usedAttention": 2.0,
+      "subordinates": [
+        {
+          "characterId": 1,
+          "displayName": "Dr. Maren Lind",
+          "roleTitle": "Lead Agronomist",
+          "competence": 0.78
+        },
+        {
+          "characterId": 2,
+          "displayName": "Master Tamsin Reed",
+          "roleTitle": "Chief Artificer",
+          "competence": 0.84
+        },
+        {
+          "characterId": 3,
+          "displayName": "Clerk Dorian Vance",
+          "roleTitle": "Quartermaster",
+          "competence": 0.69
+        }
+      ]
+    },
+    "dispatchInbox": [
+      {
+        "dispatchId": 501,
+        "title": "Landing Inventory Initialized",
+        "sentTick": 0,
+        "arrivedTick": 0,
+        "originLabel": "First Landing Perimeter"
+      }
+    ],
+    "clockAndNotifications": {
+      "tick": 0,
+      "calendarText": "Year 1 Day 1 00:00",
+      "paused": false,
+      "speedMultiplier": 1,
+      "activeAlertCount": 0,
+      "autoPauseReason": null
+    }
+  },
+  {
+    "schemaVersion": 1,
+    "scenarioKey": "unexplained_colony",
+    "scenarioName": "The Unexplained Colony",
+    "globeTopology": {
+      "subdivision": 3,
+      "cellCount": 642
+    },
+    "knownCells": [
+      {
+        "tier": "surveyed",
+        "cellId": 0,
+        "observedTick": 12,
+        "isLiveHqSight": true,
+        "elevationM": 210.0,
+        "confidence01": 1.0,
+        "provenanceLabel": "HQ Direct Observation (Live)",
+        "biomeKey": "temperate_forest",
+        "isOcean": false,
+        "riverDownstreamCellId": 1,
+        "riverFlowNorm01": 0.85
+      },
+      {
+        "tier": "surveyed",
+        "cellId": 1,
+        "observedTick": 12,
+        "isLiveHqSight": true,
+        "elevationM": -320.0,
+        "confidence01": 0.96,
+        "provenanceLabel": "HQ Direct Observation (Live)",
+        "biomeKey": "coastal_sea",
+        "isOcean": true,
+        "riverDownstreamCellId": null,
+        "riverFlowNorm01": 0.0
+      },
+      {
+        "tier": "stale",
+        "cellId": 3,
+        "observedTick": 0,
+        "elevationM": 145.0,
+        "confidence01": 0.45,
+        "provenanceLabel": "Archived Reconnaissance Log",
+        "biomeKey": "temperate_grassland",
+        "isOcean": false
+      },
+      { "tier": "unexplored", "cellId": 5 }
+    ],
+    "hqPresence": {
+      "mode": "FixedSettlement",
+      "cellId": 0,
+      "settlementName": "First Landing Perimeter",
+      "sightRadiusCells": 2
+    },
+    "knownSettlements": [
+      {
+        "settlementId": 0,
+        "settlementName": "First Landing Perimeter",
+        "cellId": 0,
+        "isHq": true
+      }
+    ],
+    "surveyedRoads": [
+      {
+        "edgeId": 10,
+        "fromCellId": 0,
+        "toCellId": 2,
+        "infraKey": "corduroy_track"
+      }
+    ],
+    "trackedConvoys": [],
+    "observedWeather": [
+      {
+        "cellId": 0,
+        "observedTick": 12,
+        "precipMmHr": 22.0,
+        "mudIndex01": 0.68,
+        "tempC": 9.4,
+        "visibility01": 0.48
+      }
+    ],
+    "ledgerRows": [
+      {
+        "settlementId": 0,
+        "settlementName": "First Landing Perimeter",
+        "commodityKey": "raw_grain",
+        "commodityName": "Raw Grain",
+        "reportedMassKg": 2790.0,
+        "minEstKg": 2700.0,
+        "maxEstKg": 2880.0,
+        "observedTick": 12,
+        "provenanceLabel": "Direct Perimeter Depot Weigh-In"
+      }
+    ],
+    "delegationTree": {
+      "leaderTitle": "Colony Leader",
+      "capacityAttention": 4.0,
+      "usedAttention": 3.0,
+      "subordinates": [
+        {
+          "characterId": 1,
+          "displayName": "Dr. Maren Lind",
+          "roleTitle": "Lead Agronomist",
+          "competence": 0.79
+        }
+      ]
+    },
+    "dispatchInbox": [
+      {
+        "dispatchId": 502,
+        "title": "Coastal Squall Warning",
+        "sentTick": 11,
+        "arrivedTick": 12,
+        "originLabel": "Lookout Point"
+      }
+    ],
+    "clockAndNotifications": {
+      "tick": 12,
+      "calendarText": "Year 1 Day 1 12:00",
+      "paused": true,
+      "speedMultiplier": 4,
+      "activeAlertCount": 1,
+      "autoPauseReason": "Severe Coastal Gale Over Perimeter"
+    }
+  }
+]

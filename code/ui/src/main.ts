@@ -1,19 +1,34 @@
 import {
+  DEFAULT_AUDIO_MIXER_SETTINGS,
   DiegeticStore,
   InitialBootPayload,
   PluginRegistry,
   SimBridgeApi,
   UiIntentBus,
+  UserPreferencesDto,
   ValidatedPlayerCommand,
 } from "./spine";
-import { initializeGlobeViewport } from "./globe";
-import { createBaselineOverlayPlugin } from "./overlays";
-import { ModDiagnosticDialog, createPlaceholderWindowPlugin } from "./windows";
-import { createLedgerStubPlugin } from "./views";
+import { initializeGlobeViewport, GlobeViewportController } from "./globe";
+import {
+  OcclusionAwareCellPicker,
+  createBaselineOverlayPlugin,
+  createOperationalWarfareStubLayer,
+  createTradeAndCongestionStubLayer,
+} from "./overlays";
+import {
+  DesktopWindowManager,
+  ModDiagnosticDialog,
+  createPlaceholderWindowPlugin,
+} from "./windows";
+import {
+  createEntityInspectorWindowPlugin,
+  createLayoutPresetsWindowPlugin,
+  createLedgerStubPlugin,
+} from "./views";
 import { createDispatchInboxStubPlugin } from "./dispatches";
 import { mountCommandHud } from "./hud";
-import { applySkinBundle } from "./skins";
-import { mountAudioController } from "./audio";
+import { SkinManager, createSkinSwitcherWindowPlugin } from "./skins";
+import { AudioMixerEngine, createAudioSettingsWindowPlugin } from "./audio";
 
 export interface BootStatusReport {
   ready: boolean;
@@ -26,12 +41,23 @@ export interface BootStatusReport {
   hasSimBridge: boolean;
 }
 
+export interface M2RuntimeHandle {
+  readonly store: DiegeticStore;
+  readonly bus: UiIntentBus;
+  readonly registry: PluginRegistry;
+  readonly skinManager: SkinManager;
+  readonly audioEngine: AudioMixerEngine;
+  readonly windowManager: DesktopWindowManager;
+  readonly globe: GlobeViewportController;
+}
+
 declare global {
   interface Window {
     simBridge?: SimBridgeApi;
     __ngBootStatus?: BootStatusReport;
     __ngTriggerRecoverDefault?: () => Promise<InitialBootPayload>;
     __ngSendTestCommand?: (cmd: unknown) => Promise<unknown>;
+    __ngM2Runtime?: M2RuntimeHandle;
   }
 }
 
@@ -55,33 +81,101 @@ async function bootstrapShell(): Promise<void> {
     return;
   }
 
-  try {
-    const skins = await bridge.listAvailableSkins();
-    if (skins.length > 0) {
-      const bundle = await bridge.readSkinAssetManifest(skins[0].skinId);
-      applySkinBundle(bundle);
+  let initialPrefs: UserPreferencesDto = {
+    audioMixer: { ...DEFAULT_AUDIO_MIXER_SETTINGS },
+    namedLayoutPresets: {},
+  };
+  if (bridge.readUserPreferences) {
+    try {
+      initialPrefs = await bridge.readUserPreferences();
+    } catch {
+      // Retain baseline defaults cleanly
     }
-  } catch {
-    // Default styling fallback handled gracefully
   }
 
   const store = new DiegeticStore();
   const bus = new UiIntentBus();
   const registry = new PluginRegistry();
+
+  const skinManager = new SkinManager(bridge, bus);
+  const audioEngine = new AudioMixerEngine(bus, {
+    store,
+    bridge,
+    initialSettings: initialPrefs.audioMixer,
+  });
+
   registry.registerMapLayer(createBaselineOverlayPlugin());
+  registry.registerMapLayer(new OcclusionAwareCellPicker());
+  registry.registerMapLayer(createTradeAndCongestionStubLayer());
+  registry.registerMapLayer(createOperationalWarfareStubLayer());
+
   registry.registerWindowPlugin(createPlaceholderWindowPlugin());
   registry.registerWindowPlugin(createLedgerStubPlugin());
+  registry.registerWindowPlugin(createEntityInspectorWindowPlugin());
   registry.registerWindowPlugin(createDispatchInboxStubPlugin());
+  registry.registerWindowPlugin(createSkinSwitcherWindowPlugin(skinManager));
+  registry.registerWindowPlugin(createAudioSettingsWindowPlugin(audioEngine));
+  registry.registerWindowPlugin(createLayoutPresetsWindowPlugin());
 
-  mountAudioController(bus);
+  const windowManager = new DesktopWindowManager(
+    appRoot,
+    registry,
+    {
+      store,
+      bus,
+      assetResolver: skinManager.assetResolver,
+      audioPrefs: audioEngine,
+      readPreferences: bridge.readUserPreferences,
+    },
+    {
+      viewportWidth: window.innerWidth || 1280,
+      viewportHeight: window.innerHeight || 800,
+      initialPresets: initialPrefs.namedLayoutPresets,
+      onPersist(activeLayoutJson, presets) {
+        const writePrefs = bridge.writeUserPreferences;
+        if (!writePrefs) return;
+        void (async () => {
+          try {
+            const latest = bridge.readUserPreferences
+              ? await bridge.readUserPreferences()
+              : initialPrefs;
+            await writePrefs({
+              ...latest,
+              activeLayoutJson,
+              namedLayoutPresets: presets,
+            });
+          } catch {
+            // Non-fatal persistence guard
+          }
+        })();
+      },
+    },
+  );
+
+  try {
+    await skinManager.initialize(initialPrefs.activeSkinId);
+  } catch {
+    // Retain CSS defaults gracefully if skin read fails
+  }
+
   mountCommandHud(appRoot, store, bus);
 
-  const globe = await initializeGlobeViewport(canvas, store, bus, registry.getMapLayers());
+  const globe = await initializeGlobeViewport(canvas, store, bus, registry.getMapLayers(), {
+    initialPalette: skinManager.getActiveBundle()?.globePalette,
+    isPointOccluded: (clientX, clientY) => windowManager.isPointOccluded(clientX, clientY),
+  });
   status.gpuBackend = globe.status.backend;
   status.shaderCompiled = globe.status.shaderCompiled;
 
+  if (initialPrefs.activeLayoutJson) {
+    windowManager.restoreFromJson(initialPrefs.activeLayoutJson);
+  }
+
   window.addEventListener("resize", () => {
-    globe.resize(window.innerWidth, window.innerHeight);
+    const w = window.innerWidth || 1280;
+    const h = window.innerHeight || 800;
+    globe.resize(w, h);
+    windowManager.handleViewportResize(w, h);
   });
 
   bus.subscribe((intent) => {
@@ -130,6 +224,16 @@ async function bootstrapShell(): Promise<void> {
 
   window.__ngSendTestCommand = async (cmd: unknown) => {
     return bridge.sendPlayerCommand(cmd as ValidatedPlayerCommand);
+  };
+
+  window.__ngM2Runtime = {
+    store,
+    bus,
+    registry,
+    skinManager,
+    audioEngine,
+    windowManager,
+    globe,
   };
 
   const initial = await bridge.getInitialState();

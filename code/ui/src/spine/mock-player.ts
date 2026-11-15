@@ -1,14 +1,35 @@
 import {
   CommandAck,
+  DEFAULT_AUDIO_MIXER_SETTINGS,
   DiegeticSnapshot,
+  GlobePalette,
   InitialBootPayload,
   SimBridgeApi,
   SkinDescriptor,
   SkinManifestBundle,
+  UserPreferencesDto,
   ValidatedPlayerCommand,
   isValidDiegeticSnapshot,
   validatePlayerCommand,
 } from "./contracts";
+
+const NEUTRAL_TEST_PALETTE: GlobePalette = {
+  oceanShallowRgb: [135, 163, 173],
+  oceanDeepRgb: [61, 89, 102],
+  landLowRgb: [115, 138, 87],
+  landMidRgb: [176, 162, 116],
+  landHighRgb: [140, 114, 88],
+  peakSnowRgb: [244, 239, 228],
+  riverWaterRgb: [54, 108, 133],
+  roadOchreRgb: [166, 89, 40],
+  settlementMarkerRgb: [139, 46, 34],
+  contourInkRgb: [59, 44, 29],
+  compassRoseRgb: [110, 85, 57],
+  unexploredVellumRgb: [230, 216, 185],
+  parchmentGrainTextureUrl: "",
+  hatchPatternTextureUrl: "",
+  terrainBiomeTextureUrl: "",
+};
 
 /**
  * Deterministic offline fixture player implementing `SimBridgeApi` (`UI-SHL-005`).
@@ -18,14 +39,45 @@ export class MockSnapshotPlayer implements SimBridgeApi {
   private readonly timeline: DiegeticSnapshot[] = [];
   private cursor = 0;
   private readonly listeners = new Set<(snapshot: DiegeticSnapshot) => void>();
+  private readonly hotReloadListeners = new Set<(skinId: string) => void>();
+  private readonly skinBundles = new Map<string, SkinManifestBundle>();
+  private prefs: UserPreferencesDto = {
+    audioMixer: { ...DEFAULT_AUDIO_MIXER_SETTINGS },
+    namedLayoutPresets: {},
+  };
   public readonly recordedCommands: ValidatedPlayerCommand[] = [];
 
-  constructor(initialSnapshots: readonly DiegeticSnapshot[] = []) {
+  constructor(
+    initialSnapshots: readonly DiegeticSnapshot[] = [],
+    initialSkins: readonly SkinManifestBundle[] = [],
+  ) {
     for (const snap of initialSnapshots) {
       if (!isValidDiegeticSnapshot(snap)) {
         throw new Error("Invalid snapshot passed to MockSnapshotPlayer");
       }
       this.timeline.push(snap);
+    }
+    for (const bundle of initialSkins) {
+      this.skinBundles.set(bundle.skinId, bundle);
+    }
+    if (this.skinBundles.size === 0) {
+      this.skinBundles.set("cartographer-parchment", {
+        skinId: "cartographer-parchment",
+        displayName: "Cartographer's Parchment",
+        stylesheetHref: "../../skins/cartographer-parchment/theme.css",
+        cssText: "",
+        globePalette: NEUTRAL_TEST_PALETTE,
+      });
+    }
+  }
+
+  public registerMockSkin(bundle: SkinManifestBundle): void {
+    this.skinBundles.set(bundle.skinId, bundle);
+  }
+
+  public emitHotReload(skinId: string): void {
+    for (const listener of this.hotReloadListeners) {
+      listener(skinId);
     }
   }
 
@@ -99,32 +151,37 @@ export class MockSnapshotPlayer implements SimBridgeApi {
   }
 
   public async listAvailableSkins(): Promise<readonly SkinDescriptor[]> {
-    return [
-      {
-        skinId: "cartographer-parchment",
-        displayName: "Cartographer's Parchment",
-        stylesheetPath: "theme.css",
-      },
-    ];
+    return Array.from(this.skinBundles.values()).map((b) => ({
+      skinId: b.skinId,
+      displayName: b.displayName,
+      stylesheetPath: b.stylesheetHref,
+    }));
   }
 
   public async readSkinAssetManifest(skinId: string): Promise<SkinManifestBundle> {
+    const found = this.skinBundles.get(skinId);
+    if (found) return found;
+    const first = Array.from(this.skinBundles.values())[0];
     return {
+      ...first,
       skinId,
-      displayName: "Cartographer's Parchment",
-      stylesheetHref: `../../skins/${skinId}/theme.css`,
-      cssText: ":root { --skin-bg-panel: #f0e4cc; --skin-text-primary: #231c15; }",
-      globePalette: {
-        oceanShallowHex: "#87a3ad",
-        oceanDeepHex: "#3d5966",
-        landLowHex: "#d8caa6",
-        landHighHex: "#8c7258",
-        contourInkHex: "#3b2c1d",
-        unexploredVellumHex: "#e6d8b9",
-        parchmentGrainTexture: "textures/parchment_tile.png",
-        hatchPatternTexture: "textures/ink_hatch_tile.png",
-      },
+      displayName: skinId,
     };
+  }
+
+  public subscribeSkinHotReload(listener: (skinId: string) => void): () => void {
+    this.hotReloadListeners.add(listener);
+    return () => {
+      this.hotReloadListeners.delete(listener);
+    };
+  }
+
+  public async readUserPreferences(): Promise<UserPreferencesDto> {
+    return structuredClone(this.prefs);
+  }
+
+  public async writeUserPreferences(next: UserPreferencesDto): Promise<void> {
+    this.prefs = structuredClone(next);
   }
 
   public async loadMockFixture(fixtureJson: string): Promise<void> {

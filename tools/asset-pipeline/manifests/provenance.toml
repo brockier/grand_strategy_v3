@@ -1,18 +1,19 @@
 schema_version = 1
 
+# Cartographer's Parchment — Textures & 9-Slice Frame
 [[assets]]
 asset_rel_path = "skins/cartographer-parchment/assets/window_9slice.png"
-generator_model = "Procedural Baseline Raster Generator (Milestone 0 Placeholder prior to AI Paint Overpass)"
-generator_version = "1.0.0"
+generator_model = "Procedural Baseline Raster Generator"
+generator_version = "2.0.0"
 license_tier = "Commercial-Owned"
 commercial_rights_verified = true
-human_post_processing = "Verified 9-slice patch region boundaries and RGBA alpha border padding"
+human_post_processing = "Verified 48x48 9-slice region boundaries (16px corners + repeat rails)"
 steam_disclosure_category = "VisualTexture"
 
 [[assets]]
 asset_rel_path = "skins/cartographer-parchment/textures/parchment_tile.png"
-generator_model = "Procedural Baseline Raster Generator (Milestone 0 Placeholder prior to AI Paint Overpass)"
-generator_version = "1.0.0"
+generator_model = "Procedural Baseline Raster Generator"
+generator_version = "2.0.0"
 license_tier = "Commercial-Owned"
 commercial_rights_verified = true
 human_post_processing = "Tile-seam checked and palette matched to Cartographer's Parchment skin"
@@ -20,9 +21,329 @@ steam_disclosure_category = "VisualTexture"
 
 [[assets]]
 asset_rel_path = "skins/cartographer-parchment/textures/ink_hatch_tile.png"
-generator_model = "Procedural Baseline Raster Generator (Milestone 0 Placeholder prior to AI Paint Overpass)"
-generator_version = "1.0.0"
+generator_model = "Procedural Baseline Raster Generator"
+generator_version = "2.0.0"
 license_tier = "Commercial-Owned"
 commercial_rights_verified = true
-human_post_processing = "Alpha-masked seamless hatching tile validated for cartographic shader"
+human_post_processing = "Seamless cross-hatching pattern tile validated for cartographic shader"
 steam_disclosure_category = "VisualTexture"
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/textures/terrain_biome_tile.png"
+generator_model = "Procedural Baseline Raster Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Triplanar micro-detail terrain texture seam-checked"
+steam_disclosure_category = "VisualTexture"
+
+# Cartographer's Parchment — Portraits, Icons & Dispatch Plate
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/assets/portrait_steward_adult.png"
+generator_model = "Procedural Baseline Portrait Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Centered 64x64 framing and parchment palette color-grading"
+steam_disclosure_category = "Portrait"
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/assets/portrait_artificer_senior.png"
+generator_model = "Procedural Baseline Portrait Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Centered 64x64 framing and senior artificer headgear silhouette check"
+steam_disclosure_category = "Portrait"
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/assets/portrait_clerk_young.png"
+generator_model = "Procedural Baseline Portrait Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Centered 64x64 framing and clerk palette calibration"
+steam_disclosure_category = "Portrait"
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/assets/icon_grain.png"
+generator_model = "Procedural Baseline Icon Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "32x32 crisp pixel border and contrast verification"
+steam_disclosure_category = "Icon"
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/assets/icon_timber.png"
+generator_model = "Procedural Baseline Icon Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "32x32 crisp pixel border and timber log legibility check"
+steam_disclosure_category = "Icon"
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/assets/icon_tools.png"
+generator_model = "Procedural Baseline Icon Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "32x32 crisp pixel border and crossed tool icon check"
+steam_disclosure_category = "Icon"
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/assets/dispatch_header_seal.png"
+generator_model = "Procedural Baseline Icon Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "96x32 wax seal banner header plate calibrated to parchment ink"
+steam_disclosure_category = "VisualTexture"
+
+# Cartographer's Parchment — Audio Stems & Foley
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/audio/wind_surface.wav"
+generator_model = "Procedural Baseline Synthesizer"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Envelope smoothed and peak normalized below -6 dBFS"
+steam_disclosure_category = "AudioFoley"
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/audio/rain_surface.wav"
+generator_model = "Procedural Baseline Synthesizer"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Envelope smoothed and peak normalized below -6 dBFS"
+steam_disclosure_category = "AudioFoley"
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/audio/workshop_bustle.wav"
+generator_model = "Procedural Baseline Synthesizer"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Envelope smoothed and peak normalized below -6 dBFS"
+steam_disclosure_category = "AudioFoley"
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/audio/study_room_clock.wav"
+generator_model = "Procedural Baseline Synthesizer"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Orbital map-table ticking envelope calibrated for zero clipping"
+steam_disclosure_category = "AudioFoley"
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/audio/foley_open.wav"
+generator_model = "Procedural Baseline Synthesizer"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Short transient normalized for UI window open cue"
+steam_disclosure_category = "AudioFoley"
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/audio/foley_close.wav"
+generator_model = "Procedural Baseline Synthesizer"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Short transient normalized for UI window close cue"
+steam_disclosure_category = "AudioFoley"
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/audio/foley_step.wav"
+generator_model = "Procedural Baseline Synthesizer"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Short chronometer step cue normalized"
+steam_disclosure_category = "AudioFoley"
+
+[[assets]]
+asset_rel_path = "skins/cartographer-parchment/audio/music_colony_calm.wav"
+generator_model = "Procedural Baseline Synthesizer"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Smooth loopable harmonic stem normalized below -6 dBFS"
+steam_disclosure_category = "MusicStem"
+
+# Industrial Brass — Textures & 9-Slice Frame
+[[assets]]
+asset_rel_path = "skins/industrial-brass/assets/window_9slice.png"
+generator_model = "Procedural Baseline Raster Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Verified 48x48 brass riveted slate 9-slice region boundaries"
+steam_disclosure_category = "VisualTexture"
+
+[[assets]]
+asset_rel_path = "skins/industrial-brass/textures/parchment_tile.png"
+generator_model = "Procedural Baseline Raster Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Seamless slate drafting surface grain tile"
+steam_disclosure_category = "VisualTexture"
+
+[[assets]]
+asset_rel_path = "skins/industrial-brass/textures/ink_hatch_tile.png"
+generator_model = "Procedural Baseline Raster Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Seamless brass-on-slate grid hatch tile"
+steam_disclosure_category = "VisualTexture"
+
+[[assets]]
+asset_rel_path = "skins/industrial-brass/textures/terrain_biome_tile.png"
+generator_model = "Procedural Baseline Raster Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Triplanar industrial mineral terrain tile"
+steam_disclosure_category = "VisualTexture"
+
+# Industrial Brass — Portraits, Icons & Dispatch Plate
+[[assets]]
+asset_rel_path = "skins/industrial-brass/assets/portrait_steward_adult.png"
+generator_model = "Procedural Baseline Portrait Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Industrial brass palette color-grading"
+steam_disclosure_category = "Portrait"
+
+[[assets]]
+asset_rel_path = "skins/industrial-brass/assets/portrait_artificer_senior.png"
+generator_model = "Procedural Baseline Portrait Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Industrial brass senior engineer silhouette check"
+steam_disclosure_category = "Portrait"
+
+[[assets]]
+asset_rel_path = "skins/industrial-brass/assets/portrait_clerk_young.png"
+generator_model = "Procedural Baseline Portrait Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Industrial brass palette color-grading"
+steam_disclosure_category = "Portrait"
+
+[[assets]]
+asset_rel_path = "skins/industrial-brass/assets/icon_grain.png"
+generator_model = "Procedural Baseline Icon Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "32x32 brass trim contrast check"
+steam_disclosure_category = "Icon"
+
+[[assets]]
+asset_rel_path = "skins/industrial-brass/assets/icon_timber.png"
+generator_model = "Procedural Baseline Icon Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "32x32 brass trim contrast check"
+steam_disclosure_category = "Icon"
+
+[[assets]]
+asset_rel_path = "skins/industrial-brass/assets/icon_tools.png"
+generator_model = "Procedural Baseline Icon Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "32x32 brass trim contrast check"
+steam_disclosure_category = "Icon"
+
+[[assets]]
+asset_rel_path = "skins/industrial-brass/assets/dispatch_header_seal.png"
+generator_model = "Procedural Baseline Icon Generator"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "96x32 brass stamp plate calibrated to slate header"
+steam_disclosure_category = "VisualTexture"
+
+# Industrial Brass — Audio Stems & Foley
+[[assets]]
+asset_rel_path = "skins/industrial-brass/audio/wind_surface.wav"
+generator_model = "Procedural Baseline Synthesizer"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Envelope smoothed and peak normalized below -6 dBFS"
+steam_disclosure_category = "AudioFoley"
+
+[[assets]]
+asset_rel_path = "skins/industrial-brass/audio/rain_surface.wav"
+generator_model = "Procedural Baseline Synthesizer"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Envelope smoothed and peak normalized below -6 dBFS"
+steam_disclosure_category = "AudioFoley"
+
+[[assets]]
+asset_rel_path = "skins/industrial-brass/audio/workshop_bustle.wav"
+generator_model = "Procedural Baseline Synthesizer"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Envelope smoothed and peak normalized below -6 dBFS"
+steam_disclosure_category = "AudioFoley"
+
+[[assets]]
+asset_rel_path = "skins/industrial-brass/audio/study_room_clock.wav"
+generator_model = "Procedural Baseline Synthesizer"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Industrial escapement ticking normalized below -6 dBFS"
+steam_disclosure_category = "AudioFoley"
+
+[[assets]]
+asset_rel_path = "skins/industrial-brass/audio/foley_open.wav"
+generator_model = "Procedural Baseline Synthesizer"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Metallic latch open cue normalized"
+steam_disclosure_category = "AudioFoley"
+
+[[assets]]
+asset_rel_path = "skins/industrial-brass/audio/foley_close.wav"
+generator_model = "Procedural Baseline Synthesizer"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Metallic latch close cue normalized"
+steam_disclosure_category = "AudioFoley"
+
+[[assets]]
+asset_rel_path = "skins/industrial-brass/audio/foley_step.wav"
+generator_model = "Procedural Baseline Synthesizer"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Mechanical gear click cue normalized"
+steam_disclosure_category = "AudioFoley"
+
+[[assets]]
+asset_rel_path = "skins/industrial-brass/audio/music_colony_calm.wav"
+generator_model = "Procedural Baseline Synthesizer"
+generator_version = "2.0.0"
+license_tier = "Commercial-Owned"
+commercial_rights_verified = true
+human_post_processing = "Smooth loopable industrial stem normalized below -6 dBFS"
+steam_disclosure_category = "MusicStem"

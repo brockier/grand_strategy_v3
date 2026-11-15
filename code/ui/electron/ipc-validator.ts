@@ -31,10 +31,14 @@ export function parsePlayerCommand(payload: unknown): CommandParseResult {
         typeof obj.multiplier !== "number" ||
         !Number.isInteger(obj.multiplier) ||
         obj.multiplier < 1 ||
-        obj.multiplier > 64 ||
+        (obj.multiplier > 64 && obj.multiplier !== 168) ||
         keys.length !== 2
       ) {
-        return { ok: false, errorCode: "OUT_OF_RANGE", message: "multiplier must be integer 1..64" };
+        return {
+          ok: false,
+          errorCode: "OUT_OF_RANGE",
+          message: "multiplier must be integer 1..64 or 168",
+        };
       }
       return { ok: true, command: { kind: "setSpeedMultiplier", multiplier: obj.multiplier } };
     case "pingBridge":

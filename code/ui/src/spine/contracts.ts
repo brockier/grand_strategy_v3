@@ -3,6 +3,8 @@
  * Pure TypeScript definitions and runtime schema validators with zero sibling or Electron/Three imports.
  */
 
+export type RgbTuple = readonly [number, number, number];
+
 export interface ModDiagnosticDto {
   readonly severity: string;
   readonly layer: string;
@@ -24,6 +26,16 @@ export type KnownCellDto =
       readonly cellId: number;
     }
   | {
+      readonly tier: "stale";
+      readonly cellId: number;
+      readonly observedTick: number;
+      readonly elevationM: number;
+      readonly confidence01: number;
+      readonly provenanceLabel: string;
+      readonly biomeKey?: string;
+      readonly isOcean?: boolean;
+    }
+  | {
       readonly tier: "surveyed";
       readonly cellId: number;
       readonly observedTick: number;
@@ -31,7 +43,25 @@ export type KnownCellDto =
       readonly elevationM: number;
       readonly confidence01: number;
       readonly provenanceLabel: string;
+      readonly biomeKey?: string;
+      readonly isOcean?: boolean;
+      readonly riverDownstreamCellId?: number | null;
+      readonly riverFlowNorm01?: number;
     };
+
+export interface KnownSettlementDto {
+  readonly settlementId: number;
+  readonly settlementName: string;
+  readonly cellId: number;
+  readonly isHq: boolean;
+}
+
+export interface SurveyedRoadEdgeDto {
+  readonly edgeId: number;
+  readonly fromCellId: number;
+  readonly toCellId: number;
+  readonly infraKey: string;
+}
 
 export interface HqPresenceDto {
   readonly mode: string;
@@ -101,6 +131,7 @@ export interface ClockAndNotificationsDto {
   readonly paused: boolean;
   readonly speedMultiplier: number;
   readonly activeAlertCount: number;
+  readonly autoPauseReason?: string | null;
 }
 
 export interface DiegeticSnapshot {
@@ -110,6 +141,8 @@ export interface DiegeticSnapshot {
   readonly globeTopology: GlobeTopologyDto;
   readonly knownCells: readonly KnownCellDto[];
   readonly hqPresence: HqPresenceDto;
+  readonly knownSettlements?: readonly KnownSettlementDto[];
+  readonly surveyedRoads?: readonly SurveyedRoadEdgeDto[];
   readonly trackedConvoys: readonly TrackedConvoyDto[];
   readonly observedWeather: readonly ObservedWeatherDto[];
   readonly ledgerRows: readonly ReportedLedgerRowDto[];
@@ -138,14 +171,78 @@ export interface SkinDescriptor {
 }
 
 export interface GlobePalette {
-  readonly oceanShallowHex: string;
-  readonly oceanDeepHex: string;
-  readonly landLowHex: string;
-  readonly landHighHex: string;
-  readonly contourInkHex: string;
-  readonly unexploredVellumHex: string;
-  readonly parchmentGrainTexture: string;
-  readonly hatchPatternTexture: string;
+  readonly oceanShallowRgb: RgbTuple;
+  readonly oceanDeepRgb: RgbTuple;
+  readonly landLowRgb: RgbTuple;
+  readonly landMidRgb: RgbTuple;
+  readonly landHighRgb: RgbTuple;
+  readonly peakSnowRgb: RgbTuple;
+  readonly riverWaterRgb: RgbTuple;
+  readonly roadOchreRgb: RgbTuple;
+  readonly settlementMarkerRgb: RgbTuple;
+  readonly contourInkRgb: RgbTuple;
+  readonly compassRoseRgb: RgbTuple;
+  readonly unexploredVellumRgb: RgbTuple;
+  readonly parchmentGrainTextureUrl: string;
+  readonly hatchPatternTextureUrl: string;
+  readonly terrainBiomeTextureUrl: string;
+}
+
+export interface AudioManifestDto {
+  readonly schemaVersion: number;
+  readonly skinId: string;
+  readonly ambientSurface: {
+    readonly fadeStartAltitude: number;
+    readonly fadeEndAltitude: number;
+    readonly windLoopUrl: string;
+    readonly rainLoopUrl: string;
+    readonly settlementLoopUrl: string;
+  };
+  readonly ambientMapStudy: {
+    readonly fadeStartAltitude: number;
+    readonly fadeEndAltitude: number;
+    readonly studyLoopUrl: string;
+  };
+  readonly music: {
+    readonly crossfadeMs: number;
+    readonly stemUrls: readonly string[];
+  };
+  readonly uiFoley: {
+    readonly cooldownMs: number;
+    readonly cueUrls: Readonly<Record<string, string>>;
+  };
+}
+
+export interface PortraitAssetEntry {
+  readonly id: string;
+  readonly url: string;
+  readonly ageBracket: string;
+  readonly vocation: string;
+  readonly eraTag: string;
+  readonly healthBand: string;
+}
+
+export interface IconAssetEntry {
+  readonly key: string;
+  readonly category: string;
+  readonly url: string;
+}
+
+export interface DispatchPlateEntry {
+  readonly key: string;
+  readonly url: string;
+}
+
+export interface AssetManifestDto {
+  readonly schemaVersion: number;
+  readonly fallbacks: {
+    readonly portraitUrl: string;
+    readonly iconUrl: string;
+    readonly dispatchPlateUrl: string;
+  };
+  readonly portraits: readonly PortraitAssetEntry[];
+  readonly icons: readonly IconAssetEntry[];
+  readonly dispatchPlates: readonly DispatchPlateEntry[];
 }
 
 export interface SkinManifestBundle {
@@ -154,6 +251,42 @@ export interface SkinManifestBundle {
   readonly stylesheetHref: string;
   readonly cssText: string;
   readonly globePalette: GlobePalette;
+  readonly audioManifest?: AudioManifestDto;
+  readonly assetManifest?: AssetManifestDto;
+}
+
+export interface AudioMixerSettings {
+  readonly masterVolume: number;
+  readonly musicVolume: number;
+  readonly ambienceVolume: number;
+  readonly foleyVolume: number;
+  readonly masterMuted: boolean;
+  readonly musicMuted: boolean;
+  readonly ambienceMuted: boolean;
+  readonly foleyMuted: boolean;
+}
+
+export interface UserPreferencesDto {
+  readonly activeSkinId?: string;
+  readonly audioMixer: AudioMixerSettings;
+  readonly activeLayoutJson?: string;
+  readonly namedLayoutPresets: Readonly<Record<string, string>>;
+}
+
+export type GlobeRayHit =
+  | { readonly hitKind: "convoy"; readonly cellId: number; readonly convoyId: number; readonly label: string }
+  | { readonly hitKind: "settlement"; readonly cellId: number; readonly settlementId: number; readonly label: string }
+  | { readonly hitKind: "road"; readonly cellId: number; readonly edgeId: number; readonly fromCellId: number; readonly toCellId: number; readonly label: string }
+  | { readonly hitKind: "river"; readonly cellId: number; readonly toCellId: number; readonly flowNorm01: number; readonly label: string }
+  | { readonly hitKind: "cell"; readonly cellId: number; readonly label: string };
+
+export interface CameraTelemetry {
+  readonly altitudeNorm: number;
+  readonly altitudeRadius: number;
+  readonly pitchRad: number;
+  readonly headingRad: number;
+  readonly focusCellId: number;
+  readonly focusUnit: readonly [number, number, number];
 }
 
 export type InitialBootPayload =
@@ -168,7 +301,22 @@ export interface SimBridgeApi {
   listAvailableSkins(): Promise<readonly SkinDescriptor[]>;
   readSkinAssetManifest(skinId: string): Promise<SkinManifestBundle>;
   loadMockFixture(fixtureJson: string): Promise<void>;
+  subscribeSkinHotReload?(listener: (skinId: string) => void): () => void;
+  readUserPreferences?(): Promise<UserPreferencesDto>;
+  writeUserPreferences?(prefs: UserPreferencesDto): Promise<void>;
 }
+
+/** Default initial mixer levels shared across fresh boots (`UI-AUD-004`). */
+export const DEFAULT_AUDIO_MIXER_SETTINGS: AudioMixerSettings = {
+  masterVolume: 0.85,
+  musicVolume: 0.7,
+  ambienceVolume: 0.8,
+  foleyVolume: 0.75,
+  masterMuted: false,
+  musicMuted: false,
+  ambienceMuted: false,
+  foleyMuted: false,
+};
 
 /** Validates incoming IPC payloads against `DiegeticSnapshot` parity rules. */
 export function isValidDiegeticSnapshot(value: unknown): value is DiegeticSnapshot {
@@ -200,8 +348,24 @@ export function isValidDiegeticSnapshot(value: unknown): value is DiegeticSnapsh
     const c = cell as Record<string, unknown>;
     if (typeof c.cellId !== "number") return false;
     if (c.tier === "unexplored") {
-      // Epistemic air-gap invariant: Unexplored cell payloads omit terrain/mineral properties.
-      if ("elevationM" in c || "confidence01" in c || "observedTick" in c) {
+      // Epistemic air-gap invariant: Unexplored cell payloads omit terrain/mineral/weather properties.
+      if (
+        "elevationM" in c ||
+        "confidence01" in c ||
+        "observedTick" in c ||
+        "biomeKey" in c ||
+        "isOcean" in c ||
+        "riverDownstreamCellId" in c ||
+        "riverFlowNorm01" in c
+      ) {
+        return false;
+      }
+    } else if (c.tier === "stale") {
+      if (
+        typeof c.observedTick !== "number" ||
+        typeof c.elevationM !== "number" ||
+        typeof c.confidence01 !== "number"
+      ) {
         return false;
       }
     } else if (c.tier === "surveyed") {
@@ -236,8 +400,7 @@ export function validatePlayerCommand(value: unknown): ValidatedPlayerCommand | 
       if (
         typeof raw.multiplier !== "number" ||
         !Number.isInteger(raw.multiplier) ||
-        raw.multiplier < 1 ||
-        raw.multiplier > 64 ||
+        !((raw.multiplier >= 1 && raw.multiplier <= 64) || raw.multiplier === 168) ||
         keys.length !== 2
       ) {
         return null;

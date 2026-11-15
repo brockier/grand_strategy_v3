@@ -25,3 +25,9 @@ rel_path = "assets/fallback_commodity.svg"
 spdx_license = "CC0-1.0"
 license_file = "licenses/CC0-1.0.txt"
 copyright_notice = "Project baseline vector icon (CC0-1.0)"
+
+[[baseline_assets]]
+rel_path = "assets/fallback_dispatch_plate.svg"
+spdx_license = "CC0-1.0"
+license_file = "licenses/CC0-1.0.txt"
+copyright_notice = "Project baseline vector icon (CC0-1.0)"
