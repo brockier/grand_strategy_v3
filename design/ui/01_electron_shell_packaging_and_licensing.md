@@ -1,7 +1,7 @@
 # Module Design: Electron Shell, WebGPU Boot & Steam Packaging
 
 **Module ID:** `UI-SHL-01`  
-**Code Location:** `apps/ui-shell/electron/` and `apps/ui-shell/build/`  
+**Code Location:** `code/ui/electron/` and `code/ui/scripts/`  
 **Milestone & Design Depth:** `M0: Full Detailed Design`  
 **Satisfies Requirements:** `UI-LIC-001`, `UI-LIC-002`, `UI-LIC-003`, `UI-SHL-001`, `UI-SHL-003`, `UI-SHL-004` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
 
@@ -101,5 +101,5 @@ win:
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. Swapping `napi-rs` native bindings for a local socket/stdin Rust child process—or replacing `electron-builder` with `electron-forge`—touches strictly `apps/ui-shell/electron/` and `build/`.
+1. Swapping `napi-rs` native bindings for a local socket/stdin Rust child process—or replacing `electron-builder` with `electron-forge`—touches strictly `code/ui/electron/` and `code/ui/scripts/`.
 2. The renderer (`src/spine` and all view/globe cartridges) sees only `window.simBridge` and never changes.

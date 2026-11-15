@@ -1,7 +1,7 @@
 # Module Design: Non-Bought Research & Fragile Knowledge (`M6`)
 
 **Module ID:** `ENG-PLUG-13`  
-**Code Location:** `crates/sim-plug-research/`  
+**Code Location:** `code/engine/crates/sim-plug-research/`  
 **Milestone & Design Depth:** `M6: Locked Spine Port Contracts & Replaceable Baseline Design`  
 **Satisfies Requirements:** `ENG-RES-001`, `ENG-RES-002`, `ENG-RES-003`, `ENG-RES-004`, `ENG-RES-005` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
@@ -15,7 +15,7 @@
   - `PopulationPort` (surplus-leisure cohorts, practicing vocational cohorts, Named Individual cognitive/curiosity traits)
   - `LogisticsPort` (traveling engineers, smuggled manuals, industrial espionage dispatches)
 - **Provided Spine Ports (Outputs):**
-  - Implements `KnowledgeModifierPlugPort` defined in `crates/sim-spine/`
+  - Implements `KnowledgeModifierPlugPort` defined in `code/engine/crates/sim-spine/`
   - Emits empirical workplace field-note events and patent/discovery dispatches to `player-view`
 
 ---
@@ -64,5 +64,5 @@ When decomposed into `.1`/`.2` `Active` requirements at `M6`, the baseline cartr
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. You can swap the discovery probability engine (for instance, replacing Bayesian experimentation with combinatorial chemical/mechanical synthesis graphs) entirely inside `crates/sim-plug-research/`.
+1. You can swap the discovery probability engine (for instance, replacing Bayesian experimentation with combinatorial chemical/mechanical synthesis graphs) entirely inside `code/engine/crates/sim-plug-research/`.
 2. Zero sibling simulation crates change as long as `KnowledgeModifierPlugPort` semantics remain intact.

@@ -1,7 +1,7 @@
 # Module Design: Hyperlinked Dispatch Reader & Epistemic Provenance Badges
 
 **Module ID:** `UI-DIS-06`  
-**Code Location:** `apps/ui-shell/src/dispatches/`  
+**Code Location:** `code/ui/src/dispatches/`  
 **Milestone & Design Depth:** `M4: Full Detailed Design`  
 **Satisfies Requirements:** `UI-DAT-004`, `UI-DAT-005` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
 
@@ -87,5 +87,5 @@ Every numeric figure originating outside immediate HQ sight renders through one 
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. Swapping the visual layout (for instance, turning dispatches into parchment scrolls, printed telegram strips, or side-by-side archive binders) changes strictly `apps/ui-shell/src/dispatches/` and external skin CSS.
+1. Swapping the visual layout (for instance, turning dispatches into parchment scrolls, printed telegram strips, or side-by-side archive binders) changes strictly `code/ui/src/dispatches/` and external skin CSS.
 2. `DispatchToken` schema inside `src/spine` keeps `player-view` IPC completely decoupled from frontend rendering choices.

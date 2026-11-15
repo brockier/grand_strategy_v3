@@ -1,7 +1,7 @@
 # Module Design: Physical Carriers & Shared Logistics Routing
 
 **Module ID:** `ENG-LOG-07`  
-**Code Location:** `crates/sim-logistics/`  
+**Code Location:** `code/engine/crates/sim-logistics/`  
 **Milestone & Design Depth:** `M3–M4: Full Detailed Design`  
 **Satisfies Requirements:** `ENG-LOG-001`, `ENG-LOG-002`, `ENG-LOG-003`, `ENG-LOG-004` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
@@ -99,5 +99,5 @@ For any candidate edge `(u, v)` and `CarrierDef`:
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. You can swap A* for Contraction Hierarchies, flow-network continuous routing, or multi-hop relay scheduling completely inside `crates/sim-logistics/`.
+1. You can swap A* for Contraction Hierarchies, flow-network continuous routing, or multi-hop relay scheduling completely inside `code/engine/crates/sim-logistics/`.
 2. The replacement cartridge must honor `LogisticsPort`, consume `PlanetGeometryPort` + `SurfaceConditionsPort`, preserve mass via `PhysicalLedgerPort`, and emit `ArrivedCourierEnvelope`s strictly upon physical edge completion.

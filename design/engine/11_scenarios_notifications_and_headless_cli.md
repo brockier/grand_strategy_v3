@@ -1,7 +1,7 @@
 # Module Design: Scenarios, Notification Router & Headless CLI
 
 **Module ID:** `ENG-SCN-11`  
-**Code Location:** `crates/sim-scenario/` and `crates/sim-cli/`  
+**Code Location:** `code/engine/crates/sim-scenario/` and `code/engine/crates/sim-cli/`  
 **Milestone & Design Depth:** `M0, M1, M3, M4: Full Detailed Design`  
 **Satisfies Requirements:** `ENG-SCN-001`, `ENG-SCN-002`, `ENG-SCN-003`, `ENG-SCN-004` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
@@ -98,5 +98,5 @@ During `TickPhase::CompileDiegeticPlayerViewAndNotifications`:
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. `crates/sim-scenario/` is the *only* engine composition root that wires cartridges together. Adding a completely new scenario archetype or swapping a cartridge implementation (for instance, plugging in a custom `M5` economy crate) touches only the dependency binding table inside `ScenarioBuilder`.
+1. `code/engine/crates/sim-scenario/` is the *only* engine composition root that wires cartridges together. Adding a completely new scenario archetype or swapping a cartridge implementation (for instance, plugging in a custom `M5` economy crate) touches only the dependency binding table inside `ScenarioBuilder`.
 2. Zero simulation physics live inside `sim-scenario` or `sim-cli`; `requirements/engine_requirements.md` remains untouched.

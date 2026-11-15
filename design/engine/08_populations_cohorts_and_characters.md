@@ -1,7 +1,7 @@
 # Module Design: Two-Tier Populations, Cohorts & Named Individuals
 
 **Module ID:** `ENG-POP-08`  
-**Code Location:** `crates/sim-pop/`  
+**Code Location:** `code/engine/crates/sim-pop/`  
 **Milestone & Design Depth:** `M3–M4: Full Detailed Design`  
 **Satisfies Requirements:** `ENG-POP-001`, `ENG-POP-002`, `ENG-POP-003`, `ENG-POP-004`, `ENG-POP-005` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
@@ -117,5 +117,5 @@ When a role or leadership vacuum requests a new specialist:
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. To change demographic granularity (for example, adding single-year age pyramids or cultural/linguistic identity splits inside cohorts), keep `PopulationPort` and `CohortId`/`CharacterId` signatures unchanged inside `crates/sim-pop/`.
+1. To change demographic granularity (for example, adding single-year age pyramids or cultural/linguistic identity splits inside cohorts), keep `PopulationPort` and `CohortId`/`CharacterId` signatures unchanged inside `code/engine/crates/sim-pop/`.
 2. Zero changes to `sim-economy`, `sim-logistics`, or `requirements/` are required.

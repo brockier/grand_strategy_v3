@@ -370,28 +370,47 @@ The entire technical stack is verified for closed-source commercial sale on Stea
 
 ```text
 /home/roger/Projects/ng/
-├── Cargo.toml                         # Rust workspace root (sim-core, sim-data, player-view, sim-cli)
+├── code/
+│   ├── engine/                        # Rust workspace root (Cargo.toml, deny.toml)
+│   │   ├── crates/
+│   │   │   ├── sim-spine/             # Opaque IDs, Spine port traits, TickPhase, plug traits
+│   │   │   ├── sim-data/              # Serde + schemars mod loader, JSON Schema generator & validator
+│   │   │   ├── sim-clock/             # Hourly clock, 24h/168h staggered scheduler, LZ4 save codec & profiler
+│   │   │   ├── sim-planet/            # Goldberg sphere, tectonics, strata deposits, watersheds, procedural materials
+│   │   │   ├── sim-weather/           # Hourly orbital insolation, advection, soil mud, snowpack & watershed flood routing
+│   │   │   ├── sim-core/              # Deterministic kernel wiring stockpiles, production & population ports
+│   │   │   ├── player-view/           # Epistemic air-gap, delayed dispatch inbox, ghosted schedule projection
+│   │   │   ├── sim-scenario/          # Engine composition root wiring cartridges and scenario initialization
+│   │   │   ├── steam-adapter/         # Optional Steamworks integration boundary (--features steam)
+│   │   │   └── sim-cli/               # Headless multi-decade simulation runner, profiler & balance test suite
+│   │   └── tools/
+│   │       └── xtask/                 # License, DAG isolation, AI provenance, notice & requirement traceability auditor
+│   └── ui/                            # Electron + TypeScript app (package.json, eslint.config.mjs)
+│       ├── electron/                  # Main process, preload bridge & IPC command allowlist validator
+│       ├── src/spine/                 # Immutable DiegeticStore, UiIntentBus, plugin registries & MockSnapshotPlayer
+│       ├── src/globe/                 # Three.js WebGPU/WebGL2 Goldberg sphere & zoom-blended shaders
+│       ├── src/overlays/              # Map overlay plugins (convoy trails, weather particles, hex contours)
+│       ├── src/windows/               # Movable, resizable, minimizable, snappable window manager & mod diagnostics
+│       ├── src/views/                 # Virtualized ledgers, charts, org trees
+│       ├── src/dispatches/            # Delayed dispatch reader & epistemic confidence badges
+│       ├── src/hud/                   # Command HUD, mandate authoring & notification matrix
+│       ├── src/skins/                 # CSS skin engine & AI asset resolver
+│       ├── src/audio/                 # Web Audio mixer & manifest-driven foley engine
+│       ├── scripts/                   # npm/skin license audits & Steam ASAR staging/verification scripts
+│       └── tests/                     # Vitest + headless Electron security, packaging & mock harness tests
+├── design/
+│   ├── engine/                        # Modular engine cartridge specifications
+│   └── ui/                            # Modular UI cartridge specifications
+├── mods/                              # 100% external TOML/JSON data packs (core-schemas, baseline-era, unexplained-colony)
 ├── requirements/
 │   ├── architecture.md                # Master requirements & technical architecture specification
 │   ├── engine_requirements.md         # Traceable Rust engine & epistemic air-gap requirements
 │   └── ui_requirements.md             # Traceable Electron, globe & skinnable window UI requirements
-├── crates/
-│   ├── sim-data/                      # Serde + schemars mod loader, JSON Schema generator & validator
-│   ├── sim-core/                      # Deterministic hourly geodesic sim (weather, economy, pops, mandates, war)
-│   ├── player-view/                   # Epistemic air-gap, delayed dispatch inbox, ghosted schedule projection
-│   └── sim-cli/                       # Headless multi-decade simulation runner, profiler & balance test suite
-├── apps/
-│   └── ui-shell/                      # Electron + TypeScript app
-│       ├── electron/                  # Main process, native IPC bridge to Rust library/daemon
-│       ├── src/globe/                 # Three.js WebGPU/WebGL2 Goldberg sphere & zoom-blended shaders
-│       ├── src/windows/               # Movable, resizable, minimizable, snappable window manager
-│       └── src/views/                 # Virtualized ledgers, charts, org trees, dispatch reader, map overlays
-├── mods/
-│   └── unexplained-colony/            # Scenario Pack 1 (100% external TOML/JSON game content & scenario data)
+├── schemas/                           # Generated Draft 2020-12 JSON Schemas for mod authoring
 ├── skins/
 │   └── cartographer-parchment/        # Default external CSS skin, 9-slice window assets, map palette & audio manifest
 └── tools/
-    └── asset-pipeline/                # Scripts to normalize, tile, 9-slice, and manifest AI-generated art & audio
+    └── asset-pipeline/                # Manifests and scripts to verify & package AI-generated art & audio
 ```
 
 ---

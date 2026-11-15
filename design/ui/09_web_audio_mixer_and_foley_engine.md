@@ -1,7 +1,7 @@
 # Module Design: Altitude-Reactive Web Audio Mixer & Skin Foley Engine
 
 **Module ID:** `UI-AUD-09`  
-**Code Location:** `apps/ui-shell/src/audio/`  
+**Code Location:** `code/ui/src/audio/`  
 **Milestone & Design Depth:** `M2–M4: Full Detailed Design`  
 **Satisfies Requirements:** `UI-AUD-001`, `UI-AUD-002`, `UI-AUD-003`, `UI-AUD-004` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
 
@@ -78,7 +78,7 @@ Updates apply smoothly (`20ms` ramp) to `MasterGain`, `MusicBusGain`, `AmbienceB
 
 ## 4. Isolated Cartridge Verification Strategy
 
-1. **Zero Hardcoded Audio Paths (`@req UI-AUD-001`):** Static scan asserts zero audio extension literals inside `apps/ui-shell/src/`, and manifest unit tests confirm resilience against missing optional foley keys.
+1. **Zero Hardcoded Audio Paths (`@req UI-AUD-001`):** Static scan asserts zero audio extension literals inside `code/ui/src/`, and manifest unit tests confirm resilience against missing optional foley keys.
 2. **Equal-Power Altitude Cross-Fade (`@req UI-AUD-002`):** Vitest sweeps `cameraAltitudeNorm` from `0.0` to `1.0` against mock gain nodes asserting monotonic surface fade-out, orbital fade-in, constant total power (`<= 1.0`), and zero storm leakage over `Unexplored` cells.
 3. **Foley Debounce & Skin Swap (`@req UI-AUD-003`):** Fires 20 rapid `clock_step` intents within `50ms` and asserts cooldown throttling restricts playback cleanly.
 4. **Mixer Persistence (`@req UI-AUD-004`):** Playwright adjusts sliders and mute toggles, reloads app fixture, and asserts restored Web Audio gain node values.
@@ -87,5 +87,5 @@ Updates apply smoothly (`20ms` ramp) to `MasterGain`, `MusicBusGain`, `AmbienceB
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. Swapping Web Audio API for an external spatial WASM audio synthesizer or FMOD/Howler wrapper modifies strictly `apps/ui-shell/src/audio/`.
+1. Swapping Web Audio API for an external spatial WASM audio synthesizer or FMOD/Howler wrapper modifies strictly `code/ui/src/audio/`.
 2. All other UI modules simply emit `PlayUiFoley` intents onto `UiIntentBus`.

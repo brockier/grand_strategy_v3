@@ -1,7 +1,7 @@
 # Module Design: Licensing, Provenance & Compliance Tooling
 
 **Module ID:** `ENG-MOD-01`  
-**Code Location:** `tools/xtask/` and `crates/steam-adapter/`  
+**Code Location:** `code/engine/tools/xtask/` and `code/engine/crates/steam-adapter/`  
 **Milestone & Design Depth:** `M0: Full Detailed Design`  
 **Satisfies Requirements:** `ENG-LIC-001`, `ENG-LIC-002`, `ENG-LIC-003`, `ENG-LIC-004`, `ENG-SCN-005` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
@@ -81,7 +81,7 @@ pub struct TestCitation {
 }
 ```
 
-### 2.4 Optional Steamworks Boundary (`crates/steam-adapter`)
+### 2.4 Optional Steamworks Boundary (`code/engine/crates/steam-adapter`)
 
 ```rust
 pub trait PlatformIntegrationPort: Send + Sync {
@@ -91,7 +91,7 @@ pub trait PlatformIntegrationPort: Send + Sync {
 }
 ```
 
-`crates/sim-core`, `crates/sim-data`, `crates/player-view`, and `crates/sim-cli` never depend on `crates/steam-adapter`. Only the desktop host wrapper optionally enables `--features steam`.
+`code/engine/crates/sim-core`, `code/engine/crates/sim-data`, `code/engine/crates/player-view`, and `code/engine/crates/sim-cli` never depend on `code/engine/crates/steam-adapter`. Only the desktop host wrapper optionally enables `--features steam`.
 
 ---
 
@@ -111,7 +111,7 @@ pub trait PlatformIntegrationPort: Send + Sync {
 
 ### 3.3 `cargo xtask check-reqs` (`ENG-SCN-005`)
 1. Parses every `### <ID>: ...` block and its `- **ID:**`, `- **Status:**`, `- **Milestone:**`, and `- **Lineage:**` fields from `requirements/engine_requirements.md` and `requirements/ui_requirements.md`, failing if duplicate IDs or malformed blocks exist.
-2. Scans all `.rs`, `.ts`, and `.tsx` test files under `crates/` and `apps/ui-shell/` for `// @req <ID>` comments or `[<ID>]` test names.
+2. Scans all `.rs`, `.ts`, and `.tsx` test files under `code/engine/crates/` and `code/ui/` for `// @req <ID>` comments or `[<ID>]` test names.
 3. Enforces four invariants:
    - Every test citation targets an existing requirement ID.
    - Zero test citations target a `Removed` or `Superseded` requirement ID.
@@ -136,6 +136,6 @@ pub trait PlatformIntegrationPort: Send + Sync {
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. To switch distribution storefronts (for instance, replacing Steamworks with GOG Galaxy or an itch.io DRM-free wrapper), discard `crates/steam-adapter/` and write a new implementation of `PlatformIntegrationPort` with zero changes to `sim-spine` or any simulation cartridge.
-2. To replace `cargo-deny` or custom `xtask` scripts with an external SBOM/compliance suite, keep the exact CLI flags (`bundle-notices`, `verify-assets`, `check-reqs`, `check-isolation`) and exit-code semantics; no engine crate reads `tools/xtask/`.
+1. To switch distribution storefronts (for instance, replacing Steamworks with GOG Galaxy or an itch.io DRM-free wrapper), discard `code/engine/crates/steam-adapter/` and write a new implementation of `PlatformIntegrationPort` with zero changes to `sim-spine` or any simulation cartridge.
+2. To replace `cargo-deny` or custom `xtask` scripts with an external SBOM/compliance suite, keep the exact CLI flags (`bundle-notices`, `verify-assets`, `check-reqs`, `check-isolation`) and exit-code semantics; no engine crate reads `code/engine/tools/xtask/`.
 3. Zero changes to `requirements/*.md` are required.

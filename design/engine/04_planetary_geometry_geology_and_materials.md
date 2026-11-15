@@ -1,7 +1,7 @@
 # Module Design: Planetary Geometry, Tectonics, Hydrology & Procedural Science
 
 **Module ID:** `ENG-GEO-04`  
-**Code Location:** `crates/sim-planet/`  
+**Code Location:** `code/engine/crates/sim-planet/`  
 **Milestone & Design Depth:** `M1: Full Detailed Design`  
 **Satisfies Requirements:** `ENG-GEO-001`, `ENG-GEO-002`, `ENG-GEO-003`, `ENG-GEO-004`, `ENG-GEO-005`, `ENG-GEO-006` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
@@ -92,5 +92,5 @@ All stages run deterministically from `ChaCha8Rng::seed_from_u64(world_seed)` us
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. Any geodesic mesh generator (for instance, hexagonal cubed-sphere or rotated icosahedral-hexagonal grids) or tectonic solver can replace `crates/sim-planet/` as long as it constructs a closed neighbor CSR graph implementing `PlanetGeometryPort` and preserves deterministic seeded generation.
+1. Any geodesic mesh generator (for instance, hexagonal cubed-sphere or rotated icosahedral-hexagonal grids) or tectonic solver can replace `code/engine/crates/sim-planet/` as long as it constructs a closed neighbor CSR graph implementing `PlanetGeometryPort` and preserves deterministic seeded generation.
 2. No downstream module assumes flat 2D `(x, y)` grid coordinates; all distance, neighbor, and slope math queries `PlanetGeometryPort`.

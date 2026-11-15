@@ -1,7 +1,7 @@
-# Engine Spine & Port Contracts (`crates/sim-spine`)
+# Engine Spine & Port Contracts (`code/engine/crates/sim-spine`)
 
 **Module ID:** `ENG-SPINE-00`  
-**Code Location:** `crates/sim-spine/`  
+**Code Location:** `code/engine/crates/sim-spine/`  
 **Milestone & Design Depth:** `M0–M7: Authoritative Spine Contract`  
 **Supports Requirements:** `ENG-MOD-001`, `ENG-CLK-003`, `ENG-CLK-004`, `ENG-EPI-001` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
@@ -9,11 +9,11 @@
 
 ## 1. Architectural Mandate: Spine + Cartridge Isolation
 
-Every engine subsystem is authored as an independent workspace crate ("Cartridge") communicating exclusively through narrow, versioned Rust traits, opaque strongly-typed IDs, and deterministic phase queues declared inside `crates/sim-spine`. Sibling cartridges SHALL NEVER declare Cargo dependencies on each other or import each other's internal structs, arenas, or helper functions.
+Every engine subsystem is authored as an independent workspace crate ("Cartridge") communicating exclusively through narrow, versioned Rust traits, opaque strongly-typed IDs, and deterministic phase queues declared inside `code/engine/crates/sim-spine`. Sibling cartridges SHALL NEVER declare Cargo dependencies on each other or import each other's internal structs, arenas, or helper functions.
 
 ```mermaid
 flowchart TD
-    SPINE["crates/sim-spine (Opaque IDs, Port Traits, TickPhase Bus, Plug Hooks)"]
+    SPINE["code/engine/crates/sim-spine (Opaque IDs, Port Traits, TickPhase Bus, Plug Hooks)"]
     MOD["02 sim-data (Mod & Schema Loader)"] --> SPINE
     CLK["03 sim-clock (Hourly Clock & Sharding)"] --> SPINE
     GEO["04 sim-planet (Goldberg Sphere & Materials)"] --> SPINE
@@ -158,7 +158,7 @@ The coordinator executes one deterministic hourly tick in strict sequential phas
 
 ## 5. Compile-Time & CI Isolation Enforcement
 
-1. **Workspace Crate DAG Rule:** Each cartridge lives in its own Rust crate inside `/home/roger/Projects/ng/Cargo.toml`. Only `sim-scenario` and `sim-cli` (composition roots) depend on multiple cartridges simultaneously to wire Spine traits together. No cartridge crate may list another cartridge crate in `[dependencies]`.
+1. **Workspace Crate DAG Rule:** Each cartridge lives in its own Rust crate inside `/home/roger/Projects/ng/code/engine/Cargo.toml`. Only `sim-scenario` and `sim-cli` (composition roots) depend on multiple cartridges simultaneously to wire Spine traits together. No cartridge crate may list another cartridge crate in `[dependencies]`.
 2. **Automated CI DAG Guard (`cargo xtask check-isolation`):** Executes `cargo metadata --no-deps` and verifies that for every cartridge crate `C`, its direct workspace dependencies are a subset of `{sim-spine, sim-data}`.
 3. **Deterministic Collection Lints:** Workspace `clippy.toml` and `#![deny(clippy::disallowed_types)]` forbid `std::collections::HashMap` and `std::collections::HashSet` in simulation crates, requiring deterministic ordered maps (`BTreeMap`, `BTreeSet`) or fixed-seed `IndexMap`.
-4. **Epistemic Type Wall:** Only `crates/player-view` may depend on `serde` IPC response serialization attributes targeting the Electron bridge; ground-truth `sim-core` state structs never derive IPC response DTO traits.
+4. **Epistemic Type Wall:** Only `code/engine/crates/player-view` may depend on `serde` IPC response serialization attributes targeting the Electron bridge; ground-truth `sim-core` state structs never derive IPC response DTO traits.

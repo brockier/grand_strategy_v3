@@ -1,7 +1,7 @@
 # Module Design: Geodesic 3D Globe, Orbital Camera & Cartographic Shaders
 
 **Module ID:** `UI-GLB-02`  
-**Code Location:** `apps/ui-shell/src/globe/`  
+**Code Location:** `code/ui/src/globe/`  
 **Milestone & Design Depth:** `M2: Full Detailed Design`  
 **Satisfies Requirements:** `UI-GLB-001`, `UI-GLB-002`, `UI-GLB-003`, `UI-GLB-004`, `UI-GLB-005` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
 
@@ -78,5 +78,5 @@ In the globe fragment/vertex shader (`WGSL` / `GLSL` unified via Three.js `Shade
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. `apps/ui-shell/src/globe/` can swap Three.js WebGPU for raw `wgpu`/WebGPU bindings or swap shader aesthetics completely without modifying window management, data ledgers, overlays, or audio.
+1. `code/ui/src/globe/` can swap Three.js WebGPU for raw `wgpu`/WebGPU bindings or swap shader aesthetics completely without modifying window management, data ledgers, overlays, or audio.
 2. Any replacement renderer MUST host registered `MapLayerPlugin` instances through `GlobeLayerHost`, emit `cameraAltitudeNorm`, and perform occlusion-checked cell picking.

@@ -39,7 +39,7 @@ Every requirement block carries one of four normative lifecycle statuses:
 - **Milestone:** `M0`
 - **Verification Layer:** `License-Audit`
 - **Lineage:** `Origin`
-- **Requirement:** Every production npm dependency bundled into `apps/ui-shell` SHALL carry a permissive, royalty-free SPDX license on the approved allowlist (`MIT`, `Apache-2.0`, `BSD-2-Clause`, `BSD-3-Clause`, `ISC`, `0BSD`, `CC0-1.0`) and SHALL NOT depend on paid commercial UI table/chart widgets, `GPL`, `AGPL`, static `LGPL`, or `SSPL` packages.
+- **Requirement:** Every production npm dependency bundled into `code/ui` SHALL carry a permissive, royalty-free SPDX license on the approved allowlist (`MIT`, `Apache-2.0`, `BSD-2-Clause`, `BSD-3-Clause`, `ISC`, `0BSD`, `CC0-1.0`) and SHALL NOT depend on paid commercial UI table/chart widgets, `GPL`, `AGPL`, static `LGPL`, or `SSPL` packages.
 - **Acceptance Criteria:** Automated CI license checking across `package-lock.json` passes with zero unapproved, copyleft, or commercial-restricted dependencies.
 
 ### UI-LIC-002: Commercial-Safe Font & Baseline Skin Asset Licensing
@@ -437,7 +437,7 @@ Every requirement block carries one of four normative lifecycle statuses:
 - **Verification Layer:** `Static-Analysis & Skin-Snapshot`
 - **Lineage:** `Origin`
 - **Requirement:** All colors, fonts, spacing, borders, corner ornaments, scrollbars, and animations across `ui-shell` SHALL derive exclusively from external skin `.css` stylesheets and CSS custom properties; TypeScript component logic SHALL NOT hardcode colors, pixel border styling, or font names.
-- **Acceptance Criteria:** Static ESLint/grep checks confirm zero inline color literals or hardcoded font definitions inside `apps/ui-shell/src/`, and swapping skin CSS completely transforms typography and palette.
+- **Acceptance Criteria:** Static ESLint/grep checks confirm zero inline color literals or hardcoded font definitions inside `code/ui/src/`, and swapping skin CSS completely transforms typography and palette.
 
 ### UI-SKN-002: Distortion-Free CSS `border-image` 9-Slice Window Chrome
 - **ID:** `UI-SKN-002`
@@ -486,7 +486,7 @@ Every requirement block carries one of four normative lifecycle statuses:
 - **Verification Layer:** `Audio-Manifest`
 - **Lineage:** `Origin`
 - **Requirement:** Music stems, environmental ambient loops, and UI foley clips SHALL load strictly from external skin and scenario audio manifest files validated at startup, containing zero hardcoded audio filenames in TypeScript.
-- **Acceptance Criteria:** Static checks confirm zero direct `.ogg`/`.wav`/`.mp3` string literals in `apps/ui-shell/src/`, and manifest loader tests validate missing-file resilience and channel routing.
+- **Acceptance Criteria:** Static checks confirm zero direct `.ogg`/`.wav`/`.mp3` string literals in `code/ui/src/`, and manifest loader tests validate missing-file resilience and channel routing.
 
 ### UI-AUD-002: Camera-Altitude Environmental Audio Cross-Fade
 - **ID:** `UI-AUD-002`

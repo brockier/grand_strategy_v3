@@ -1,7 +1,7 @@
 # Module Design: External CSS Skin Engine, 9-Slice Chrome & AI Asset Resolver
 
 **Module ID:** `UI-SKN-08`  
-**Code Location:** `apps/ui-shell/src/skins/`  
+**Code Location:** `code/ui/src/skins/`  
 **Milestone & Design Depth:** `M2: Full Detailed Design`  
 **Satisfies Requirements:** `UI-SKN-001`, `UI-SKN-002`, `UI-SKN-003`, `UI-SKN-004`, `UI-SKN-005` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
 
@@ -103,7 +103,7 @@ Corners render at crisp `1:1` artist-intended aspect ratio while edges repeat/st
 
 ## 4. Isolated Cartridge Verification Strategy
 
-1. **Zero Hardcoded Styles Check (`@req UI-SKN-001`):** Runs ESLint + static scan on `apps/ui-shell/src/` confirming zero literal hex colors or hardcoded font declarations outside `src/skins/` fixtures.
+1. **Zero Hardcoded Styles Check (`@req UI-SKN-001`):** Runs ESLint + static scan on `code/ui/src/` confirming zero literal hex colors or hardcoded font declarations outside `src/skins/` fixtures.
 2. **9-Slice Aspect Snapshots (`@req UI-SKN-002`):** Playwright captures visual golden snapshots of `260x180` vs. `1100x700` windows confirming sharp corner pixels without stretch artifacts.
 3. **Live Skin Swap Non-Destructiveness (`@req UI-SKN-003`, `@req UI-SKN-004`):** Opens 2 windows, emits `SwitchActiveSkin`, and asserts computed `--skin-bg-panel` CSS values and globe water shader uniforms change immediately while window bounds and `DiegeticSnapshot.tick` stay untouched.
 4. **Asset Fallback Test (`@req UI-SKN-005`):** Vitest resolves unknown commodity/portrait tags and asserts valid non-empty fallback URLs and zero failed `<img>` loads.
@@ -112,5 +112,5 @@ Corners render at crisp `1:1` artist-intended aspect ratio while edges repeat/st
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. Supporting completely new skin capabilities (for example, dark CRT scanline shaders for sci-fi colonies or hammered bronze borders for Bronze Age scenarios) is done purely by adding directories under `skins/` or extending token bindings inside `apps/ui-shell/src/skins/`.
+1. Supporting completely new skin capabilities (for example, dark CRT scanline shaders for sci-fi colonies or hammered bronze borders for Bronze Age scenarios) is done purely by adding directories under `skins/` or extending token bindings inside `code/ui/src/skins/`.
 2. Zero view components or Rust crates require modifications.

@@ -1,7 +1,7 @@
 # Module Design: Diegetic Map Overlays & Occlusion-Aware Picking
 
 **Module ID:** `UI-MAP-03`  
-**Code Location:** `apps/ui-shell/src/overlays/`  
+**Code Location:** `code/ui/src/overlays/`  
 **Milestone & Design Depth:** `M2–M4: Full Detailed Design` + `M5`/`M7: Locked Plugin Slots`  
 **Satisfies Requirements:** `UI-MAP-001`, `UI-MAP-002`, `UI-MAP-003`, `UI-MAP-004`, `UI-MAP-005`, `UI-MAP-006`, `UI-MAP-007` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
 
@@ -79,5 +79,5 @@ Strictly filters by `ExplorationTier >= Surveyed` inside active report/sight win
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. Every overlay layer is a standalone `MapLayerPlugin`. To replace 2D billboard convoy icons with animated 3D ship/wagon meshes or redesign weather particles, replace only the corresponding plugin inside `apps/ui-shell/src/overlays/`.
+1. Every overlay layer is a standalone `MapLayerPlugin`. To replace 2D billboard convoy icons with animated 3D ship/wagon meshes or redesign weather particles, replace only the corresponding plugin inside `code/ui/src/overlays/`.
 2. Zero changes to `src/globe`, `src/windows`, or `requirements/ui_requirements.md` are needed.

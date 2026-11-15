@@ -1,7 +1,7 @@
 # Module Design: Desktop Window Manager, Docking & Layout Persistence
 
 **Module ID:** `UI-WIN-04`  
-**Code Location:** `apps/ui-shell/src/windows/`  
+**Code Location:** `code/ui/src/windows/`  
 **Milestone & Design Depth:** `M2: Full Detailed Design`  
 **Satisfies Requirements:** `UI-WIN-001`, `UI-WIN-002`, `UI-WIN-003`, `UI-WIN-004`, `UI-WIN-005`, `UI-WIN-006`, `UI-WIN-007` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
 
@@ -99,4 +99,4 @@ export interface DockTabGroup {
 ## 5. Lift-and-Shift Replacement Guide
 
 1. The window manager knows zero domain concepts about stockpiles, troops, or charts; every interior view renders via `WindowContentPlugin::mountContent(...)`.
-2. Replacing floating windows with tiling binary-split panes or changing docking ergonomics requires modifying strictly `apps/ui-shell/src/windows/`.
+2. Replacing floating windows with tiling binary-split panes or changing docking ergonomics requires modifying strictly `code/ui/src/windows/`.

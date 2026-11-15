@@ -1,7 +1,7 @@
-# UI Spine, State Bus & IPC Contracts (`apps/ui-shell/src/spine`)
+# UI Spine, State Bus & IPC Contracts (`code/ui/src/spine`)
 
 **Module ID:** `UI-SPINE-00`  
-**Code Location:** `apps/ui-shell/src/spine/`  
+**Code Location:** `code/ui/src/spine/`  
 **Milestone & Design Depth:** `M0–M7: Authoritative UI Spine Contract`  
 **Satisfies Requirements:** `UI-SHL-002`, `UI-SHL-005` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
 
@@ -9,11 +9,11 @@
 
 ## 1. Architectural Mandate: UI Spine + Plugin Cartridges
 
-Every frontend subsystem (`electron/`, `globe/`, `overlays/`, `windows/`, `views/`, `dispatches/`, `hud/`, `skins/`, `audio/`) communicates exclusively through `apps/ui-shell/src/spine/`. No UI cartridge may import TypeScript symbols, DOM refs, or Three.js objects from a sibling cartridge.
+Every frontend subsystem (`electron/`, `globe/`, `overlays/`, `windows/`, `views/`, `dispatches/`, `hud/`, `skins/`, `audio/`) communicates exclusively through `code/ui/src/spine/`. No UI cartridge may import TypeScript symbols, DOM refs, or Three.js objects from a sibling cartridge.
 
 ```mermaid
 flowchart TD
-    SPINE["apps/ui-shell/src/spine (SimBridge, DiegeticStore, UiIntentBus, Plugin Registries)"]
+    SPINE["code/ui/src/spine (SimBridge, DiegeticStore, UiIntentBus, Plugin Registries)"]
     SHL["01 electron/ (IPC Host, Dawn Boot, Steam Package)"] --> SPINE
     GLB["02 src/globe/ (Three.js Mesh, Camera, Shaders)"] --> SPINE
     OVL["03 src/overlays/ (MapLayerPlugin Registry Entries)"] --> SPINE
@@ -43,7 +43,7 @@ export interface SimBridgeApi {
 
 ### 2.2 Immutable `DiegeticStore` Selectors
 
-`DiegeticStore` wraps the latest `DiegeticSnapshot` received from `crates/player-view` (never raw `sim-core` state) and exposes memoized read-only selectors:
+`DiegeticStore` wraps the latest `DiegeticSnapshot` received from `code/engine/crates/player-view` (never raw `sim-core` state) and exposes memoized read-only selectors:
 1. `selectGlobeTopology(store)` — closed Goldberg cell coordinates and vertex buffer chunks
 2. `selectKnownCells(store)` — explored, rumored, and timestamped surveyed cell states
 3. `selectHqPresence(store)` — current stationary or in-transit HQ coordinate and sight radius
@@ -97,7 +97,7 @@ Runs inside Vitest and Playwright harnesses without launching Rust binaries: fee
 
 ## 3. Compile-Time & ESLint Boundary Isolation Rules
 
-ESLint enforces strict directional imports (`eslint-plugin-boundaries` / `no-restricted-imports`) across `apps/ui-shell/src/`:
+ESLint enforces strict directional imports (`eslint-plugin-boundaries` / `no-restricted-imports`) across `code/ui/src/`:
 1. `src/spine/**` may import only pure TypeScript types and utility math—zero imports from Electron Node APIs, Three.js scene modules, DOM window implementations, or feature views.
 2. Each cartridge directory (`globe`, `overlays`, `windows`, `views`, `dispatches`, `hud`, `skins`, `audio`) may import **only** from `src/spine/**` and its own directory. Any import crossing between two sibling cartridges fails `npm run lint` with an architectural boundary error.
 3. Zero inline color hex codes (`#...`), font-family literals, or direct `.ogg`/`.wav`/`.mp3` string constants outside `src/skins/` and `src/audio/` test fixtures.

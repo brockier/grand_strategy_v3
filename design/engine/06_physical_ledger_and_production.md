@@ -1,7 +1,7 @@
 # Module Design: Physical Goods Ledger, Tool Wear & Production
 
 **Module ID:** `ENG-ECO-06`  
-**Code Location:** `crates/sim-economy/`  
+**Code Location:** `code/engine/crates/sim-economy/`  
 **Milestone & Design Depth:** `M3: Full Detailed Design`  
 **Satisfies Requirements:** `ENG-ECO-001`, `ENG-ECO-002`, `ENG-ECO-003`, `ENG-ECO-004` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 

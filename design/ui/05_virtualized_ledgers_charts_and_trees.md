@@ -1,7 +1,7 @@
 # Module Design: Virtualized Ledgers, Charts & Delegation Org Trees
 
 **Module ID:** `UI-DAT-05`  
-**Code Location:** `apps/ui-shell/src/views/`  
+**Code Location:** `code/ui/src/views/`  
 **Milestone & Design Depth:** `M3–M4: Full Detailed Design` + `M5`/`M6: Locked WindowContentPlugin Slots`  
 **Satisfies Requirements:** `UI-DAT-001`, `UI-DAT-002`, `UI-DAT-003`, `UI-DAT-006`, `UI-DAT-007` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
 
@@ -94,5 +94,5 @@ Hierarchical tree layout storing collapsed branch sets, node coordinates `(x, y)
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. Every widget (`VirtualLedgerTable`, `TimeSeriesChart`, `DelegationOrgTree`) registers independently as a `WindowContentPlugin` inside `apps/ui-shell/src/views/`.
+1. Every widget (`VirtualLedgerTable`, `TimeSeriesChart`, `DelegationOrgTree`) registers independently as a `WindowContentPlugin` inside `code/ui/src/views/`.
 2. You can replace the custom Canvas chart with any permissive (`MIT`/`Apache-2.0`) charting library or swap the org-tree layout algorithm completely inside `src/views/` with zero impact on `src/windows/` or `src/globe/`.

@@ -1,7 +1,7 @@
 # Module Design: Mod Schema Pipeline & Five-Layer Data Loader
 
 **Module ID:** `ENG-MOD-02`  
-**Code Location:** `crates/sim-data/`  
+**Code Location:** `code/engine/crates/sim-data/`  
 **Milestone & Design Depth:** `M0–M3: Full Detailed Design`  
 **Satisfies Requirements:** `ENG-MOD-001`, `ENG-MOD-002`, `ENG-MOD-003`, `ENG-MOD-004`, `ENG-MOD-005`, `ENG-MOD-006` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
@@ -105,6 +105,6 @@ After typed deserialization completes and string IDs intern into dense `u16` IDs
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. To switch mod authoring format (for example, adding YAML, Ron, or SQLite compiled mod caches), keep `CompiledModBundle` implementing `ModRegistryPort` and replace only the AST parser/merger inside `crates/sim-data/`.
+1. To switch mod authoring format (for example, adding YAML, Ron, or SQLite compiled mod caches), keep `CompiledModBundle` implementing `ModRegistryPort` and replace only the AST parser/merger inside `code/engine/crates/sim-data/`.
 2. Zero simulation cartridges know whether records arrived from `TOML`, `JSON`, or binary mod archives because they consume strictly `ModRegistryPort` slices and `u16` Spine IDs.
 3. Zero changes to `requirements/*.md` or sibling crates are required.

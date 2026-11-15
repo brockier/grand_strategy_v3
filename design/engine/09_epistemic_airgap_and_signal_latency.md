@@ -1,7 +1,7 @@
-# Module Design: Epistemic Air-Gap & Signal Latency (`crates/player-view`)
+# Module Design: Epistemic Air-Gap & Signal Latency (`code/engine/crates/player-view`)
 
 **Module ID:** `ENG-EPI-09`  
-**Code Location:** `crates/player-view/`  
+**Code Location:** `code/engine/crates/player-view/`  
 **Milestone & Design Depth:** `M3–M4: Full Detailed Design`  
 **Satisfies Requirements:** `ENG-EPI-001`, `ENG-EPI-002`, `ENG-EPI-003`, `ENG-EPI-004`, `ENG-EPI-005`, `ENG-EPI-006`, `ENG-EPI-007` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
@@ -14,7 +14,7 @@
   - `ArrivedCourierEnvelope` queue delivered upon courier arrival at HQ (`TickPhase::HourlyCourierAndSignalStep`)
   - Outgoing `RelocateHqCommand` state
 - **Provided Spine Ports (Outputs):**
-  - `DiegeticSnapshot` (the **sole** top-level IPC DTO serializable to `apps/ui-shell`)
+  - `DiegeticSnapshot` (the **sole** top-level IPC DTO serializable to `code/ui`)
   - Arrived `DiegeticDispatch` inbox and `ArbitrationProposal` items
   - `AutoPauseSignal` triggers routed through `NotificationRouter`
 
@@ -89,7 +89,7 @@ pub struct TrackedExpeditionOrConvoy {
 
 ### 3.1 Compile-Time Air-Gap Enforcement (`ENG-EPI-001`)
 1. `sim-core`, `sim-planet`, `sim-economy`, `sim-weather`, `sim-pop`, and `sim-logistics` internal types deliberately **do not implement** frontend IPC serialization traits (`IpcDtoSerialize`).
-2. `crates/player-view` builds `DiegeticSnapshot` solely from `PlayerKnowledgeArchive` plus the `HqPresenceState` live sight radius. Unexplored cells omit elevation, rock strata, and weather inside serialized IPC snapshots (`CellViewState::Unexplored` carries zero terrain payload).
+2. `code/engine/crates/player-view` builds `DiegeticSnapshot` solely from `PlayerKnowledgeArchive` plus the `HqPresenceState` live sight radius. Unexplored cells omit elevation, rock strata, and weather inside serialized IPC snapshots (`CellViewState::Unexplored` carries zero terrain payload).
 
 ### 3.2 Immediate HQ Sight vs. Distant Latency (`ENG-EPI-002`, `ENG-EPI-003`, `ENG-EPI-004`)
 1. On every tick `Phase 8`, BFS within `sight_radius_cells` around `HqPresenceState::current_cell()` writes live un-perturbed observations (`observed_tick = now`, `Direct Observation (HQ)`) for local terrain, weather, stockpiles, cohorts, and visible convoys.
@@ -126,5 +126,5 @@ When an outgoing report or ledger snapshot is generated at a distant settlement/
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. `crates/player-view/` is already isolated behind the IPC boundary; changing report compression formats, rumor spread models, or dead-reckoning heuristics never alters ground-truth simulation physics.
-2. Any replacement epistemic filter MUST maintain the `DiegeticSnapshot` IPC contract consumed by `apps/ui-shell` and enforce the compile-time seal against raw `sim-core` types.
+1. `code/engine/crates/player-view/` is already isolated behind the IPC boundary; changing report compression formats, rumor spread models, or dead-reckoning heuristics never alters ground-truth simulation physics.
+2. Any replacement epistemic filter MUST maintain the `DiegeticSnapshot` IPC contract consumed by `code/ui` and enforce the compile-time seal against raw `sim-core` types.

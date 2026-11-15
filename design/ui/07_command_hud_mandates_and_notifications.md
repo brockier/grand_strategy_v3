@@ -1,7 +1,7 @@
 # Module Design: Command HUD, Mandates, HQ Planner & Notification Matrix
 
 **Module ID:** `UI-HUD-07`  
-**Code Location:** `apps/ui-shell/src/hud/`  
+**Code Location:** `code/ui/src/hud/`  
 **Milestone & Design Depth:** `M2 & M4: Full Detailed Design` + `M7: Locked Command/Succession Slots`  
 **Satisfies Requirements:** `UI-HUD-001`, `UI-HUD-002`, `UI-HUD-003`, `UI-HUD-004`, `UI-HUD-005`, `UI-HUD-006`, `UI-HUD-007` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
 
@@ -82,5 +82,5 @@ Pre-wires plugin IDs and IPC command stubs (`IssueTheaterDirective`, `IssueOpera
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. Every command dialog (`MandateAuthoringWindow`, `ProposalArbitrationWindow`, `PersonalAttentionWindow`, `HqRelocationWindow`, `NotificationMatrixWindow`) sits inside `apps/ui-shell/src/hud/` and communicates strictly via `UiIntentBus` and `DiegeticStore`.
+1. Every command dialog (`MandateAuthoringWindow`, `ProposalArbitrationWindow`, `PersonalAttentionWindow`, `HqRelocationWindow`, `NotificationMatrixWindow`) sits inside `code/ui/src/hud/` and communicates strictly via `UiIntentBus` and `DiegeticStore`.
 2. Reordering HUD layouts (for instance, moving the clock bar to a bottom tray or redesigning proposal cards) touches zero globe, window-manager, or Rust engine files.

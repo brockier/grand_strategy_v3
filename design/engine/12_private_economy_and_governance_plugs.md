@@ -1,7 +1,7 @@
 # Module Design: Non-State Economy, Multi-Medium Accounting & Governance Plugs (`M5`)
 
 **Module ID:** `ENG-PLUG-12`  
-**Code Location:** `crates/sim-plug-private-eco/`  
+**Code Location:** `code/engine/crates/sim-plug-private-eco/`  
 **Milestone & Design Depth:** `M5: Locked Spine Port Contracts & Replaceable Baseline Design`  
 **Satisfies Requirements:** `ENG-ECO-005`, `ENG-ECO-006`, `ENG-ECO-007`, `ENG-LOG-005`, `ENG-LOG-006`, `ENG-CMD-006`, `ENG-CMD-007` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
@@ -15,13 +15,13 @@
   - `LogisticsPort` (carrier fleet utilization, edge axle load counts)
   - `PopulationPort` (household cohorts, noble/clan/merchant Named Individuals)
 - **Provided Spine Ports (Outputs):**
-  - Implements `NonStateEconomyPlugPort` and `GovernanceFrictionPlugPort` defined in `crates/sim-spine/`
+  - Implements `NonStateEconomyPlugPort` and `GovernanceFrictionPlugPort` defined in `code/engine/crates/sim-spine/`
 
 ---
 
 ## 2. Locked Spine Port Contracts (Wired from `M0` Onward)
 
-Because these traits live in `crates/sim-spine/`, `sim-economy`, `sim-logistics`, and `sim-command` already call them from `M3`/`M4` onward (via a neutral no-op `BaselineM4Plug` until `M5` activates):
+Because these traits live in `code/engine/crates/sim-spine/`, `sim-economy`, `sim-logistics`, and `sim-command` already call them from `M3`/`M4` onward (via a neutral no-op `BaselineM4Plug` until `M5` activates):
 
 ```rust
 pub trait NonStateEconomyPlugPort: Send + Sync {

@@ -1,7 +1,7 @@
 # Module Design: Command Hierarchy, Finite Attention & Cascading Mandates
 
 **Module ID:** `ENG-CMD-10`  
-**Code Location:** `crates/sim-command/`  
+**Code Location:** `code/engine/crates/sim-command/`  
 **Milestone & Design Depth:** `M4: Full Detailed Design`  
 **Satisfies Requirements:** `ENG-CMD-001`, `ENG-CMD-002`, `ENG-CMD-003`, `ENG-CMD-004`, `ENG-CMD-005` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
@@ -110,5 +110,5 @@ Executed via an interchangeable `MandateDecomposer` trait during `Phase 7` (usin
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. The subordinate planner (`MandateDecomposer`) sits cleanly behind a trait inside `crates/sim-command/`, allowing full replacement (for example, swapping utility-scoring AI for GOAP or HTN planners) without altering `sim-economy`, `sim-logistics`, or `player-view`.
+1. The subordinate planner (`MandateDecomposer`) sits cleanly behind a trait inside `code/engine/crates/sim-command/`, allowing full replacement (for example, swapping utility-scoring AI for GOAP or HTN planners) without altering `sim-economy`, `sim-logistics`, or `player-view`.
 2. Any replacement command module MUST preserve `CommandPort`, respect courier travel latency via `LogisticsPort`, and never peek at `SubsurfaceDepositTruthPort` directly during subordinate planning.

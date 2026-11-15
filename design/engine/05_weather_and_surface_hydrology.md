@@ -1,7 +1,7 @@
 # Module Design: Weather & Surface Hydrology
 
 **Module ID:** `ENG-WTH-05`  
-**Code Location:** `crates/sim-weather/`  
+**Code Location:** `code/engine/crates/sim-weather/`  
 **Milestone & Design Depth:** `M1–M3: Full Detailed Design`  
 **Satisfies Requirements:** `ENG-WTH-001`, `ENG-WTH-002`, `ENG-WTH-003`, `ENG-WTH-004`, `ENG-WTH-005` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
@@ -85,5 +85,5 @@ Double-buffered swap vectors (`atm_moisture_next`, `wind_u_next`, `wind_v_next`)
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. `crates/sim-weather/` can be replaced outright with a shallow-water atmospheric baroclinic solver or a simplified Markov regional weather generator without touching any downstream crate.
+1. `code/engine/crates/sim-weather/` can be replaced outright with a shallow-water atmospheric baroclinic solver or a simplified Markov regional weather generator without touching any downstream crate.
 2. Any replacement MUST implement `SurfaceConditionsPort` with bounded per-cell hourly values and advance deterministically during `TickPhase::HourlyWeatherAndHydrology`.

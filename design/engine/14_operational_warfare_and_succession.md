@@ -1,7 +1,7 @@
 # Module Design: Operational Warfare & Generational Succession (`M7`)
 
 **Module ID:** `ENG-PLUG-14`  
-**Code Location:** `crates/sim-plug-warfare/` and `crates/sim-plug-succession/`  
+**Code Location:** `code/engine/crates/sim-plug-warfare/` and `code/engine/crates/sim-plug-succession/`  
 **Milestone & Design Depth:** `M7: Locked Spine Port Contracts & Replaceable Baseline Design`  
 **Satisfies Requirements:** `ENG-WAR-001`, `ENG-WAR-002`, `ENG-WAR-003`, `ENG-WAR-004`, `ENG-POP-006` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
@@ -17,7 +17,7 @@
   - `PopulationPort` (recruited combat cohorts, commander traits, player character aging/mortality)
   - `CommandPort` (Attention budget consumed by military delegation vs. domestic ministries)
 - **Provided Spine Ports (Outputs):**
-  - Implements `OperationalCombatPlugPort` and `SuccessionPlugPort` defined in `crates/sim-spine/`
+  - Implements `OperationalCombatPlugPort` and `SuccessionPlugPort` defined in `code/engine/crates/sim-spine/`
   - Emits delayed combat reports, encirclement alerts, and succession transition events into `player-view`
 
 ---
@@ -70,5 +70,5 @@ When decomposed into `.1`/`.2` `Active` requirements at `M7`, these two plug car
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. Operational combat resolution (for instance, swapping Lanchester attrition equations for supply-weighted posture clashes) or succession politics can be completely rewritten inside `crates/sim-plug-warfare/` and `crates/sim-plug-succession/`.
+1. Operational combat resolution (for instance, swapping Lanchester attrition equations for supply-weighted posture clashes) or succession politics can be completely rewritten inside `code/engine/crates/sim-plug-warfare/` and `code/engine/crates/sim-plug-succession/`.
 2. Zero core economy, weather, or UI shell contracts change as long as `OperationalCombatPlugPort` and `SuccessionPlugPort` remain satisfied.

@@ -1,7 +1,7 @@
 # Module Design: Simulation Clock, Multi-Rate Scheduler & Persistence
 
 **Module ID:** `ENG-CLK-03`  
-**Code Location:** `crates/sim-clock/`  
+**Code Location:** `code/engine/crates/sim-clock/`  
 **Milestone & Design Depth:** `M1: Full Detailed Design`  
 **Satisfies Requirements:** `ENG-CLK-001`, `ENG-CLK-002`, `ENG-CLK-003`, `ENG-CLK-004`, `ENG-CLK-005`, `ENG-CLK-006` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
@@ -89,6 +89,6 @@ pub struct SimulationClock {
 
 ## 5. Lift-and-Shift Replacement Guide
 
-1. To swap thread execution frameworks (for instance, replacing `rayon` with `tokio` worker pools or SIMD lane batching) or compression codecs (`zstd` -> `lz4`), modify only `crates/sim-clock/`.
+1. To swap thread execution frameworks (for instance, replacing `rayon` with `tokio` worker pools or SIMD lane batching) or compression codecs (`zstd` -> `lz4`), modify only `code/engine/crates/sim-clock/`.
 2. Any replacement clock MUST preserve: `1 tick = 1 hour`, strict 8-phase sequential barrier ordering, deterministic bucket predicates, and `(world_seed, tick, phase, entity_id)` RNG derivation.
 3. Zero sibling cartridges require modification.
