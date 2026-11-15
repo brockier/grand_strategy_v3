@@ -223,12 +223,13 @@ Every physical unit of grain, timber, raw ore, smelted metal, charcoal, coal, fi
 
 ## 7. Planetary Sphere, Geology, Dynamic Weather & Operational Warfare
 
-### 7.1 Geodesic Spherical Planet
+### 7.1 Continuous Hex-Free Spherical Planet
 
-The world is modeled as a true closed sphere tessellated as a **Goldberg polyhedron** (hexagonal cells plus exactly 12 pentagonal topological vertices), eliminating polar map stretching and preserving uniform cell geometry across every continent and ocean:
+The world is modeled as a true closed sphere underpinned by a smooth subdivided icosahedral spherical field (`10 * m^2 + 2` sample vertices triangulated seamlessly with zero visible hexagons or pentagons), eliminating polar map stretching while keeping entity coordinates, terrain slopes, coastlines, and travel paths strictly continuous across `(lat, lon)` and 3D unit vectors:
 
 - **Tectonics & Mineral Belts:** Simulated plate collisions and rifting form mountain chains, volcanic arcs, sedimentary basins, and geologically coherent ore and fuel belts—allowing skilled geological surveyors to deduce promising prospect corridors from exposed strata and topography.
-- **Rotation, Axial Tilt & Hydrology:** Planetary rotation, axial obliquity, elevation gradients, and oceanic circulation drive reversed north/south seasons, global prevailing wind gyres (governing sailing exploration and naval logistics), orographic rain shadows, continuous watershed elevation trees, and variable-flow navigable rivers.
+- **Rotation, Axial Tilt & Hydrology:** Planetary rotation, axial obliquity, elevation gradients, and oceanic circulation drive reversed north/south seasons, global prevailing wind gyres (governing sailing exploration and naval logistics), orographic rain shadows, continuous watershed elevation trees paired with natural watershed regions, and variable-flow navigable rivers.
+- **Continuous Distance & Heading Movement:** Convoys, couriers, survey parties, and military formations advance continuously along smooth spherical road/river splines and any-angle string-pulled great-circle arcs according to `ds = speed_kmh(carrier, interpolated_terrain, slope_along_heading, mud_snow, infra, wind, congestion) * dt`.
 
 ### 7.2 Dynamic Physical Weather Engine
 
@@ -310,8 +311,8 @@ flowchart LR
 
 - **Why Electron Over Tauri on Linux:** Electron bundles a self-contained Chromium runtime with Google Dawn (providing reliable Vulkan-backed WebGPU and WebGL2 across Linux Wayland, X11, NVIDIA, AMD, and Intel driver stacks). Tauri was explicitly evaluated and rejected because its reliance on Linux system `WebKitGTK` exposes severe Wayland/NVIDIA DMABUF freezes, resize protocol crashes, and immature WebGPU support.
 - **Zoom-Blended Spherical Map Renderer:**
-  - **Low & Medium Altitude (Physical Mode):** GPU shaders render 3D topographic relief, bathymetry, flowing rivers, terrain biomes, settlement structures, road networks, active storm fronts, precipitation sheets, snow accumulation, and mud saturation directly onto the geodesic sphere.
-  - **High Orbital Altitude (Cartographic Map Mode):** As the camera zooms out, shader blending smoothly cross-fades physical 3D relief into a **hand-drawn parchment topographic map** featuring inked contour lines, frontier blankness or hearsay sketches in unexplored regions, aged survey timestamps, trade flow vectors, and confirmed versus ghosted unit/convoy markers.
+  - **Low & Medium Altitude (Physical Mode):** GPU shaders render continuous 3D topographic relief, bathymetry, flowing rivers, smooth barycentric terrain biomes, settlement markers, spline road networks, active storm fronts, precipitation sheets, snow accumulation, and mud saturation directly onto the seamless welded spherical surface with zero visible hex grid borders.
+  - **High Orbital Altitude (Cartographic Map Mode):** As the camera zooms out, shader blending smoothly cross-fades physical 3D relief into a **hand-drawn parchment topographic map** featuring inked contour lines, frontier blankness or hearsay sketches in unexplored regions, aged survey timestamps, circular compass reticles, trade flow ribbons, and confirmed versus ghosted unit/convoy markers.
 - **Desktop-Class Skinnable Window Manager:**
   - Every UI panel (ledgers, dispatches, surveys, command org trees, settlement inspectors, construction queues, research archives, notification filters) operates as an authentic in-game window supporting **drag-repositioning, multi-edge and corner resizing, minimize/collapse to header bar, close, click-to-raise z-order focusing, viewport clamping, and layout snap/tab docking**.
   - Built in TypeScript + HTML/CSS to enable virtualized 10,000+ row sortable and filterable tables, crisp multi-series time-series charts, interactive hierarchical org charts, and rich hyperlinked dispatches (clicking any settlement, leader, or convoy name opens or focuses its corresponding window).
@@ -376,13 +377,21 @@ The entire technical stack is verified for closed-source commercial sale on Stea
 │   │   │   ├── sim-spine/             # Opaque IDs, Spine port traits, TickPhase, plug traits
 │   │   │   ├── sim-data/              # Serde + schemars mod loader, JSON Schema generator & validator
 │   │   │   ├── sim-clock/             # Hourly clock, 24h/168h staggered scheduler, LZ4 save codec & profiler
-│   │   │   ├── sim-planet/            # Goldberg sphere, tectonics, strata deposits, watersheds, procedural materials
+│   │   │   ├── sim-planet/            # Welded icosphere terrain field, tectonics, strata deposits, watersheds, procedural materials
 │   │   │   ├── sim-weather/           # Hourly orbital insolation, advection, soil mud, snowpack & watershed flood routing
-│   │   │   ├── sim-core/              # Deterministic kernel wiring stockpiles, production & population ports
+│   │   │   ├── sim-economy/           # Physical goods mass-conserving ledger & process execution
+│   │   │   ├── sim-logistics/         # Continuous spherical carrier routing, fuel/fodder burn & couriers
+│   │   │   ├── sim-pop/               # Two-tier demographic cohorts & named individuals
+│   │   │   ├── sim-command/           # Bounded Attention, mandate cascades & arbitration proposals
+│   │   │   ├── sim-core/              # Deterministic kernel orchestrating spatial/social ports
+│   │   │   ├── sim-plug-private-eco/  # M5 non-state actors, multi-medium clearing, congestion & governance frictions
+│   │   │   ├── sim-plug-research/     # M6 non-bought Know-How/Know-Why, patents & 4-carrier fragile knowledge
+│   │   │   ├── sim-plug-warfare/      # M7 Churchill vs. Hitler operational warfare & hourly weather combat physics
+│   │   │   ├── sim-plug-succession/   # M7 mortal ruler aging & physical-archive generational succession
 │   │   │   ├── player-view/           # Epistemic air-gap, delayed dispatch inbox, ghosted schedule projection
 │   │   │   ├── sim-scenario/          # Engine composition root wiring cartridges and scenario initialization
 │   │   │   ├── steam-adapter/         # Optional Steamworks integration boundary (--features steam)
-│   │   │   └── sim-cli/               # Headless multi-decade simulation runner, profiler & balance test suite
+│   │   │   └── sim-cli/               # Headless multi-decade simulation runner, interactive stdio bridge & profiler
 │   │   └── tools/
 │   │       └── xtask/                 # License, DAG isolation, AI provenance, notice & requirement traceability auditor
 │   └── ui/                            # Electron + TypeScript app (package.json, eslint.config.mjs)
@@ -420,7 +429,7 @@ The entire technical stack is verified for closed-source commercial sale on Stea
 Development progresses through playable, testable milestones where the data-driven boundary and epistemic air-gap are enforced from the first line of code:
 
 1. **Milestone 0 — Workspace & Contracts:** Initialize the Rust workspace (`sim-core`, `sim-data`, `player-view`, `sim-cli`), schema validation pipeline, and Electron + Three.js + movable/skinnable window shell skeleton.
-2. **Milestone 1 — Headless Geodesic Planet & Clock:** Implement Goldberg polyhedron sphere generation, plate tectonics, procedural material/climate property tables, hourly weather simulation, and deterministic staggered multi-rate ticks benchmarked in `sim-cli`.
+2. **Milestone 1 — Headless Continuous Spherical Planet & Clock:** Implement welded subdivided icosphere sample topology, continuous spherical interpolation, plate tectonics, procedural material/climate property tables, hourly weather simulation, and deterministic staggered multi-rate ticks benchmarked in `sim-cli`.
 3. **Milestone 2 — Zoom-Blended Globe & Windowing Skin System:** Render the 3D physical globe smoothly cross-fading to a cartographic parchment map by camera altitude, backed by the movable, resizable, minimizable window manager loading external CSS skins (`cartographer-parchment`) and initial AI-generated textures.
 4. **Milestone 3 — Epistemic Air-Gap & "The Unexplained Colony" Survival Loop:** Activate `player-view` fog-of-war/survey archives, single physical goods ledger, degrading initial tool supplies, local extraction, nutrition, and basic settlement construction strictly from `mods/unexplained-colony/`.
 5. **Milestone 4 — Populations, Leaders, Attention & Delayed Dispatches:** Implement demographic cohorts, Named Individuals with epistemic traits, finite Attention budget, cascading mandates, physical courier latency, HQ relocation, and configurable notification/auto-pause rules.

@@ -18,10 +18,10 @@ import {
 } from "../spine";
 import { GlobeOrbitalCamera } from "./camera";
 import { FeatureOverlayRenderSummary, GlobeFeatureOverlayGroup } from "./features";
-import { buildGoldbergGlobeGeometry, GoldbergMeshBuild, verifyGoldbergManifold } from "./mesh";
+import { buildGoldbergGlobeGeometry, GoldbergMeshBuild, unitToLatLonDegrees, verifyGoldbergManifold } from "./mesh";
 import { createGlobeShaderController, GlobeShaderController } from "./shaders";
 
-export { buildGoldbergGlobeGeometry, verifyGoldbergManifold } from "./mesh";
+export { buildGoldbergGlobeGeometry, unitToLatLonDegrees, verifyGoldbergManifold } from "./mesh";
 export type { ManifoldVerificationReport } from "./mesh";
 export { GlobeOrbitalCamera } from "./camera";
 export { createGlobeShaderController } from "./shaders";
@@ -116,6 +116,8 @@ export async function initializeGlobeViewport(
 
   let hoveredCellId: number | null = null;
   let selectedCellId: number | null = null;
+  let hoveredUnitXyz: Vec3 | null = null;
+  let selectedUnitXyz: Vec3 | null = null;
   let activeOverlayMode = "terrain";
   let weatherOverlayActive = false;
   let previewDestinationCellId: number | null = null;
@@ -208,29 +210,59 @@ export async function initializeGlobeViewport(
 
     const hitPt = origin.clone().addScaledVector(dir, t).normalize();
     const hitUnit: Vec3 = [hitPt.x, hitPt.y, hitPt.z];
+    const { latDeg, lonDeg } = unitToLatLonDegrees(hitUnit);
     const nearestCellId = findNearestCellId(hitUnit);
     const snap = currentSnapshot ?? store.getSnapshot();
     const spacingRad = (2.1 / Math.sqrt(Math.max(topology.cellCount, 10) / 10));
 
     if (snap) {
-      // 1. Tracked convoys highest priority
+      // 1. Tracked convoys highest priority (continuous coordinate aware)
       for (const convoy of snap.trackedConvoys) {
         const cCell = meshBuild.cellById.get(convoy.projectedCellId);
-        if (!cCell) continue;
+        const cPos: Vec3 | null = convoy.currentUnitXyz
+          ? [convoy.currentUnitXyz[0], convoy.currentUnitXyz[1], convoy.currentUnitXyz[2]]
+          : cCell?.centerUnit ?? null;
+        if (!cPos) continue;
         if (
-          convoy.projectedCellId === nearestCellId ||
-          greatCircleRadians(hitUnit, cCell.centerUnit) < spacingRad * 0.45
+          greatCircleRadians(hitUnit, cPos) < spacingRad * 0.45 ||
+          convoy.projectedCellId === nearestCellId
         ) {
           return {
             hitKind: "convoy",
             cellId: nearestCellId,
             convoyId: convoy.convoyId,
             label: `${convoy.label} (${convoy.status})`,
+            unitXyz: hitUnit,
+            latDeg,
+            lonDeg,
           };
         }
       }
 
-      // 2. Surveyed settlements
+      // 2. Observed military formations (`UI-MAP-007.2`)
+      for (const formation of snap.warfare?.formations ?? []) {
+        const fPos: Vec3 = [
+          formation.currentUnitXyz[0],
+          formation.currentUnitXyz[1],
+          formation.currentUnitXyz[2],
+        ];
+        if (
+          greatCircleRadians(hitUnit, fPos) < spacingRad * 0.45 ||
+          formation.currentCellId === nearestCellId
+        ) {
+          return {
+            hitKind: "formation",
+            cellId: formation.currentCellId,
+            formationId: formation.formationId,
+            label: `${formation.label} (${formation.commanderName})`,
+            unitXyz: hitUnit,
+            latDeg,
+            lonDeg,
+          };
+        }
+      }
+
+      // 3. Surveyed settlements
       for (const settlement of snap.knownSettlements ?? []) {
         const sCell = meshBuild.cellById.get(settlement.cellId);
         if (!sCell) continue;
@@ -243,11 +275,14 @@ export async function initializeGlobeViewport(
             cellId: settlement.cellId,
             settlementId: settlement.settlementId,
             label: settlement.isHq ? `${settlement.settlementName} (HQ)` : settlement.settlementName,
+            unitXyz: hitUnit,
+            latDeg,
+            lonDeg,
           };
         }
       }
 
-      // 3. Surveyed roads
+      // 4. Surveyed roads
       for (const road of snap.surveyedRoads ?? []) {
         const aCell = meshBuild.cellById.get(road.fromCellId);
         const bCell = meshBuild.cellById.get(road.toCellId);
@@ -262,12 +297,15 @@ export async function initializeGlobeViewport(
             edgeId: road.edgeId,
             fromCellId: road.fromCellId,
             toCellId: road.toCellId,
-            label: `${road.infraKey} (#${road.edgeId})`,
+            label: `${road.infraKey} (Edge ${road.edgeId})`,
+            unitXyz: hitUnit,
+            latDeg,
+            lonDeg,
           };
         }
       }
 
-      // 4. Surveyed rivers
+      // 5. Surveyed rivers
       for (const cell of snap.knownCells) {
         if (cell.tier !== "surveyed") continue;
         if (cell.riverDownstreamCellId === null || cell.riverDownstreamCellId === undefined) continue;
@@ -283,45 +321,63 @@ export async function initializeGlobeViewport(
             cellId: cell.cellId,
             toCellId: cell.riverDownstreamCellId,
             flowNorm01: cell.riverFlowNorm01 ?? 0.5,
-            label: `River Course (Cell #${cell.cellId})`,
+            label: `River Course (Cell ${cell.cellId})`,
+            unitXyz: hitUnit,
+            latDeg,
+            lonDeg,
           };
         }
       }
 
-      // 5. Fallback cell respecting Unexplored epistemic air-gap
+      // 6. Fallback cell respecting Unexplored epistemic air-gap
       const known = snap.knownCells.find((k) => k.cellId === nearestCellId);
       if (!known || known.tier === "unexplored") {
         return {
           hitKind: "cell",
           cellId: nearestCellId,
-          label: `Unexplored Territory (Cell #${nearestCellId})`,
+          label: `Unexplored Territory (Cell ${nearestCellId})`,
+          unitXyz: hitUnit,
+          latDeg,
+          lonDeg,
         };
       }
       if (known.tier === "rumored") {
         return {
           hitKind: "cell",
           cellId: nearestCellId,
-          label: `Rumored Terrain (Cell #${nearestCellId}, est. ${Math.round(known.elevationM)}m, ${Math.round(known.confidence01 * 100)}% conf)`,
+          label: `Rumored Terrain (Cell ${nearestCellId}, est. ${Math.round(known.elevationM)}m, ${Math.round(known.confidence01 * 100)}% conf)`,
+          unitXyz: hitUnit,
+          latDeg,
+          lonDeg,
         };
       }
       if (known.tier === "stale") {
         return {
           hitKind: "cell",
           cellId: nearestCellId,
-          label: `Stale Recon (Cell #${nearestCellId})`,
+          label: `Stale Recon (Cell ${nearestCellId})`,
+          unitXyz: hitUnit,
+          latDeg,
+          lonDeg,
         };
       }
       return {
         hitKind: "cell",
         cellId: nearestCellId,
-        label: `${known.biomeKey ?? (known.isOcean ? "ocean" : "Surveyed")} (Cell #${nearestCellId}, ${Math.round(known.elevationM)}m)`,
+        label: `${known.biomeKey ?? (known.isOcean ? "ocean" : "Surveyed")} (Cell ${nearestCellId}, ${Math.round(known.elevationM)}m)`,
+        unitXyz: hitUnit,
+        latDeg,
+        lonDeg,
       };
     }
 
     return {
       hitKind: "cell",
       cellId: nearestCellId,
-      label: `Cell #${nearestCellId}`,
+      label: `Cell ${nearestCellId}`,
+      unitXyz: hitUnit,
+      latDeg,
+      lonDeg,
     };
   };
 
@@ -341,6 +397,8 @@ export async function initializeGlobeViewport(
       hoveredCellId,
       selectedCellId,
       weatherOverlayActive,
+      hoveredUnitXyz,
+      selectedUnitXyz,
     );
     const focusCellId = findNearestCellId(orbitalCamera.getFocusUnit());
     orbitalCamera.setFocusCellId(focusCellId);
@@ -478,9 +536,19 @@ export async function initializeGlobeViewport(
       renderOnce();
     } else if (intent.kind === "HoverMapFeature") {
       hoveredCellId = intent.hit?.cellId ?? null;
+      hoveredUnitXyz = intent.hit?.unitXyz
+        ? [intent.hit.unitXyz[0], intent.hit.unitXyz[1], intent.hit.unitXyz[2]]
+        : hoveredCellId !== null
+          ? meshBuild.cellById.get(hoveredCellId)?.centerUnit ?? null
+          : null;
       renderOnce();
     } else if (intent.kind === "SelectMapFeature") {
       selectedCellId = intent.hit?.cellId ?? null;
+      selectedUnitXyz = intent.hit?.unitXyz
+        ? [intent.hit.unitXyz[0], intent.hit.unitXyz[1], intent.hit.unitXyz[2]]
+        : selectedCellId !== null
+          ? meshBuild.cellById.get(selectedCellId)?.centerUnit ?? null
+          : null;
       renderOnce();
     }
   });
@@ -561,10 +629,12 @@ export async function initializeGlobeViewport(
     },
     setHoveredCell(cellId: number | null) {
       hoveredCellId = cellId;
+      hoveredUnitXyz = cellId !== null ? meshBuild.cellById.get(cellId)?.centerUnit ?? null : null;
       renderOnce();
     },
     setSelectedCell(cellId: number | null) {
       selectedCellId = cellId;
+      selectedUnitXyz = cellId !== null ? meshBuild.cellById.get(cellId)?.centerUnit ?? null : null;
       renderOnce();
     },
     stepRender,

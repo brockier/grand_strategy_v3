@@ -19,8 +19,8 @@
 
 Every requirement block carries one of four normative lifecycle statuses:
 
-1. `Active` — Normative leaf requirement verified automatically at or after its target `Milestone` (`M0` through `M4` in the current specification baseline).
-2. `Draft` — High-level UI system-contract requirement (`M5` through `M7` in the current baseline) reserved for decomposition into `Active` dot-suffixed leaf requirements before milestone implementation begins.
+1. `Active` — Normative leaf requirement verified automatically at or after its target `Milestone` (`M0` through `M7` in the current specification baseline).
+2. `Draft` — High-level UI system-contract requirement reserved for decomposition into `Active` dot-suffixed leaf requirements before milestone implementation begins.
 3. `Superseded` — Former requirement split into or replaced by newer identifiers listed in `Lineage: Superseded-By: <ID-list>`. Automated tests MUST update to target the replacement identifiers.
 4. `Removed` — Permanently retired requirement archived in Section 11 (`Retired & Superseded Requirements Registry`) with `Lineage: Removed-Reason: <rationale>`. Any automated test still citing a `Removed` identifier fails validation.
 
@@ -115,12 +115,21 @@ Every requirement block carries one of four normative lifecycle statuses:
 
 ### UI-GLB-001: Seamless Goldberg Polyhedron Geodesic Mesh Rendering
 - **ID:** `UI-GLB-001`
+- **Status:** `Superseded`
+- **Milestone:** `M2`
+- **Verification Layer:** `Globe-WebGPU`
+- **Lineage:** `Superseded-By: UI-GLB-001.1`
+- **Requirement:** The globe renderer SHALL construct and render a watertight spherical Goldberg polyhedron mesh from `player-view` topology buffers (hexagonal cells plus 12 pentagonal cells) free of polar pinching, UV discontinuities, or edge cracks.
+- **Acceptance Criteria:** Superseded by hex-free welded spherical icosphere rendering (`UI-GLB-001.1`).
+
+### UI-GLB-001.1: Seamless Hex-Free Welded Spherical Terrain & Barycentric Relief
+- **ID:** `UI-GLB-001.1`
 - **Status:** `Active`
 - **Milestone:** `M2`
 - **Verification Layer:** `Globe-WebGPU`
-- **Lineage:** `Origin`
-- **Requirement:** The globe renderer SHALL construct and render a watertight spherical Goldberg polyhedron mesh from `player-view` topology buffers (hexagonal cells plus 12 pentagonal cells) free of polar pinching, UV discontinuities, or edge cracks.
-- **Acceptance Criteria:** GPU mesh integrity tests verify closed manifold indices matching cell counts, zero degenerate triangles, and crisp visual continuity across north/south poles and the antimeridian.
+- **Lineage:** `Supersedes: UI-GLB-001`
+- **Requirement:** The globe renderer SHALL construct and render a watertight welded subdivided icosphere triangle mesh (`10 * m^2 + 2` sample vertices, `20 * m^2` spherical triangles, Euler characteristic `2`) free of visible hex/pentagon grid borders, polar pinching, UV discontinuities, or edge cracks, interpolating coastlines, elevation relief, wetness, and epistemic horizons smoothly across spherical triangles with circular reticle indicators.
+- **Acceptance Criteria:** GPU mesh integrity tests verify closed manifold indices (`unmatchedHalfEdges == 0`, `degenerateTriangles == 0`, `eulerCheckDual == 2`), zero hex-edge border lines in GLSL shaders, and crisp polar continuity across north/south poles and the antimeridian.
 
 ### UI-GLB-002: Orbital Camera Pan, Tilt, Compass Reset & Fly-To Navigation
 - **ID:** `UI-GLB-002`
@@ -200,30 +209,75 @@ Every requirement block carries one of four normative lifecycle statuses:
 
 ### UI-MAP-005: Occlusion-Aware Spherical Picking & Hover Inspection
 - **ID:** `UI-MAP-005`
+- **Status:** `Superseded`
+- **Milestone:** `M2`
+- **Verification Layer:** `Window-Playwright`
+- **Lineage:** `Superseded-By: UI-MAP-005.1`
+- **Requirement:** Raycast picking on the globe SHALL accurately resolve hovered and clicked Goldberg cells, settlements, road/river edges, and convoy markers while ignoring pointer events landing over any open HUD bar or floating window.
+- **Acceptance Criteria:** Superseded by continuous spherical coordinate picking (`UI-MAP-005.1`).
+
+### UI-MAP-005.1: Occlusion-Aware Continuous Spherical Coordinate, Region, Spline & Marker Picking
+- **ID:** `UI-MAP-005.1`
 - **Status:** `Active`
 - **Milestone:** `M2`
 - **Verification Layer:** `Window-Playwright`
-- **Lineage:** `Origin`
-- **Requirement:** Raycast picking on the globe SHALL accurately resolve hovered and clicked Goldberg cells, settlements, road/river edges, and convoy markers while ignoring pointer events landing over any open HUD bar or floating window.
-- **Acceptance Criteria:** Playwright tests verify clicking directly on an exposed globe cell selects that exact cell ID, whereas clicking the exact same screen pixel covered by a dragged floating window interacts solely with the window.
+- **Lineage:** `Supersedes: UI-MAP-005`
+- **Requirement:** Raycast picking on the globe SHALL resolve continuous 3D unit-sphere coordinates (`unitXyz`, `latDeg`, `lonDeg`), nearest terrain sample region (`cellId`), settlements, road/river spline segments, and convoy/formation markers while ignoring pointer events landing over any open HUD bar, modal dialog, or floating window.
+- **Acceptance Criteria:** Window and picking tests verify clicking exposed globe coordinates returns exact continuous `(latDeg, lonDeg)`, `unitXyz`, and `cellId`, whereas clicking the identical viewport coordinates beneath a floating window interacts solely with the window.
 
 ### UI-MAP-006: Reported Trade-Flow, Freight Congestion & Price-Spread Overlays
 - **ID:** `UI-MAP-006`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M5`
 - **Verification Layer:** `Window-Playwright`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: UI-MAP-006.1, UI-MAP-006.2`
 - **Requirement:** Selectable cartographic map modes SHALL visualize inter-settlement trade-flow ribbons, shared road/port congestion bottlenecks, and timestamped regional commodity price disparities derived strictly from arrived market ledgers.
-- **Acceptance Criteria:** Decompose prior to `M5` into leaf tests verifying accurate legend scaling, stale-ledger timestamps on regional prices, and bottleneck color coding.
+- **Acceptance Criteria:** Decomposed into leaf requirements `UI-MAP-006.1` and `UI-MAP-006.2`.
+
+### UI-MAP-006.1: Inter-Settlement Trade Ribbons & Timestamped Regional Price Spreads
+- **ID:** `UI-MAP-006.1`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Window-Playwright`
+- **Lineage:** `Parent: UI-MAP-006`
+- **Requirement:** Selecting the `trade` map lens (`TradeAndCongestionOverlayLayer`) SHALL display directional inter-settlement merchant/charter trade ribbons and regional price-spread summaries annotated with explicit arrived-ledger observation timestamps.
+- **Acceptance Criteria:** Switching the overlay toolbar to `Trade` updates rendered trade ribbon geometries and legend summaries exclusively from snapshot `regionalPrices` and `trackedConvoys` without touching hidden ground truth.
+
+### UI-MAP-006.2: Shared Corridor & Port Congestion Bottleneck Highlights
+- **ID:** `UI-MAP-006.2`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Unit-Vitest`
+- **Lineage:** `Parent: UI-MAP-006`
+- **Requirement:** The `trade` overlay lens SHALL highlight shared transport corridors exhibiting elevated axle-load congestion multipliers or road surface wear (`corridorCongestion`), exposing bottleneck utilization counts in the legend.
+- **Acceptance Criteria:** Snapshot tests with congested corridors verify accurate bottleneck counts and wear severity summary metrics inside `TradeAndCongestionOverlayLayer`.
 
 ### UI-MAP-007: Operational Warfare Fronts, Objectives & Phase-Line Overlay
 - **ID:** `UI-MAP-007`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M7`
 - **Verification Layer:** `Window-Playwright`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: UI-MAP-007.1, UI-MAP-007.2`
 - **Requirement:** Military map mode SHALL display theater boundaries, division/corps operational objective arrows, phase lines, active *"No Retreat"* posture badges, and timestamped last-reported unit positions reflecting real communication lag.
-- **Acceptance Criteria:** Decompose prior to `M7` into leaf tests verifying stale report timestamps on front markers and clear visual distinction between Churchill theater zones and Hitler operational directives.
+- **Acceptance Criteria:** Decomposed into leaf requirements `UI-MAP-007.1` and `UI-MAP-007.2`.
+
+### UI-MAP-007.1: Theater Objectives, Phase Lines & "No Retreat" Posture Markers
+- **ID:** `UI-MAP-007.1`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Window-Playwright`
+- **Lineage:** `Parent: UI-MAP-007`
+- **Requirement:** Selecting the `warfare` map lens (`OperationalWarfareOverlayLayer`) SHALL display theater directive target vectors alongside Hitler-mode operational battle-plan phase lines and explicit *"No Retreat"* standing-order indicators.
+- **Acceptance Criteria:** Switching to the `Warfare` lens on a snapshot containing both Churchill theater directives and `"No Retreat"` operational battle plans renders distinct visual indicators and legend tallies for each command mode.
+
+### UI-MAP-007.2: Courier-Lagged Timestamped Formation Markers
+- **ID:** `UI-MAP-007.2`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Unit-Vitest`
+- **Lineage:** `Parent: UI-MAP-007`
+- **Requirement:** Operational formation markers rendered on the globe SHALL position each unit strictly at its last-reported coordinate stamped with courier observation age (`reportedTick`), visually distinguishing fresh HQ sightings from stale distant reports.
+- **Acceptance Criteria:** Snapshot tests verify stale distant formations expose delayed `reportedTick` metadata and zero access to unarrived engine coordinates.
 
 ---
 
@@ -343,21 +397,57 @@ Every requirement block carries one of four normative lifecycle statuses:
 
 ### UI-DAT-006: Non-State Institution & Shared Logistics Inspector Windows
 - **ID:** `UI-DAT-006`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M5`
 - **Verification Layer:** `Window-Playwright`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: UI-DAT-006.1, UI-DAT-006.2`
 - **Requirement:** Institutional inspector windows SHALL display known estates, merchant houses, craft guilds, and syndicates alongside reported freight contracts, regional price boards, and shared carrier bottlenecks.
-- **Acceptance Criteria:** Decompose prior to `M5` into leaf tests verifying accurate ledger separation between state warehouses and reported private merchant stocks.
+- **Acceptance Criteria:** Decomposed into leaf requirements `UI-DAT-006.1` and `UI-DAT-006.2`.
+
+### UI-DAT-006.1: Non-State Actors, Regional Spot Prices & Congestion Inspector Tabs
+- **ID:** `UI-DAT-006.1`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Window-Playwright`
+- **Lineage:** `Parent: UI-DAT-006`
+- **Requirement:** `NonStateEconomyInspectorView` (`institutions_inspector`) SHALL render accessible inner tabs and `<details>` disclosures clearly separating state warehouses from reported Households, Landed Estates, Merchant Houses, and Syndicates, plus regional spot price spreads, charter rates, and shared corridor bottlenecks.
+- **Acceptance Criteria:** DOM tests verify accurate separation of actor classes, `<summary>` disclosures without nested headings, accessible `tablist`/`tabpanel` (`hidden="until-found"`), and rendered provenance timestamps.
+
+### UI-DAT-006.2: Economic Policy & Governance Reform Controls
+- **ID:** `UI-DAT-006.2`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Window-Playwright`
+- **Lineage:** `Parent: UI-DAT-006`
+- **Requirement:** The institutional inspector SHALL expose policy controls enabling the player to switch governance coordination models, enact cross-era economic policy levers, and charter private carriers via validated IPC commands displaying active reform inertia feedback.
+- **Acceptance Criteria:** Submitting governance reform, policy enactment, or carrier chartering actions from the inspector dispatches exact `ValidatedPlayerCommand` payloads (`switchGovernanceModel`, `enactEconomicPolicy`, `charterPrivateCarriers`).
 
 ### UI-DAT-007: Diegetic Archive, Workshop & Fragile Knowledge Windows
 - **ID:** `UI-DAT-007`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M6`
 - **Verification Layer:** `Window-Playwright`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: UI-DAT-007.1, UI-DAT-007.2`
 - **Requirement:** Knowledge and assay windows SHALL display empirically tested material properties, proven physical components (Know-How), published theoretical treatises (Know-Why), active patents, and fragility alerts when critical masters or archives remain un-replicated.
-- **Acceptance Criteria:** Decompose prior to `M6` into leaf tests verifying zero future/untested tech previews appear anywhere in the research window.
+- **Acceptance Criteria:** Decomposed into leaf requirements `UI-DAT-007.1` and `UI-DAT-007.2`.
+
+### UI-DAT-007.1: Assayed Materials, Demonstrated Know-How & Know-Why Archive View
+- **ID:** `UI-DAT-007.1`
+- **Status:** `Active`
+- **Milestone:** `M6`
+- **Verification Layer:** `Window-Playwright`
+- **Lineage:** `Parent: UI-DAT-007`
+- **Requirement:** `DiegeticKnowledgeArchiveView` (`knowledge_archive`) SHALL present assayed procedural materials, proven Know-How components, mature/in-progress Know-Why treatises, active patent monopolies, and innovation mode controls without ever revealing unresearched future tech-tree previews.
+- **Acceptance Criteria:** Automated UI assertions inspect the rendered DOM across all knowledge tabs and prove zero unresearched future nodes or global science-point pools appear anywhere in the window.
+
+### UI-DAT-007.2: Four-Carrier Fragility & Single-Carrier Extinction Warnings
+- **ID:** `UI-DAT-007.2`
+- **Status:** `Active`
+- **Milestone:** `M6`
+- **Verification Layer:** `Unit-Vitest`
+- **Lineage:** `Parent: UI-DAT-007`
+- **Requirement:** Every demonstrated capability inside `knowledge_archive` SHALL display live counts across all four physical carriers (cohorts, specialists, prototypes, written archives) and highlight extinction-risk badges whenever a capability survives on zero or one physical carrier type.
+- **Acceptance Criteria:** Rendering a fixture containing both a multi-carrier replicated technique and an unarchived single-specialist technique displays explicit fragility warning badges solely on the endangered entry.
 
 ---
 
@@ -419,12 +509,30 @@ Every requirement block carries one of four normative lifecycle statuses:
 
 ### UI-HUD-007: Operational Warfare Delegation & Succession Transition Windows
 - **ID:** `UI-HUD-007`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M7`
 - **Verification Layer:** `Window-Playwright`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: UI-HUD-007.1, UI-HUD-007.2`
 - **Requirement:** Command UI shall provide "Churchill vs. Hitler" theater/battle-plan posture assignment controls and a Generational Succession summary screen presenting the incoming successor's inherited archives, institutions, debts, and official roster upon predecessor death.
-- **Acceptance Criteria:** Decompose prior to `M7` into leaf tests verifying clean transition to successor control while preserving archived map stamps.
+- **Acceptance Criteria:** Decomposed into leaf requirements `UI-HUD-007.1` and `UI-HUD-007.2`.
+
+### UI-HUD-007.1: Churchill vs. Hitler Operational Warfare Command Window
+- **ID:** `UI-HUD-007.1`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Window-Playwright`
+- **Lineage:** `Parent: UI-HUD-007`
+- **Requirement:** `WarfareCommandWindow` (`warfare_command`) SHALL switch cleanly between low-Attention `TheaterDirective` ("Churchill Mode") controls and high-Attention `OperationalBattlePlan` ("Hitler Mode") phase-line + *"No Retreat"* orders, displaying Attention impact, courier delay from current HQ, and formation status timestamps while disallowing direct unit tactical micro.
+- **Acceptance Criteria:** Issuing directives in both modes dispatches valid `issueTheaterDirective` and `issueOperationalBattlePlan` commands, previews differing Attention loads, and confirms zero unit micro buttons exist.
+
+### UI-HUD-007.2: Native Modal Generational Succession Transition Screen
+- **ID:** `UI-HUD-007.2`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Window-Playwright`
+- **Lineage:** `Parent: UI-HUD-007`
+- **Requirement:** Upon ruler demise/deposition signaled by `pendingTransition`, HUD SHALL open a modal summary built on a native `<dialog>` element (`showModal()`, labelled via `aria-labelledby` without redundant `role="dialog"` or `aria-modal` attributes) displaying predecessor cause of death, incoming successor profile, inherited physical archive/ledger/debt continuity, count of lost unrecorded head observations, and a sealing confirmation button dispatching `acknowledgeSuccession`.
+- **Acceptance Criteria:** Injecting a snapshot containing `pendingTransition` opens the native `<dialog>` in modal state, renders inherited map/ledger counts and unrecorded loss notice, and sends `acknowledgeSuccession` while cleanly resetting `returnValue` on close.
 
 ---
 
@@ -521,4 +629,10 @@ Every requirement block carries one of four normative lifecycle statuses:
 
 | ID | Former Title | Status | Lineage / Rationale | Date |
 | :--- | :--- | :--- | :--- | :--- |
-| *(None yet)* | — | — | Baseline specification created; append rows whenever any `UI-*` requirement is superseded or removed. | — |
+| `UI-GLB-001` | Seamless Goldberg Polyhedron Geodesic Mesh Rendering | `Superseded` | Replaced by `UI-GLB-001.1` (Option B hex-free welded spherical terrain mesh) | 2026-11-15 |
+| `UI-MAP-005` | Occlusion-Aware Spherical Picking & Hover Inspection | `Superseded` | Replaced by `UI-MAP-005.1` (Option B continuous spherical coordinate picking) | 2026-11-15 |
+| `UI-MAP-006` | Reported Trade-Flow, Freight Congestion & Price-Spread Overlays | `Superseded` | Decomposed into `UI-MAP-006.1`..`UI-MAP-006.2` for M5 | 2026-11-15 |
+| `UI-MAP-007` | Operational Warfare Fronts, Objectives & Phase-Line Overlay | `Superseded` | Decomposed into `UI-MAP-007.1`..`UI-MAP-007.2` for M7 | 2026-11-15 |
+| `UI-DAT-006` | Non-State Institution & Shared Logistics Inspector Windows | `Superseded` | Decomposed into `UI-DAT-006.1`..`UI-DAT-006.2` for M5 | 2026-11-15 |
+| `UI-DAT-007` | Diegetic Archive, Workshop & Fragile Knowledge Windows | `Superseded` | Decomposed into `UI-DAT-007.1`..`UI-DAT-007.2` for M6 | 2026-11-15 |
+| `UI-HUD-007` | Operational Warfare Delegation & Succession Transition Windows | `Superseded` | Decomposed into `UI-HUD-007.1`..`UI-HUD-007.2` for M7 | 2026-11-15 |

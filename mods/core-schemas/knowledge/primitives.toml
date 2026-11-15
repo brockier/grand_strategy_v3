@@ -10,6 +10,30 @@ display_name = "Bellows Forced-Draft Tuyere"
 domain = "metallurgy"
 empirical_difficulty = 0.35
 
+[[tech_components]]
+id = "waterwheel_gearing"
+display_name = "Overshot Waterwheel & Pinion Gearing"
+domain = "hydraulics"
+empirical_difficulty = 0.42
+
+[[tech_components]]
+id = "coke_blast_hearth"
+display_name = "High-Temp Smelting Blast Hearth"
+domain = "metallurgy"
+empirical_difficulty = 0.58
+
+[[tech_components]]
+id = "precision_lathe_screw"
+display_name = "Leadscrew Boring & Lathe Fixture"
+domain = "mechanics"
+empirical_difficulty = 0.65
+
+[[tech_components]]
+id = "optical_survey_transit"
+display_name = "Vernier Theodolite Transit"
+domain = "agronomy"
+empirical_difficulty = 0.48
+
 [[theory_domains]]
 id = "mechanics"
 display_name = "Applied Mechanics"
@@ -19,3 +43,13 @@ abstraction_depth = 1
 id = "metallurgy"
 display_name = "Ferrous Metallurgy & Thermodynamics"
 abstraction_depth = 2
+
+[[theory_domains]]
+id = "hydraulics"
+display_name = "Hydraulic Pressure & Drainage Theory"
+abstraction_depth = 2
+
+[[theory_domains]]
+id = "agronomy"
+display_name = "Soil Nutrient Cycling & Survey Geodesy"
+abstraction_depth = 1

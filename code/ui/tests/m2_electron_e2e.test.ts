@@ -52,7 +52,7 @@ function runM2Smoke(phase: "m2-phase1" | "m2-phase2", prefsPath: string): Record
 }
 
 describe("Milestone 2 Headless Chromium Electron End-to-End Integration", () => {
-  // @req UI-GLB-001
+  // @req UI-GLB-001.1
   // @req UI-GLB-002
   // @req UI-WIN-005
   // @req UI-SKN-002

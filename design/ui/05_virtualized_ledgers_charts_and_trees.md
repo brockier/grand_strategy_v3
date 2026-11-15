@@ -2,8 +2,8 @@
 
 **Module ID:** `UI-DAT-05`  
 **Code Location:** `code/ui/src/views/`  
-**Milestone & Design Depth:** `M3–M4: Full Detailed Design` + `M5`/`M6: Locked WindowContentPlugin Slots`  
-**Satisfies Requirements:** `UI-DAT-001`, `UI-DAT-002`, `UI-DAT-003`, `UI-DAT-006`, `UI-DAT-007` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
+**Milestone & Design Depth:** `M3–M6: Full Detailed Design`  
+**Satisfies Requirements:** `UI-DAT-001`, `UI-DAT-002`, `UI-DAT-003`, `UI-DAT-006.1`..`006.2`, `UI-DAT-007.1`..`007.2` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
 
 ---
 
@@ -79,8 +79,9 @@ Hierarchical tree layout storing collapsed branch sets, node coordinates `(x, y)
 1. Draws SVG orthogonal parent-child links from Player HQ down through appointed overseers and active mandates.
 2. Each leader card shows: portrait thumbnail, Attention load meter (`4.5 / 5.0`), active mandate count, and visual dilution alerts whenever `currentLoad > capacity` or a subordinate is out of communication range.
 
-### 3.4 Locked `M5`/`M6` Inspector Plugin Slots (`UI-DAT-006`, `UI-DAT-007`)
-`NonStateEconomyInspectorView` (`M5`) and `DiegeticKnowledgeArchiveView` (`M6`) register clean plugin descriptors bound to typed optional selectors on `DiegeticStore`. Prior to `M5`/`M6`, opening them displays an informational scenario-feature-inactive notice; once `M5`/`M6` snapshots populate, they mount rich virtual tables for non-state institutions and empirical material assays without touching `WindowManager`.
+### 3.4 `M5` Non-State Economy & `M6` Knowledge Archive Views (`UI-DAT-006.1`..`006.2`, `UI-DAT-007.1`..`007.2`)
+1. `NonStateEconomyInspectorView` (`institutions_inspector`): Accessible `role="tablist"` + `hidden="until-found"` tab panels and `<details>`/`<summary>` actor disclosures separating state warehouses from private Households, Landed Estates, Merchant Houses, and Syndicates, plus regional spot price boards, charter rates, congestion alerts, and governance/policy controls.
+2. `DiegeticKnowledgeArchiveView` (`knowledge_archive`): Accessible tabs across assayed procedural materials, empirically demonstrated Know-How `TechComponentId` records with explicit 4-carrier counts and single-carrier extinction warnings, Know-Why treatises, active patent monopolies, and innovation mode sponsorship controls—containing zero unrevealed future tech tree nodes.
 
 ---
 

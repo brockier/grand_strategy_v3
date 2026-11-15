@@ -3,7 +3,7 @@
 **Module ID:** `ENG-LOG-07`  
 **Code Location:** `code/engine/crates/sim-logistics/`  
 **Milestone & Design Depth:** `M3–M4: Full Detailed Design`  
-**Satisfies Requirements:** `ENG-LOG-001`, `ENG-LOG-002`, `ENG-LOG-003`, `ENG-LOG-004` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
+**Satisfies Requirements:** `ENG-LOG-001`, `ENG-LOG-002`, `ENG-LOG-002.1`, `ENG-LOG-003`, `ENG-LOG-004` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
 ---
 
@@ -47,10 +47,15 @@ pub struct TransitEntity {
     pub owner: ActorId,
     pub carrier_class: CarrierClassId,
     pub carrier_count: u32,
+    pub origin_unit_xyz: [f32; 3],
+    pub current_unit_xyz: [f32; 3],
+    pub destination_unit_xyz: [f32; 3],
     pub current_cell: CellId,
-    pub edge_progress_01: f32,
     pub route_cells: Vec<CellId>,
-    pub route_cursor: usize,
+    pub route_waypoints_xyz: Vec<[f32; 3]>,
+    pub distance_travelled_km: f64,
+    pub total_route_km: f64,
+    pub current_speed_kmh: f32,
     pub payload: TransitPayload,
     pub supply_stockpile: StockpileId, // Fodder, fuel, spare parts carried onboard
     pub departure_tick: Tick,
@@ -59,7 +64,7 @@ pub struct TransitEntity {
 }
 ```
 
-Every moving entity—from a grain ox-cart to a migrating cohort, relocating player HQ, or mounted dispatch rider—is stored as a `TransitEntity` in one unified `LogisticsArena`.
+Every moving entity—from a grain ox-cart to a migrating cohort, relocating player HQ, or mounted dispatch rider—is stored as a `TransitEntity` in one unified `LogisticsArena` carrying continuous 3D unit-sphere coordinates (`current_unit_xyz`) advanced along road splines and string-pulled spherical great-circle segments (`ENG-LOG-002.1`).
 
 ---
 
@@ -71,9 +76,9 @@ For any candidate edge `(u, v)` and `CarrierDef`:
    - Reject land carriers crossing deep water unless `bridge_intact && convoy_tonnage <= bridge_max_tonnes` or `ice_thickness_m >= carrier.min_ice_thickness_m`.
    - Reject river barges when `ice_thickness_m >= 0.15` or `flood_stage_01 > carrier.max_safe_flood`.
    - Reject mountain passes when `snow_depth_m > carrier.max_snow_clearance_m`.
-2. **Effective Speed Equation:**
-   `speed_kmh = base_speed * slope_penalty(edge_slope, carrier) * mud_penalty(mud_index_01) * congestion_penalty * wind_sailing_factor(edge_bearing, wind_vec)`
-   where `congestion_penalty` queries `NonStateEconomyPlugPort` (constant `1.0` in `M0`–`M4`).
+2. **Effective Speed & Continuous Arc Equation (`ENG-LOG-002`, `ENG-LOG-002.1`):**
+   `speed_kmh = base_speed * slope_penalty(heading_slope, carrier) * mud_penalty(mud_index_01) * congestion_penalty * wind_sailing_factor(bearing, wind_vec)`
+   where `congestion_penalty` queries `NonStateEconomyPlugPort`. Each step integrates `step_km = speed_kmh * dt_hours`, advances `distance_travelled_km` along road/river splines or any-angle string-pulled great-circle arcs, updates `current_unit_xyz` via `slerp`, and syncs `current_cell = planet.nearest_sample_cell(current_unit_xyz)`.
 3. **Breakdown & Hazard Rolls:** Deterministic `PhaseRng` evaluates axle/wheel or hull failure probability scaled by `mud_index_01`, road wear, and excess weight, consuming carried spare parts or stranding the convoy.
 
 ### 3.2 Route Fodder & Fuel Consumption (`ENG-LOG-001`, `ENG-LOG-004`)

@@ -2,8 +2,8 @@
 
 **Module ID:** `UI-HUD-07`  
 **Code Location:** `code/ui/src/hud/`  
-**Milestone & Design Depth:** `M2 & M4: Full Detailed Design` + `M7: Locked Command/Succession Slots`  
-**Satisfies Requirements:** `UI-HUD-001`, `UI-HUD-002`, `UI-HUD-003`, `UI-HUD-004`, `UI-HUD-005`, `UI-HUD-006`, `UI-HUD-007` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
+**Milestone & Design Depth:** `M2–M7: Full Detailed Design`  
+**Satisfies Requirements:** `UI-HUD-001`, `UI-HUD-002`, `UI-HUD-003`, `UI-HUD-004`, `UI-HUD-005`, `UI-HUD-006`, `UI-HUD-007.1`..`007.2` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
 
 ---
 
@@ -66,8 +66,9 @@ interface HqRelocationDraftState {
 ### 3.4 Four-Tier Notification & Auto-Pause Matrix (`UI-HUD-006`)
 Displays every scenario `EventClassId` row against four mutually exclusive radio columns (`Log Only`, `Banner Alert`, `Dispatch Popup`, `Dispatch Popup + Auto-Pause`), immediately dispatching `UpdateNotificationRule` commands persisted to user/scenario settings.
 
-### 3.5 Locked `M7` Command & Succession Slots (`UI-HUD-007`)
-Pre-wires plugin IDs and IPC command stubs (`IssueTheaterDirective`, `IssueOperationalBattlePlan`, `AcknowledgeSuccession`) so `M7` warfare posture controls (Churchill theater vs. Hitler operational plan + `"No Retreat"`) and the Succession transition screen drop into the HUD without structural rewrites.
+### 3.5 `M7` Operational Warfare & Generational Succession UI (`UI-HUD-007.1`, `UI-HUD-007.2`)
+1. **`WarfareCommandWindow` (`warfare_command`, `UI-HUD-007.1`):** Accessible tabbed command window switching between Churchill `TheaterDirective` delegation and Hitler `OperationalBattlePlan` phase lines + `"No Retreat"`, displaying Attention impact, courier delay from HQ, and formation status timestamps while omitting any tactical unit micro buttons.
+2. **`SuccessionTransitionDialog` (`UI-HUD-007.2`):** Opens a native `<dialog>` element via `.showModal()` (`aria-labelledby`, zero redundant `role="dialog"` or `aria-modal`, `dialog[open]` CSS scoping, `overscroll-behavior: contain` on `:modal` and `::backdrop`, `returnValue = ""` reset on close) whenever `pendingTransition` triggers, showing predecessor cause of demise, incoming successor profile, inherited archive/ledger/debt counts, lost unrecorded head observations, and `acknowledgeSuccession`.
 
 ---
 

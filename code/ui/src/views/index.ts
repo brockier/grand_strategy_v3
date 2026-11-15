@@ -4,17 +4,23 @@ import {
   ReportedLedgerRowDto,
   TimeSeriesDto,
   WindowContentPlugin,
+  createAccessibleTabGroup,
   createProvenanceBadgeElement,
   selectAuditDiscrepancies,
   selectDelegationTree,
   selectFacilityRows,
+  selectGovernance,
   selectHqPresence,
+  selectKnowledge,
   selectKnownCells,
   selectKnownSettlements,
   selectLedgerRows,
+  selectNonStateEconomy,
   selectPopulationRows,
   selectTimeSeries,
   selectTrackedConvoys,
+  selectWarfare,
+  syncSelectOptions,
 } from "../spine";
 
 type LedgerTabKind = "commodities" | "cohorts" | "convoys" | "facilities";
@@ -1143,6 +1149,32 @@ export function createEntityInspectorWindowPlugin(): WindowContentPlugin {
               }),
             );
           }
+        } else if (targetKind === "formation" && Number.isFinite(targetId)) {
+          const formations = selectWarfare(spine.store)?.formations ?? [];
+          const form = formations.find((f) => f.formationId === targetId) ?? formations[0];
+          const iconUrl = spine.assetResolver?.resolveIcon("colony_precision_tools") ?? "";
+          wireImageWithFallback(img, iconUrl, fallbackPortrait, form?.label ?? "Formation");
+          title.textContent = form ? `${form.label} (${form.commanderName})` : `Formation ${targetId}`;
+          detail.textContent = form
+            ? `${form.personnelCount} personnel · Cohesion ${Math.round(form.cohesion01 * 100)}% · Munitions ${form.munitionsDays.toFixed(1)}d · Rations ${form.rationsDays.toFixed(1)}d · Cell ${form.currentCellId} -> Target Cell ${form.targetCellId}`
+            : "No formation telemetry available.";
+          if (form) {
+            extras.appendChild(
+              createProvenanceBadgeElement(document, {
+                currentTick,
+                observedTick: form.observedTick,
+                confidence01: form.confidence01,
+                provenanceLabel: form.provenanceLabel,
+                isLiveSight: currentTick - form.observedTick <= 2,
+              }),
+            );
+            const posture = document.createElement("span");
+            posture.className = "ng-posture-badge";
+            posture.textContent = form.noRetreatOrder
+              ? "Standing Order: No Retreat"
+              : `Doctrine: ${form.doctrineKey}`;
+            extras.appendChild(posture);
+          }
         } else if (targetKind === "facility" && Number.isFinite(targetId)) {
           const fac = selectFacilityRows(spine.store).find((f) => f.facilityId === targetId) ?? selectFacilityRows(spine.store)[0];
           wireImageWithFallback(img, fallbackPortrait, fallbackPortrait, fac?.processName ?? "Facility");
@@ -1333,6 +1365,567 @@ export function createLayoutPresetsWindowPlugin(): WindowContentPlugin {
       wrap.append(presetList, nameInput, saveBtn);
       container.replaceChildren(wrap);
       return () => {};
+    },
+  };
+}
+
+const KNOWN_CARRIER_KINDS: ReadonlyArray<{ readonly kind: string; readonly label: string }> = [
+  { kind: "PractitionerCohort", label: "Cohorts" },
+  { kind: "MasterIndividual", label: "Specialists" },
+  { kind: "WorkingPrototypeArtifact", label: "Prototypes" },
+  { kind: "PhysicalTreatise", label: "Archives" },
+];
+
+function buildDisclosure(
+  doc: Document,
+  summaryTitle: string,
+  badgeText: string,
+  openByDefault: boolean,
+): { readonly details: HTMLDetailsElement; readonly body: HTMLDivElement } {
+  const details = doc.createElement("details");
+  details.className = "ng-disclosure";
+  if (openByDefault) details.open = true;
+
+  const summary = doc.createElement("summary");
+  const titleStrong = doc.createElement("strong");
+  titleStrong.textContent = summaryTitle;
+  const badge = doc.createElement("span");
+  badge.className = "ng-prov-badge";
+  badge.textContent = badgeText;
+  summary.append(titleStrong, badge);
+
+  const body = doc.createElement("div");
+  body.className = "ng-disclosure-body";
+  details.append(summary, body);
+  return { details, body };
+}
+
+/**
+ * Non-State Economy, Regional Price Spreads & Governance Reform Inspector (`UI-DAT-006.1`, `UI-DAT-006.2`).
+ */
+export function createInstitutionsInspectorWindowPlugin(): WindowContentPlugin {
+  return {
+    pluginId: "institutions_inspector",
+    defaultTitle: "Estates, Markets & Governance",
+    minWidth: 480,
+    minHeight: 360,
+    hotkey: "n",
+    mountContent(container, _instanceKey, spine) {
+      const tabGroup = createAccessibleTabGroup(document, {
+        prefix: "institutions-inspector",
+        ariaLabel: "Institutional and Economic Sections",
+        tabs: [
+          { key: "actors", label: "Estates & Actors" },
+          { key: "markets", label: "Spot Prices & Congestion" },
+          { key: "governance", label: "Governance & Policy" },
+        ],
+      });
+
+      const actorsHost = tabGroup.panelInnerByKey.get("actors")!;
+      const marketsHost = tabGroup.panelInnerByKey.get("markets")!;
+      const govHost = tabGroup.panelInnerByKey.get("governance")!;
+
+      const stateCompareBox = document.createElement("div");
+      const actorListBox = document.createElement("div");
+      actorsHost.append(stateCompareBox, actorListBox);
+
+      const marketListBox = document.createElement("div");
+      const congestionListBox = document.createElement("div");
+      marketsHost.append(marketListBox, congestionListBox);
+
+      const govSummaryBox = document.createElement("div");
+      const govFormBox = document.createElement("div");
+      govFormBox.className = "ng-responsive-grid";
+
+      const modelSelect = document.createElement("select");
+      modelSelect.className = "ng-select";
+      modelSelect.setAttribute("data-gov-model-select", "true");
+      modelSelect.setAttribute("aria-label", "Governance coordination model");
+      const modelSubmitBtn = document.createElement("button");
+      modelSubmitBtn.type = "button";
+      modelSubmitBtn.className = "ng-btn ng-btn-primary";
+      modelSubmitBtn.setAttribute("data-gov-model-submit", "true");
+      modelSubmitBtn.textContent = "Reform Governance Model";
+
+      const policySelect = document.createElement("select");
+      policySelect.className = "ng-select";
+      policySelect.setAttribute("data-econ-policy-select", "true");
+      policySelect.setAttribute("aria-label", "Economic policy lever");
+      const rateInput = document.createElement("input");
+      rateInput.type = "number";
+      rateInput.className = "ng-text-input";
+      rateInput.min = "0";
+      rateInput.max = "1";
+      rateInput.step = "0.05";
+      rateInput.placeholder = "Rate 0..1";
+      rateInput.setAttribute("data-econ-rate-input", "true");
+      rateInput.setAttribute("aria-label", "Optional tax or tribute rate override");
+      const policySubmitBtn = document.createElement("button");
+      policySubmitBtn.type = "button";
+      policySubmitBtn.className = "ng-btn";
+      policySubmitBtn.setAttribute("data-econ-policy-submit", "true");
+      policySubmitBtn.textContent = "Enact Policy";
+
+      const charterSettlementSelect = document.createElement("select");
+      charterSettlementSelect.className = "ng-select";
+      charterSettlementSelect.setAttribute("data-charter-settlement-select", "true");
+      charterSettlementSelect.setAttribute("aria-label", "Target settlement for carrier charter");
+      const charterCountInput = document.createElement("input");
+      charterCountInput.type = "number";
+      charterCountInput.className = "ng-text-input";
+      charterCountInput.min = "1";
+      charterCountInput.max = "100";
+      charterCountInput.step = "1";
+      charterCountInput.value = "2";
+      charterCountInput.setAttribute("data-charter-count-input", "true");
+      charterCountInput.setAttribute("aria-label", "Private carrier charter count");
+      const charterSubmitBtn = document.createElement("button");
+      charterSubmitBtn.type = "button";
+      charterSubmitBtn.className = "ng-btn";
+      charterSubmitBtn.setAttribute("data-charter-submit", "true");
+      charterSubmitBtn.textContent = "Charter Private Carriers";
+
+      const actionStatus = document.createElement("div");
+      actionStatus.className = "ng-hud-stat";
+      actionStatus.setAttribute("role", "status");
+
+      govFormBox.append(
+        modelSelect,
+        modelSubmitBtn,
+        policySelect,
+        rateInput,
+        policySubmitBtn,
+        charterSettlementSelect,
+        charterCountInput,
+        charterSubmitBtn,
+        actionStatus,
+      );
+      govHost.append(govSummaryBox, govFormBox);
+
+      modelSubmitBtn.addEventListener("click", () => {
+        if (!modelSelect.value) return;
+        spine.bus.emit({
+          kind: "DispatchSimCommand",
+          command: { kind: "switchGovernanceModel", modelKey: modelSelect.value },
+        });
+        spine.bus.emit({ kind: "PlayUiFoley", cueId: "seal_stamp" });
+        actionStatus.textContent = `Dispatched governance reform order: ${modelSelect.value}`;
+      });
+
+      policySubmitBtn.addEventListener("click", () => {
+        if (!policySelect.value) return;
+        const parsedRate = rateInput.value.trim().length > 0 ? Number(rateInput.value) : null;
+        const rateOverride01 =
+          parsedRate !== null && Number.isFinite(parsedRate)
+            ? Math.max(0, Math.min(1, parsedRate))
+            : null;
+        spine.bus.emit({
+          kind: "DispatchSimCommand",
+          command: {
+            kind: "enactEconomicPolicy",
+            policyKey: policySelect.value,
+            rateOverride01,
+          },
+        });
+        spine.bus.emit({ kind: "PlayUiFoley", cueId: "seal_stamp" });
+        actionStatus.textContent = `Dispatched policy decree: ${policySelect.value}`;
+      });
+
+      charterSubmitBtn.addEventListener("click", () => {
+        const targetSettlement = Number.parseInt(charterSettlementSelect.value, 10);
+        const count = Math.max(1, Math.min(1000, Number.parseInt(charterCountInput.value || "1", 10) || 1));
+        if (!Number.isInteger(targetSettlement) || targetSettlement < 0) return;
+        spine.bus.emit({
+          kind: "DispatchSimCommand",
+          command: { kind: "charterPrivateCarriers", targetSettlement, count },
+        });
+        spine.bus.emit({ kind: "PlayUiFoley", cueId: "seal_stamp" });
+        actionStatus.textContent = `Chartered ${count} private carriers for settlement ${targetSettlement}`;
+      });
+
+      const render = () => {
+        const snap = spine.store.getSnapshot();
+        const currentTick = snap?.clockAndNotifications.tick ?? 0;
+        const eco = selectNonStateEconomy(spine.store);
+        const gov = selectGovernance(spine.store);
+        const stateRows = selectLedgerRows(spine.store);
+        const settlements = selectKnownSettlements(spine.store);
+
+        const stateHeading = document.createElement("h4");
+        stateHeading.textContent = "State Warehouses vs Non-State Actor Ledger";
+        const stateSummary = document.createElement("div");
+        stateSummary.className = "ng-hud-stat";
+        const totalStateKg = stateRows.reduce((acc, r) => acc + r.reportedMassKg, 0);
+        stateSummary.textContent = `State Official Ledgers: ${stateRows.length} entries (${Math.round(totalStateKg)} kg tracked across state stores) | Non-State Actors Observed: ${eco?.actors.length ?? 0}`;
+        stateCompareBox.replaceChildren(stateHeading, stateSummary);
+
+        const grouped = new Map<string, NonNullable<typeof eco>["actors"][number][]>();
+        for (const actor of eco?.actors ?? []) {
+          const list = grouped.get(actor.kind) ?? [];
+          list.push(actor);
+          grouped.set(actor.kind, list);
+        }
+
+        const disclosures: HTMLElement[] = [];
+        if (grouped.size === 0) {
+          const empty = document.createElement("p");
+          empty.textContent = "No non-state estates, merchant houses, guilds, or syndicates observed yet.";
+          disclosures.push(empty);
+        } else {
+          for (const [kind, list] of grouped.entries()) {
+            const { details, body } = buildDisclosure(
+              document,
+              `${kind} (${list.length})`,
+              `Non-State ${kind}`,
+              true,
+            );
+            details.setAttribute("data-actor-kind-group", kind);
+            const ul = document.createElement("ul");
+            ul.className = "ng-ledger-list";
+            for (const actor of list) {
+              const li = document.createElement("li");
+              li.className = "ng-ledger-row";
+              const info = document.createElement("span");
+              info.textContent = `${actor.name} (${actor.settlementName}) — Capital ${Math.round(actor.workingCapitalCoins)} · Stock ${Math.round(actor.heldMassKg)} kg (Hoarded ${Math.round(actor.hoardedMassKg)} kg) · Carriers ${actor.privateCarriersOwned} own / ${actor.charteredToStateCarriers} chartered · Compliance ${Math.round(actor.compliance01 * 100)}%`;
+              const badge = createProvenanceBadgeElement(document, {
+                currentTick,
+                observedTick: actor.observedTick,
+                confidence01: actor.confidence01,
+                provenanceLabel: actor.provenanceLabel,
+              });
+              li.append(info, badge);
+              ul.appendChild(li);
+            }
+            body.appendChild(ul);
+            disclosures.push(details);
+          }
+        }
+        actorListBox.replaceChildren(...disclosures);
+
+        const marketHeading = document.createElement("h4");
+        marketHeading.textContent = "Regional Spot Markets & Informal Price Spreads";
+        const marketList = document.createElement("ul");
+        marketList.className = "ng-ledger-list";
+        const markets = eco?.informalMarkets ?? [];
+        if (markets.length === 0) {
+          const empty = document.createElement("li");
+          empty.textContent = "No informal market pricing ledgers received yet.";
+          marketList.appendChild(empty);
+        } else {
+          for (const m of markets) {
+            const li = document.createElement("li");
+            li.className = "ng-ledger-row";
+            const info = document.createElement("span");
+            info.textContent = `${m.settlementName} · ${m.commodityName} — Clearing Index ${m.clearingPriceIndex.toFixed(2)} · Spread +${Math.round(m.blackMarketPremium01 * 100)}% · Hoarded ${Math.round(m.hoardedReserveKg)} kg`;
+            const badge = createProvenanceBadgeElement(document, {
+              currentTick,
+              observedTick: m.observedTick,
+              confidence01: m.confidence01,
+              provenanceLabel: m.provenanceLabel,
+            });
+            li.append(info, badge);
+            marketList.appendChild(li);
+          }
+        }
+        marketListBox.replaceChildren(marketHeading, marketList);
+
+        const congHeading = document.createElement("h4");
+        congHeading.textContent = "Shared Transport Corridor Bottlenecks";
+        const congList = document.createElement("ul");
+        congList.className = "ng-ledger-list";
+        const congested = eco?.congestedEdges ?? [];
+        if (congested.length === 0) {
+          const empty = document.createElement("li");
+          empty.textContent = "No overloaded shared logistics corridors reported.";
+          congList.appendChild(empty);
+        } else {
+          for (const edge of congested) {
+            const li = document.createElement("li");
+            li.className = "ng-ledger-row";
+            li.textContent = `Edge ${edge.edgeId} (Cell ${edge.fromCellId} -> Cell ${edge.toCellId}) — Flow ${edge.hourlyFlowTonnes.toFixed(1)}t / Cap ${edge.capacityTonnes.toFixed(1)}t · Congestion ${edge.congestionMultiplier.toFixed(2)}x`;
+            congList.appendChild(li);
+          }
+        }
+        congestionListBox.replaceChildren(congHeading, congList);
+
+        if (gov) {
+          const inertiaPct = Math.round(gov.adaptationProgress01 * 100);
+          const heading = document.createElement("h4");
+          heading.textContent = `Active Governance: ${gov.activeModelName}`;
+          const stats = document.createElement("div");
+          stats.className = "ng-hud-stat";
+          stats.textContent = `Policy: ${gov.activePolicyName} (${Math.round(gov.taxOrTributeRate01 * 100)}%) · Reform Inertia ${inertiaPct}% · Skimming Leakage ${Math.round(gov.skimmingLeakageFraction * 100)}% · Capture Incidents ${gov.bureaucraticCaptureEvents} · Chartered Carriers ${gov.charteredCarriersTotal}`;
+          const inertiaBar = document.createElement("div");
+          inertiaBar.className = "ng-inertia-bar";
+          inertiaBar.setAttribute("role", "progressbar");
+          inertiaBar.setAttribute("aria-valuemin", "0");
+          inertiaBar.setAttribute("aria-valuemax", "100");
+          inertiaBar.setAttribute("aria-valuenow", String(inertiaPct));
+          inertiaBar.setAttribute("aria-label", "Governance reform adaptation progress");
+          const fill = document.createElement("div");
+          fill.className = "ng-inertia-bar-fill";
+          fill.style.width = `${inertiaPct}%`;
+          inertiaBar.appendChild(fill);
+          govSummaryBox.replaceChildren(heading, stats, inertiaBar);
+
+          syncSelectOptions(
+            modelSelect,
+            gov.availableModels.map((m) => ({
+              value: m.modelKey,
+              label: `${m.displayName} (Attn ${m.baseAttentionCapacity})`,
+            })),
+          );
+          syncSelectOptions(
+            policySelect,
+            gov.availablePolicies.map((p) => ({
+              value: p.policyKey,
+              label: `${p.displayName} (${Math.round(p.taxOrTributeRate01 * 100)}%)`,
+            })),
+          );
+        } else {
+          const wait = document.createElement("div");
+          wait.className = "ng-hud-stat";
+          wait.textContent = "Awaiting governance ledger telemetry.";
+          govSummaryBox.replaceChildren(wait);
+        }
+
+        syncSelectOptions(
+          charterSettlementSelect,
+          settlements.map((s) => ({
+            value: String(s.settlementId),
+            label: `${s.settlementName} (Cell ${s.cellId})`,
+          })),
+        );
+      };
+
+      render();
+      container.replaceChildren(tabGroup.root);
+      const unsub = spine.store.subscribe(render);
+      return unsub;
+    },
+  };
+}
+
+/**
+ * Diegetic Empirical Archive, Demonstrated Know-How, Treatises & 4-Carrier Fragility Monitor
+ * (`UI-DAT-007.1`, `UI-DAT-007.2`). Never renders unresearched future tech nodes or global science points.
+ */
+export function createKnowledgeArchiveWindowPlugin(): WindowContentPlugin {
+  return {
+    pluginId: "knowledge_archive",
+    defaultTitle: "Empirical Archive & Fragility",
+    minWidth: 480,
+    minHeight: 360,
+    hotkey: "k",
+    mountContent(container, _instanceKey, spine) {
+      const tabGroup = createAccessibleTabGroup(document, {
+        prefix: "knowledge-archive",
+        ariaLabel: "Empirical Knowledge Archive Sections",
+        tabs: [
+          { key: "capabilities", label: "Know-How & Fragility" },
+          { key: "treatises", label: "Materials & Treatises" },
+          { key: "patents", label: "Patents & Mode" },
+        ],
+      });
+
+      const capHost = tabGroup.panelInnerByKey.get("capabilities")!;
+      const treatiseHost = tabGroup.panelInnerByKey.get("treatises")!;
+      const patentsHost = tabGroup.panelInnerByKey.get("patents")!;
+
+      const patentSummaryBox = document.createElement("div");
+      const modeFormBox = document.createElement("div");
+      modeFormBox.className = "ng-responsive-grid";
+
+      const modeSettlementSelect = document.createElement("select");
+      modeSettlementSelect.className = "ng-select";
+      modeSettlementSelect.setAttribute("data-innovation-settlement-select", "true");
+      modeSettlementSelect.setAttribute("aria-label", "Settlement for innovation mode");
+
+      const modeKeySelect = document.createElement("select");
+      modeKeySelect.className = "ng-select";
+      modeKeySelect.setAttribute("data-innovation-mode-select", "true");
+      modeKeySelect.setAttribute("aria-label", "Innovation institution mode");
+
+      const modeSubmitBtn = document.createElement("button");
+      modeSubmitBtn.type = "button";
+      modeSubmitBtn.className = "ng-btn ng-btn-primary";
+      modeSubmitBtn.setAttribute("data-innovation-submit", "true");
+      modeSubmitBtn.textContent = "Set Innovation Mode";
+
+      const modeStatus = document.createElement("div");
+      modeStatus.className = "ng-hud-stat";
+      modeStatus.setAttribute("role", "status");
+
+      modeFormBox.append(modeSettlementSelect, modeKeySelect, modeSubmitBtn, modeStatus);
+      patentsHost.append(patentSummaryBox, modeFormBox);
+
+      modeSubmitBtn.addEventListener("click", () => {
+        const settlement = Number.parseInt(modeSettlementSelect.value, 10);
+        if (!Number.isInteger(settlement) || settlement < 0 || !modeKeySelect.value) return;
+        spine.bus.emit({
+          kind: "DispatchSimCommand",
+          command: { kind: "setInnovationMode", settlement, modeKey: modeKeySelect.value },
+        });
+        spine.bus.emit({ kind: "PlayUiFoley", cueId: "seal_stamp" });
+        modeStatus.textContent = `Updated settlement ${settlement} innovation mode to ${modeKeySelect.value}`;
+      });
+
+      const render = () => {
+        const snap = spine.store.getSnapshot();
+        const currentTick = snap?.clockAndNotifications.tick ?? 0;
+        const knowledge = selectKnowledge(spine.store);
+        const ledgerRows = selectLedgerRows(spine.store);
+
+        const capChildren: HTMLElement[] = [];
+        const treatiseChildren: HTMLElement[] = [];
+        const patentChildren: HTMLElement[] = [];
+
+        const assayedHeading = document.createElement("h4");
+        assayedHeading.textContent = "Empirically Assayed Stockpiles & Materials";
+        const assayedList = document.createElement("ul");
+        assayedList.className = "ng-ledger-list";
+        for (const row of ledgerRows.slice(0, 10)) {
+          const li = document.createElement("li");
+          li.className = "ng-ledger-row";
+          const txt = document.createElement("span");
+          txt.textContent = `${row.settlementName} · ${row.commodityName} — Reported ${Math.round(row.reportedMassKg)} kg [${Math.round(row.minEstKg)}..${Math.round(row.maxEstKg)}]`;
+          const badge = createProvenanceBadgeElement(document, {
+            currentTick,
+            observedTick: row.observedTick,
+            confidence01: row.confidence01 ?? 0.85,
+            provenanceLabel: row.provenanceLabel,
+            reporterName: row.reporterName,
+          });
+          li.append(txt, badge);
+          assayedList.appendChild(li);
+        }
+        treatiseChildren.push(assayedHeading, assayedList);
+
+        if (!knowledge || knowledge.settlements.length === 0) {
+          const p = document.createElement("p");
+          p.textContent = "No demonstrated craft capabilities or treatises archived yet.";
+          capChildren.push(p);
+          patentSummaryBox.replaceChildren(p.cloneNode(true));
+        } else {
+          const allCarriers = knowledge.carriers;
+          for (const st of knowledge.settlements) {
+            const stCard = document.createElement("section");
+            stCard.className = "ng-subordinate-card";
+            stCard.setAttribute("data-knowledge-settlement", String(st.settlementId));
+
+            const stHead = document.createElement("div");
+            stHead.className = "ng-ledger-row";
+            const stTitle = document.createElement("strong");
+            stTitle.textContent = `${st.settlementName} — Mode: ${st.innovationModeKey}`;
+            const stProv = createProvenanceBadgeElement(document, {
+              currentTick,
+              observedTick: st.observedTick,
+              confidence01: st.confidence01,
+              provenanceLabel: st.provenanceLabel,
+            });
+            stHead.append(stTitle, stProv);
+            stCard.appendChild(stHead);
+
+            const demonstrated = st.knowHow.filter((kh) => kh.knowHow01 > 0);
+            if (demonstrated.length === 0) {
+              const none = document.createElement("div");
+              none.className = "ng-hud-stat";
+              none.textContent = "No demonstrated physical components yet.";
+              stCard.appendChild(none);
+            } else {
+              const ul = document.createElement("ul");
+              ul.className = "ng-ledger-list";
+              for (const kh of demonstrated) {
+                const matching = allCarriers.filter(
+                  (c) => c.settlementId === st.settlementId && c.componentKey === kh.componentKey,
+                );
+                const presentKindCount = KNOWN_CARRIER_KINDS.filter((spec) =>
+                  matching.some((m) => m.carrierKind === spec.kind && m.retentionStrength01 > 0),
+                ).length;
+                const carrierBreakdown = KNOWN_CARRIER_KINDS.map((spec) => {
+                  const count = matching.filter((m) => m.carrierKind === spec.kind).length;
+                  return `${spec.label} ${count}`;
+                }).join(" | ");
+
+                const li = document.createElement("li");
+                li.className = "ng-ledger-row";
+                li.setAttribute("data-component-key", kh.componentKey);
+
+                const descSpan = document.createElement("span");
+                descSpan.textContent = `${kh.displayName} (Mastery ${Math.round(kh.knowHow01 * 100)}%) — Carriers: ${carrierBreakdown}`;
+
+                const fragilityBadge = document.createElement("span");
+                fragilityBadge.className = "ng-fragility-badge";
+                if (presentKindCount <= 1) {
+                  fragilityBadge.setAttribute("data-fragility-risk", "endangered");
+                  fragilityBadge.textContent =
+                    presentKindCount === 0
+                      ? "Endangered: Zero Active Carriers"
+                      : "Endangered: Single-Carrier Extinction Risk";
+                } else {
+                  fragilityBadge.setAttribute("data-fragility-risk", "replicated");
+                  fragilityBadge.textContent = `Replicated (${presentKindCount}/4 Carriers)`;
+                }
+
+                li.append(descSpan, fragilityBadge);
+                ul.appendChild(li);
+              }
+              stCard.appendChild(ul);
+            }
+            capChildren.push(stCard);
+
+            const trCard = document.createElement("section");
+            trCard.className = "ng-subordinate-card";
+            const trHead = document.createElement("strong");
+            trHead.textContent = `${st.settlementName} — Published Know-Why Treatises (Bottleneck ${Math.round(st.bottleneckPressure01 * 100)}% · Leisure ${Math.round(st.leisureSurplus01 * 100)}%)`;
+            trCard.appendChild(trHead);
+            const activeDomains = st.knowWhy.filter((d) => d.knowWhy01 > 0);
+            const domUl = document.createElement("ul");
+            domUl.className = "ng-ledger-list";
+            for (const dom of activeDomains) {
+              const li = document.createElement("li");
+              li.textContent = `${dom.displayName}: ${Math.round(dom.knowWhy01 * 100)}% formalized`;
+              domUl.appendChild(li);
+            }
+            if (activeDomains.length === 0) {
+              const empty = document.createElement("li");
+              empty.textContent = "Empirical practice only; zero formalized treatises published yet.";
+              domUl.appendChild(empty);
+            }
+            trCard.appendChild(domUl);
+            treatiseChildren.push(trCard);
+
+            const patLine = document.createElement("div");
+            patLine.className = "ng-subordinate-card";
+            patLine.textContent = `${st.settlementName} — Active Patent Holder: ${st.activePatentHolderActorId ?? "None"} · Expiry Tick: ${st.patentExpiryTick ?? "N/A"} · Knowledge Regression Losses: ${st.regressionLosses}`;
+            patentChildren.push(patLine);
+          }
+
+          syncSelectOptions(
+            modeSettlementSelect,
+            knowledge.settlements.map((s) => ({
+              value: String(s.settlementId),
+              label: s.settlementName,
+            })),
+          );
+          syncSelectOptions(
+            modeKeySelect,
+            knowledge.availableModes.map((m) => ({
+              value: m,
+              label: m,
+            })),
+          );
+          patentSummaryBox.replaceChildren(...patentChildren);
+        }
+
+        capHost.replaceChildren(...capChildren);
+        treatiseHost.replaceChildren(...treatiseChildren);
+      };
+
+      render();
+      container.replaceChildren(tabGroup.root);
+      const unsub = spine.store.subscribe(render);
+      return unsub;
     },
   };
 }

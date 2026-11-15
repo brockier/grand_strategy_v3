@@ -2,8 +2,8 @@
 
 **Module ID:** `ENG-WTH-05`  
 **Code Location:** `code/engine/crates/sim-weather/`  
-**Milestone & Design Depth:** `M1–M3: Full Detailed Design`  
-**Satisfies Requirements:** `ENG-WTH-001`, `ENG-WTH-002`, `ENG-WTH-003`, `ENG-WTH-004`, `ENG-WTH-005` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
+**Milestone & Design Depth:** `M1–M3 & M7: Full Detailed Design`  
+**Satisfies Requirements:** `ENG-WTH-001`, `ENG-WTH-002`, `ENG-WTH-003`, `ENG-WTH-004`, `ENG-WTH-005`, `ENG-WAR-004.1`, `ENG-WAR-004.2` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
 ---
 
@@ -21,7 +21,7 @@
 
 ## 2. Encapsulated Internal State & Data Layout
 
-`WeatherArena` stores flat Structure-of-Arrays (`SoA`) buffers indexed by `CellId.0` so hourly full-globe loops stay L1/L2 cache-friendly and parallelizable:
+`WeatherArena` stores flat Structure-of-Arrays (`SoA`) buffers indexed by spherical terrain sample node `CellId.0` so hourly full-globe loops stay L1/L2 cache-friendly and parallelizable while supporting continuous spherical interpolation (`sample_weather_at_unit_xyz`) for hex-free movement and operational warfare:
 
 ```rust
 pub struct WeatherSoA {

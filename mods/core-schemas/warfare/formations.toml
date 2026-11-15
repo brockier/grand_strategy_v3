@@ -5,3 +5,27 @@ personnel_count = 35
 required_vocation = "courier"
 equipment_commodity = "wrought_iron"
 equipment_kg_per_troop = 8.0
+
+[[formation_templates]]
+id = "line_infantry_battalion"
+display_name = "Line Infantry Battalion"
+personnel_count = 120
+required_vocation = "artificer"
+equipment_commodity = "wrought_iron"
+equipment_kg_per_troop = 11.5
+
+[[formation_templates]]
+id = "pioneer_sapper_company"
+display_name = "Pioneer Engineering & Bridging Company"
+personnel_count = 60
+required_vocation = "miner"
+equipment_commodity = "forged_hand_tools"
+equipment_kg_per_troop = 14.0
+
+[[formation_templates]]
+id = "mounted_recon_squadron"
+display_name = "Outrider Reconnaissance Squadron"
+personnel_count = 45
+required_vocation = "courier"
+equipment_commodity = "wrought_iron"
+equipment_kg_per_troop = 7.0

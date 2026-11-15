@@ -29,7 +29,41 @@ export type ValidatedCommand =
       readonly kind: "updateNotificationRule";
       readonly eventClassKey: string;
       readonly behavior: string;
-    };
+    }
+  | {
+      readonly kind: "switchGovernanceModel";
+      readonly modelKey: string;
+    }
+  | {
+      readonly kind: "enactEconomicPolicy";
+      readonly policyKey: string;
+      readonly rateOverride01: number | null;
+    }
+  | {
+      readonly kind: "charterPrivateCarriers";
+      readonly targetSettlement: number;
+      readonly count: number;
+    }
+  | {
+      readonly kind: "setInnovationMode";
+      readonly settlement: number;
+      readonly modeKey: string;
+    }
+  | {
+      readonly kind: "issueTheaterDirective";
+      readonly theaterId: number;
+      readonly commander: number;
+      readonly objectiveCell: number;
+      readonly supplyPriority01: number;
+    }
+  | {
+      readonly kind: "issueOperationalBattlePlan";
+      readonly formationId: number;
+      readonly targetCell: number;
+      readonly doctrineKey: string;
+      readonly noRetreat: boolean;
+    }
+  | { readonly kind: "acknowledgeSuccession" };
 
 export type CommandParseResult =
   | { readonly ok: true; readonly command: ValidatedCommand }
@@ -214,6 +248,200 @@ export function parsePlayerCommand(payload: unknown): CommandParseResult {
           eventClassKey: obj.eventClassKey,
           behavior: obj.behavior,
         },
+      };
+    case "switchGovernanceModel":
+      if (
+        keys.length !== 2 ||
+        typeof obj.modelKey !== "string" ||
+        obj.modelKey.length === 0 ||
+        obj.modelKey.length > 64
+      ) {
+        return {
+          ok: false,
+          errorCode: "INVALID_ARGUMENT",
+          message: "switchGovernanceModel requires non-empty string 'modelKey' (1..64)",
+        };
+      }
+      return {
+        ok: true,
+        command: {
+          kind: "switchGovernanceModel",
+          modelKey: obj.modelKey,
+        },
+      };
+    case "enactEconomicPolicy": {
+      const allowedKeys = keys.every((k) => k === "kind" || k === "policyKey" || k === "rateOverride01");
+      if (
+        !allowedKeys ||
+        (keys.length !== 2 && keys.length !== 3) ||
+        typeof obj.policyKey !== "string" ||
+        obj.policyKey.length === 0 ||
+        obj.policyKey.length > 64
+      ) {
+        return {
+          ok: false,
+          errorCode: "INVALID_ARGUMENT",
+          message: "enactEconomicPolicy requires non-empty string 'policyKey' and optional 'rateOverride01'",
+        };
+      }
+      if (
+        obj.rateOverride01 !== undefined &&
+        obj.rateOverride01 !== null &&
+        (typeof obj.rateOverride01 !== "number" ||
+          !Number.isFinite(obj.rateOverride01) ||
+          obj.rateOverride01 < 0 ||
+          obj.rateOverride01 > 1)
+      ) {
+        return {
+          ok: false,
+          errorCode: "OUT_OF_RANGE",
+          message: "enactEconomicPolicy rateOverride01 must be finite 0..1 or null",
+        };
+      }
+      return {
+        ok: true,
+        command: {
+          kind: "enactEconomicPolicy",
+          policyKey: obj.policyKey,
+          rateOverride01: obj.rateOverride01 === undefined ? null : (obj.rateOverride01 as number | null),
+        },
+      };
+    }
+    case "charterPrivateCarriers":
+      if (
+        keys.length !== 3 ||
+        typeof obj.targetSettlement !== "number" ||
+        !Number.isInteger(obj.targetSettlement) ||
+        obj.targetSettlement < 0 ||
+        typeof obj.count !== "number" ||
+        !Number.isInteger(obj.count) ||
+        obj.count < 1 ||
+        obj.count > 1000
+      ) {
+        return {
+          ok: false,
+          errorCode: "INVALID_ARGUMENT",
+          message: "charterPrivateCarriers requires targetSettlement >= 0 and integer count 1..1000",
+        };
+      }
+      return {
+        ok: true,
+        command: {
+          kind: "charterPrivateCarriers",
+          targetSettlement: obj.targetSettlement,
+          count: obj.count,
+        },
+      };
+    case "setInnovationMode":
+      if (
+        keys.length !== 3 ||
+        typeof obj.settlement !== "number" ||
+        !Number.isInteger(obj.settlement) ||
+        obj.settlement < 0 ||
+        typeof obj.modeKey !== "string" ||
+        obj.modeKey.length === 0 ||
+        obj.modeKey.length > 64
+      ) {
+        return {
+          ok: false,
+          errorCode: "INVALID_ARGUMENT",
+          message: "setInnovationMode requires settlement >= 0 and non-empty string 'modeKey' (1..64)",
+        };
+      }
+      return {
+        ok: true,
+        command: {
+          kind: "setInnovationMode",
+          settlement: obj.settlement,
+          modeKey: obj.modeKey,
+        },
+      };
+    case "issueTheaterDirective":
+      if (
+        keys.length !== 5 ||
+        typeof obj.theaterId !== "number" ||
+        !Number.isInteger(obj.theaterId) ||
+        obj.theaterId < 0 ||
+        typeof obj.commander !== "number" ||
+        !Number.isInteger(obj.commander) ||
+        obj.commander < 0 ||
+        typeof obj.objectiveCell !== "number" ||
+        !Number.isInteger(obj.objectiveCell) ||
+        obj.objectiveCell < 0 ||
+        typeof obj.supplyPriority01 !== "number" ||
+        !Number.isFinite(obj.supplyPriority01) ||
+        obj.supplyPriority01 < 0 ||
+        obj.supplyPriority01 > 1
+      ) {
+        return {
+          ok: false,
+          errorCode: "INVALID_ARGUMENT",
+          message: "issueTheaterDirective requires theaterId >= 0, commander >= 0, objectiveCell >= 0, supplyPriority01 0..1",
+        };
+      }
+      return {
+        ok: true,
+        command: {
+          kind: "issueTheaterDirective",
+          theaterId: obj.theaterId,
+          commander: obj.commander,
+          objectiveCell: obj.objectiveCell,
+          supplyPriority01: obj.supplyPriority01,
+        },
+      };
+    case "issueOperationalBattlePlan":
+      if (
+        keys.length !== 5 ||
+        typeof obj.formationId !== "number" ||
+        !Number.isInteger(obj.formationId) ||
+        obj.formationId < 0 ||
+        typeof obj.targetCell !== "number" ||
+        !Number.isInteger(obj.targetCell) ||
+        obj.targetCell < 0 ||
+        typeof obj.doctrineKey !== "string" ||
+        obj.doctrineKey.length === 0 ||
+        obj.doctrineKey.length > 64 ||
+        typeof obj.noRetreat !== "boolean"
+      ) {
+        return {
+          ok: false,
+          errorCode: "INVALID_ARGUMENT",
+          message: "issueOperationalBattlePlan requires formationId >= 0, targetCell >= 0, doctrineKey, boolean noRetreat",
+        };
+      }
+      return {
+        ok: true,
+        command: {
+          kind: "issueOperationalBattlePlan",
+          formationId: obj.formationId,
+          targetCell: obj.targetCell,
+          doctrineKey: obj.doctrineKey,
+          noRetreat: obj.noRetreat,
+        },
+      };
+    case "acknowledgeSuccession":
+      if (keys.length !== 1) {
+        return {
+          ok: false,
+          errorCode: "INVALID_ARGUMENT",
+          message: "acknowledgeSuccession takes no extra fields",
+        };
+      }
+      return {
+        ok: true,
+        command: { kind: "acknowledgeSuccession" },
+      };
+    case "issueTacticalMicroCommand":
+      return {
+        ok: false,
+        errorCode: "ERR_TACTICAL_MICRO_FORBIDDEN",
+        message: "Individual tactical unit micro is forbidden; issue operational directives or battle plans.",
+      };
+    case "buyOrSelectTechTarget":
+      return {
+        ok: false,
+        errorCode: "ERR_BOUGHT_TECH_FORBIDDEN",
+        message: "Technology targets cannot be bought or pre-selected.",
       };
     default:
       return { ok: false, errorCode: "UNAUTHORIZED_COMMAND", message: `Unknown command kind '${String(obj.kind)}'` };

@@ -19,8 +19,8 @@
 
 Every requirement block carries one of four normative lifecycle statuses:
 
-1. `Active` — Normative, implementable leaf requirement enforced by automated tests at or after its target `Milestone` (`M0` through `M4` in the current specification baseline).
-2. `Draft` — High-level system-contract requirement (`M5` through `M7` in the current baseline) reserved for decomposition into `Active` dot-suffixed leaf requirements prior to implementing its target milestone.
+1. `Active` — Normative, implementable leaf requirement enforced by automated tests at or after its target `Milestone` (`M0` through `M7` in the current specification baseline).
+2. `Draft` — High-level system-contract requirement reserved for decomposition into `Active` dot-suffixed leaf requirements prior to implementing its target milestone.
 3. `Superseded` — Former requirement split into child identifiers or replaced by revised identifiers explicitly listed in `Lineage: Superseded-By: <ID-list>`. Automated tests MUST migrate from superseded identifiers to their replacements.
 4. `Removed` — Permanently retired requirement moved to or cross-referenced inside Section 15 (`Retired & Superseded Requirements Registry`) with `Lineage: Removed-Reason: <rationale>`. Automated tests referencing any `Removed` identifier fail traceability validation.
 
@@ -191,12 +191,21 @@ Every requirement block carries one of four normative lifecycle statuses:
 
 ### ENG-GEO-001: Closed Goldberg Polyhedron Geodesic Sphere Topology
 - **ID:** `ENG-GEO-001`
+- **Status:** `Superseded`
+- **Milestone:** `M1`
+- **Verification Layer:** `Property-Sim`
+- **Lineage:** `Superseded-By: ENG-GEO-001.1`
+- **Requirement:** Planetary geography SHALL be tessellated as a closed geodesic Goldberg polyhedron composed exclusively of hexagonal cells and exactly 12 pentagonal cells, enforcing symmetric neighbor adjacency, continuous great-circle distance metrics, and zero polar distortion singularities.
+- **Acceptance Criteria:** Superseded by continuous hex-free spherical field architecture (`ENG-GEO-001.1`) while preserving underlying sample-graph Euler and area conservation invariants.
+
+### ENG-GEO-001.1: Continuous Spherical Terrain Field & Natural Watershed Regions Without Hexagonal Tiling
+- **ID:** `ENG-GEO-001.1`
 - **Status:** `Active`
 - **Milestone:** `M1`
 - **Verification Layer:** `Property-Sim`
-- **Lineage:** `Origin`
-- **Requirement:** Planetary geography SHALL be tessellated as a closed geodesic Goldberg polyhedron composed exclusively of hexagonal cells and exactly 12 pentagonal cells, enforcing symmetric neighbor adjacency, continuous great-circle distance metrics, and zero polar distortion singularities.
-- **Acceptance Criteria:** Topology invariants verify across all supported subdivision levels that Euler characteristic equals `2`, pentagon count equals `12`, all remaining cells have degree `6`, neighbor symmetry holds (`A in neighbors(B) <=> B in neighbors(A)`), and cell area ratio stays bounded within theoretical Goldberg tolerances.
+- **Lineage:** `Supersedes: ENG-GEO-001`
+- **Requirement:** Planetary geography SHALL be represented on a closed unit sphere underpinned by a welded subdivided icosahedral sample manifold (`10 * m^2 + 2` sample nodes, `20 * m^2` spherical triangles, Euler characteristic `2`, zero exposed hexagonal tiles), providing continuous barycentric/inverse-angular terrain interpolation `sample_elevation_at_unit_xyz`, fast `nearest_sample_cell` lookup, symmetric sample adjacency, and deterministic natural watershed region groupings.
+- **Acceptance Criteria:** Topology invariants verify `triangle_count == 20 * m^2`, Euler `V - E + F == 2`, symmetric sample adjacency, surface area within `0.01%` of `4 * pi * R^2`, smooth continuous elevation sampling across triangle interiors, and natural watershed region labels without hexagonal tile lock.
 
 ### ENG-GEO-002: Tectonic Plate Simulation Generating Elevation & Basins
 - **ID:** `ENG-GEO-002`
@@ -410,21 +419,75 @@ Every requirement block carries one of four normative lifecycle statuses:
 
 ### ENG-CMD-006: Multi-Layer Organizational Hierarchy Frictions
 - **ID:** `ENG-CMD-006`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M5`
 - **Verification Layer:** `Property-Sim`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-CMD-006.1, ENG-CMD-006.2, ENG-CMD-006.3, ENG-CMD-006.4`
 - **Requirement:** Multi-tier bureaucratic hierarchies SHALL impose compounding signal lag and filtering across depth, Goodhart metric gaming on uninspected quantitative quotas, non-productive clerical labor and food overhead, and institutional inertia resisting structural reforms.
-- **Acceptance Criteria:** Decompose prior to `M5` into leaf `.1`–`.4` requirements verifying signal attenuation per hop, brittle/slag metric gaming under uninspected tonnage quotas, clerical consumption ratios, and reform resistance penalties.
+- **Acceptance Criteria:** Decomposed into leaf requirements `ENG-CMD-006.1` through `ENG-CMD-006.4`.
+
+### ENG-CMD-006.1: Hierarchy Hop Signal Lag & Upward Bad-News Filtering
+- **ID:** `ENG-CMD-006.1`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Property-Sim`
+- **Lineage:** `Parent: ENG-CMD-006`
+- **Requirement:** Passing directives downward and reports upward across hierarchical tiers SHALL impose cumulative per-hop latency (`hop_count * hierarchy_hop_latency_hours`) and upward bad-news attenuation when intermediate officials possess sycophantic bias.
+- **Acceptance Criteria:** Property tests comparing 1-hop direct supervision against 3-hop bureaucratic routing under equal spatial separation assert strictly longer turnaround delay and softened shortfall reporting across extra hops.
+
+### ENG-CMD-006.2: Goodhart Metric Gaming Under Uninspected Quotas
+- **ID:** `ENG-CMD-006.2`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Property-Sim`
+- **Lineage:** `Parent: ENG-CMD-006`
+- **Requirement:** Quantitative output quotas enforced without active physical inspection or audit SHALL induce subordinates to inflate nominal delivered mass at the expense of batch purity and tool/shaft wear until an inspection or audit triggers enforcement.
+- **Acceptance Criteria:** Controlled tests issuing high uninspected tonnage quotas show nominal tonnage targets met alongside falling average batch purity and rising equipment wear compared to audited facilities.
+
+### ENG-CMD-006.3: Non-Productive Clerical Overhead Draw
+- **ID:** `ENG-CMD-006.3`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Property-Sim`
+- **Lineage:** `Parent: ENG-CMD-006`
+- **Requirement:** Every active mandate and administrative bureau under clerical coordination SHALL consume proportional literate clerical labor hours and physical staple rations per day without directly extracting raw commodities.
+- **Acceptance Criteria:** Switching from low-overhead patrimonial supervision to multi-bureau standardized administration measurably increases daily grain/wage draw per supervised settlement proportional to `clerical_overhead_per_mandate`.
+
+### ENG-CMD-006.4: Institutional Reform Inertia Delay & Opposition
+- **ID:** `ENG-CMD-006.4`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-CMD-006`
+- **Requirement:** Switching governance models or abolishing vested offices SHALL incur deterministic institutional inertia (transition delay hours and temporary efficiency depression proportional to incumbent bureau depth and local official resistance).
+- **Acceptance Criteria:** Triggering a governance reform on an entrenched bureaucracy enforces a non-zero transition stabilization period with temporary productivity friction before the new coordination weights settle.
 
 ### ENG-CMD-007: Five Governance & Coordination Models Shifting Friction Profiles
 - **ID:** `ENG-CMD-007`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M5`
 - **Verification Layer:** `Integration`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-CMD-007.1, ENG-CMD-007.2`
 - **Requirement:** Externalized governance models (Direct Personal/Patrimonial Rule, Devolved Fiefs/Tax Farming, Standardized State Bureaucracy, Guilds/Chartered Monopolies, and Open Markets/Contracts/Patents) SHALL shift which organizational frictions dominate without ever eliminating systemic friction.
-- **Acceptance Criteria:** Decompose prior to `M5` into leaf requirements testing distinct operational strengths, overhead burdens, skimming risks, output-restriction behaviors, and succession shocks for each of the five models.
+- **Acceptance Criteria:** Decomposed into leaf requirements `ENG-CMD-007.1` and `ENG-CMD-007.2`.
+
+### ENG-CMD-007.1: Externalized Five Governance Model Definitions
+- **ID:** `ENG-CMD-007.1`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Schema-Validation`
+- **Lineage:** `Parent: ENG-CMD-007`
+- **Requirement:** `sim-data` and `sim-plug-private-eco` SHALL load and activate all five externalized governance models (`patrimonial_rule`, `devolved_fiefs`, `state_bureaucracy`, `chartered_guilds`, `open_markets_patents`) with zero hardcoded governance branches.
+- **Acceptance Criteria:** Integration tests switch an active campaign cleanly across all five loaded governance models from `mods/core-schemas/governance/institutions.toml` and verify valid Attention, clerical overhead, and hop latency updates.
+
+### ENG-CMD-007.2: Non-Eliminable Trade-Off Matrix Across Governance Models
+- **ID:** `ENG-CMD-007.2`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Property-Sim`
+- **Lineage:** `Parent: ENG-CMD-007`
+- **Requirement:** Each of the five governance models SHALL shift the dominant friction vector—patrimonial low overhead versus scale collapse, fief low overhead versus skimming, bureaucracy scale versus clerical/Goodhart drag, guilds quality versus output restriction, and markets low state Attention versus price volatility—never reducing total structural friction to zero.
+- **Acceptance Criteria:** Comparative benchmarks running identical settlement workloads across all five models prove monotonic trade-offs where the minimum-overhead model suffers higher skimming/scale failure and the highest-capacity model suffers higher clerical overhead.
 
 ---
 
@@ -477,12 +540,30 @@ Every requirement block carries one of four normative lifecycle statuses:
 
 ### ENG-POP-006: Mortal Leader Aging & Generational Succession Continuity
 - **ID:** `ENG-POP-006`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M7`
 - **Verification Layer:** `Integration`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-POP-006.1, ENG-POP-006.2`
 - **Requirement:** Player character death, retirement, or political deposition SHALL invoke externalized succession rules selecting an heir, elected magistrate, or factional successor who inherits strictly the physical cartographic archive, physical ledgers, existing institutions, debts, and entrenched officials without hidden player memory transfer.
-- **Acceptance Criteria:** Decompose prior to `M7` into leaf requirements proving unrecorded oral/head knowledge loss on sudden leader death and exact archival continuity into successor play.
+- **Acceptance Criteria:** Decomposed into leaf requirements `ENG-POP-006.1` and `ENG-POP-006.2`.
+
+### ENG-POP-006.1: Mortal Player Ruler Aging, Mortality & Externalized Succession Trigger
+- **ID:** `ENG-POP-006.1`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-POP-006`
+- **Requirement:** The player ruler SHALL age chronologically with calendar time, accumulate health/campaign mortality risk, and trigger deterministic generational succession governed by active external `SuccessionRuleRecord` definitions (`council_senior_appointee`, `hereditary_charter_heir`, `elected_magistrate`), pausing the clock via `leader_succession` notification.
+- **Acceptance Criteria:** Simulating multi-decade progression or mortal hazard triggers deterministic ruler demise, selects an eligible successor matching the active mod succession rule, and sets `ClockRunMode::AutoPaused`.
+
+### ENG-POP-006.2: Physical-Only Archive Inheritance & Unrecorded Head-Memory Loss
+- **ID:** `ENG-POP-006.2`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-POP-006`
+- **Requirement:** Upon succession, the incoming ruler SHALL inherit strictly the recorded `PlayerKnowledgeArchive` survey stamps, physical commodity ledgers, standing institutions, private credit/debts, and named officials—while losing personal unrecorded observations held solely in the deceased ruler's head and incurring `transition_disruption_hours` administrative lag.
+- **Acceptance Criteria:** Succession tests record surveyed maps and paper ledgers alongside unrecorded personal ruler notes before succession, confirming 100% map/ledger continuity and zero retention of unrecorded personal notes post-succession.
 
 ---
 
@@ -526,30 +607,102 @@ Every requirement block carries one of four normative lifecycle statuses:
 
 ### ENG-ECO-005: Autonomous Non-State Institutional Economic Actors
 - **ID:** `ENG-ECO-005`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M5`
 - **Verification Layer:** `Integration`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-ECO-005.1, ENG-ECO-005.2, ENG-ECO-005.3, ENG-ECO-005.4`
 - **Requirement:** Non-state economy execution SHALL instantiate explicit Households/Smallholders, Landed Estates/Clans, Merchant Houses/Hauling Guilds, and Syndicates/Craft Guilds/Chartered Companies operating persistent physical inventories, credit/capital ledgers, autonomous inter-regional price arbitrage, and capital expansion projects.
-- **Acceptance Criteria:** Decompose prior to `M5` into per-actor-class `.1`–`.4` requirements proving autonomous caravan dispatch on price spreads, estate hoarding under scarcity, and syndicate mine investment without state direction.
+- **Acceptance Criteria:** Decomposed into per-actor-class leaf requirements `ENG-ECO-005.1` through `ENG-ECO-005.4`.
+
+### ENG-ECO-005.1: Households & Smallholders Subsistence Retention & Residual Trade
+- **ID:** `ENG-ECO-005.1`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-ECO-005`
+- **Requirement:** Household/Smallholder actors SHALL reserve subsistence calories, heating fuel, and personal tool replacement before offering residual surplus into local exchange or paying rent obligations.
+- **Acceptance Criteria:** Reducing household grain holdings near subsistence threshold shrinks market sell offers to zero while high harvests release measurable surplus onto the local settlement price board.
+
+### ENG-ECO-005.2: Landed Estates & Clans Rent Extraction, Hoarding & Audit Resistance
+- **ID:** `ENG-ECO-005.2`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-ECO-005`
+- **Requirement:** Landed Estate actors SHALL collect in-kind crop shares and labor dues, withhold buffer grain during rising famine risk (hoarding), and inject downward reporting undercounts against central tax/census scrutiny.
+- **Acceptance Criteria:** Under rising grain scarcity, estate private granary stocks expand faster than spot sales and reported estate taxable yield trails actual ledger mass until audited.
+
+### ENG-ECO-005.3: Merchant Houses Autonomous Spatial Price-Arbitrage Caravans
+- **ID:** `ENG-ECO-005.3`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-ECO-005`
+- **Requirement:** Merchant House actors SHALL maintain lagged regional price intelligence and autonomously purchase low-price regional surpluses and dispatch real physical caravans (`LogisticsPort`) to sell at profitable destination shortages without player directives.
+- **Acceptance Criteria:** Seeding a two-settlement price disparity greater than carrier haul cost triggers autonomous merchant cargo shipments along connected roads that narrow the inter-settlement price gap upon arrival.
+
+### ENG-ECO-005.4: Syndicates, Guilds & Chartered Companies Autonomous Capital Projects
+- **ID:** `ENG-ECO-005.4`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-ECO-005`
+- **Requirement:** Syndicate and Chartered Guild actors SHALL pool private capital and physical construction inputs to establish and operate autonomous extraction or refining facilities whenever expected commercial margins exceed political/physical risk thresholds.
+- **Acceptance Criteria:** High sustained metal/fuel market prices paired with concession or open-market rules trigger autonomous syndicate facility investments tagged with private `ActorId` ownership on the shared ledger.
 
 ### ENG-ECO-006: Era-Universal Multi-Medium Economic Accounting
 - **ID:** `ENG-ECO-006`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M5`
 - **Verification Layer:** `Property-Sim`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-ECO-006.1, ENG-ECO-006.2`
 - **Requirement:** Economic exchange and settlement clearing SHALL support pure physical barter, in-kind tribute and corvée obligations, commodity coinage, promissory credit, and state allocation quotas under one unified accounting engine without requiring fiat currency from tick `0`.
-- **Acceptance Criteria:** Decompose prior to `M5` into leaf requirements testing pre-currency barter/tribute equilibrium alongside coined and credit-based market clearing.
+- **Acceptance Criteria:** Decomposed into leaf requirements `ENG-ECO-006.1` and `ENG-ECO-006.2`.
+
+### ENG-ECO-006.1: Zero-Currency Barter, Commodity Money, Tribute & Corvee Clearing
+- **ID:** `ENG-ECO-006.1`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Property-Sim`
+- **Lineage:** `Parent: ENG-ECO-006`
+- **Requirement:** Non-state exchange SHALL clear balanced bilateral trades directly in physical goods (barter ratios weighted by local scarcity) and settle in-kind crop tributes and compulsory labor hours when circulating coinage or credit equals zero.
+- **Acceptance Criteria:** Property tests initializing an isolated colony with zero metallic coin or credit balances execute household-artisan exchanges and tribute deliveries while preserving strict physical mass conservation.
+
+### ENG-ECO-006.2: Coinage, Promissory Credit & Command Quota Clearing
+- **ID:** `ENG-ECO-006.2`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Property-Sim`
+- **Lineage:** `Parent: ENG-ECO-006`
+- **Requirement:** When circulating specie or institutional credit accounts exist, merchant houses, syndicates, and state procurement offices SHALL clear multi-party trades across promissory credit balances, specie reserves, and requisitioned quotas on the same underlying batch ledger.
+- **Acceptance Criteria:** Clearing mixed barter, credit settlement, and state purchase contracts conserves total commodity mass and balances net double-entry credit commitments deterministically across all involved `ActorId` accounts.
 
 ### ENG-ECO-007: Cross-Era Economic Policy Levers
 - **ID:** `ENG-ECO-007`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M5`
 - **Verification Layer:** `Integration`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-ECO-007.1, ENG-ECO-007.2`
 - **Requirement:** Policy interfaces SHALL enable players and regimes to fulfill production objectives via tribute/corvée levies, market purchase orders/subsidies/tariffs, exclusive concessions/monopolies, or direct state-owned enterprises, each generating authentic institutional side-effects.
-- **Acceptance Criteria:** Decompose prior to `M5` into leaf requirements proving price-induced private mine expansion, war profiteering spikes, and oligarchic concession entrenchment.
+- **Acceptance Criteria:** Decomposed into leaf requirements `ENG-ECO-007.1` and `ENG-ECO-007.2`.
+
+### ENG-ECO-007.1: Four Cross-Era Economic Policy Levers
+- **ID:** `ENG-ECO-007.1`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-ECO-007`
+- **Requirement:** Validated player commands SHALL support enacting `tribute_corvee`, `market_purchase_orders`, `chartered_concession`, and `direct_state_enterprise` policies per scenario/commodity loaded from `sim-data` `PolicyLawRecord` definitions.
+- **Acceptance Criteria:** Enacting each policy lever updates active institutional rules deterministically and alters state versus private output and grievance trajectories in headless runs.
+
+### ENG-ECO-007.2: Structural Policy Side-Effects & Oligarchic Entrenchment
+- **ID:** `ENG-ECO-007.2`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-ECO-007`
+- **Requirement:** Posted `market_purchase_orders` SHALL stimulate autonomous private supply mobilization at zero additional state Attention while driving scarcity profiteering spikes; `chartered_concession` SHALL shift upfront capital burden off the state while increasing syndicate oligarch leverage and output share; `direct_state_enterprise` SHALL guarantee allocation priority at direct clerical and Attention cost.
+- **Acceptance Criteria:** Side-by-side tests prove zero state Attention drain under `market_purchase_orders`, growing syndicate share under `chartered_concession`, and direct Attention drain under `direct_state_enterprise`.
 
 ---
 
@@ -570,8 +723,17 @@ Every requirement block carries one of four normative lifecycle statuses:
 - **Milestone:** `M3`
 - **Verification Layer:** `Unit`
 - **Lineage:** `Origin`
-- **Requirement:** Carrier traversal speeds, fuel burn, and breakdown probabilities SHALL depend physically on cell elevation slope, infrastructure class, bridge weight caps, river flow direction and winter ice stage, prevailing wind vectors for sail craft, and hourly soil mud/snow indices.
+- **Requirement:** Carrier traversal speeds, fuel burn, and breakdown probabilities SHALL depend physically on terrain elevation slope, infrastructure class, bridge weight caps, river flow direction and winter ice stage, prevailing wind vectors for sail craft, and hourly soil mud/snow indices.
 - **Acceptance Criteria:** Unit routing tests demonstrate slower uphill haul speeds, doubled animal strain in saturated mud, halted barge movement on frozen rivers, and washed-out ford blocks during river flood stage.
+
+### ENG-LOG-002.1: Continuous Spherical Coordinate & Any-Angle Speed-Time Transit
+- **ID:** `ENG-LOG-002.1`
+- **Status:** `Active`
+- **Milestone:** `M3`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Origin`
+- **Requirement:** Active convoys, couriers, survey parties, and relocating HQ staff SHALL maintain continuous 3D unit-sphere coordinates `[f32; 3]` (`origin_unit_xyz`, `current_unit_xyz`, `destination_unit_xyz`), advancing continuously each transit step by `distance_km = effective_speed_kmh * dt_hours` along road/river splines and any-angle string-pulled great-circle arcs across passable terrain.
+- **Acceptance Criteria:** Integration tests verify smooth fractional great-circle coordinate progression matching speed-time equations and strictly shorter path distances via string-pulled open-country arcs compared to constrained 60-degree mesh hops.
 
 ### ENG-LOG-003: Unified Transport for Cargo, Cohorts, Leaders & Dispatches
 - **ID:** `ENG-LOG-003`
@@ -593,21 +755,57 @@ Every requirement block carries one of four normative lifecycle statuses:
 
 ### ENG-LOG-005: Shared Road & Port Throughput Congestion
 - **ID:** `ENG-LOG-005`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M5`
 - **Verification Layer:** `Property-Sim`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-LOG-005.1, ENG-LOG-005.2`
 - **Requirement:** State Quartermaster convoys and private merchant haulers SHALL share finite edge throughput and port berth capacity, creating physical queuing delays and road degradation proportional to combined traffic axle load.
-- **Acceptance Criteria:** Decompose prior to `M5` into leaf tests showing heavy military supply surges visibly slowing private merchant grain caravans along shared narrow mountain passes.
+- **Acceptance Criteria:** Decomposed into leaf requirements `ENG-LOG-005.1` and `ENG-LOG-005.2`.
+
+### ENG-LOG-005.1: Shared Corridor & Port Axle-Load Congestion Slowdown
+- **ID:** `ENG-LOG-005.1`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Property-Sim`
+- **Lineage:** `Parent: ENG-LOG-005`
+- **Requirement:** `NonStateEconomyPlugPort::edge_congestion_multiplier` SHALL aggregate state and private carrier mass transiting each shared corridor/port per window and apply monotonic speed reduction (`< 1.0`) to both state and private convoys once combined tonnage approaches infrastructure throughput capacity.
+- **Acceptance Criteria:** Dispatching heavy simultaneous state and private cargo across a shared mountain track slows both convoy streams strictly relative to uncongested single-convoy transit ticks.
+
+### ENG-LOG-005.2: Cumulative Axle-Load Infrastructure Surface Wear
+- **ID:** `ENG-LOG-005.2`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Property-Sim`
+- **Lineage:** `Parent: ENG-LOG-005`
+- **Requirement:** Heavy combined axle tonnage traversing unpaved or lightly paved corridors SHALL accumulate physical surface wear (`wear_01`), worsening mud sensitivity and maintenance timber demand unless repaired.
+- **Acceptance Criteria:** Running high cumulative wagon tonnage across an earth track raises tracked `wear_01` monotonically and degrades effective road speed compared to unloaded idle corridors.
 
 ### ENG-LOG-006: Dynamic Carrier Chartering & Civilian Freight Crowding-Out
 - **ID:** `ENG-LOG-006`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M5`
 - **Verification Layer:** `Integration`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-LOG-006.1, ENG-LOG-006.2`
 - **Requirement:** State requisitioning or chartering of regional wagons, barges, or ships SHALL draw directly from the finite shared carrier fleet, automatically driving up regional freight rates and reducing haul capacity available for civilian commerce.
-- **Acceptance Criteria:** Decompose prior to `M5` into leaf tests quantifying freight rate spikes and civilian coal/grain delivery shortfalls following mass military wagon impressment.
+- **Acceptance Criteria:** Decomposed into leaf requirements `ENG-LOG-006.1` and `ENG-LOG-006.2`.
+
+### ENG-LOG-006.1: Dynamic Regional Carrier Pool & Charter Rate Scaling
+- **ID:** `ENG-LOG-006.1`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-LOG-006`
+- **Requirement:** Each settlement region SHALL track a finite private carrier pool (`available_carriers / total_carriers`), computing chartering costs non-linearly upward as idle carrier slack shrinks.
+- **Acceptance Criteria:** Chartering state carriers out of a regional pool directly increments utilization and monotonically raises quoted regional freight charter rates.
+
+### ENG-LOG-006.2: State Chartering Crowding-Out Civilian Food & Fuel Haulage
+- **ID:** `ENG-LOG-006.2`
+- **Status:** `Active`
+- **Milestone:** `M5`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-LOG-006`
+- **Requirement:** Drawing private wagons or vessels into state/military charter service SHALL reduce remaining un-chartered private carrying capacity, throttling civilian merchant deliveries of staple food/fuel and lifting destination spot prices.
+- **Acceptance Criteria:** Comparative simulations prove mass state carrier chartering lowers civilian commodity tonnage delivered by merchant caravans and raises destination scarcity prices relative to unchartered baseline runs.
 
 ---
 
@@ -615,48 +813,138 @@ Every requirement block carries one of four normative lifecycle statuses:
 
 ### ENG-RES-001: Strict Prohibition of Abstract Science Points & Purchasable Tech Trees
 - **ID:** `ENG-RES-001`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M6`
 - **Verification Layer:** `Static-Analysis & Property-Sim`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-RES-001.1, ENG-RES-001.2`
 - **Requirement:** The engine SHALL NOT model abstract research-point currencies or allow players to directly purchase technologies from a pre-revealed tech graph; all innovation SHALL arise from physical bottlenecks, experimentation, leisure study, and institutional incentives.
-- **Acceptance Criteria:** Decompose prior to `M6` into leaf static-schema checks and simulation tests guaranteeing zero abstract research-point pools or instant unlock commands exist in `sim-core` or `player-view`.
+- **Acceptance Criteria:** Decomposed into leaf requirements `ENG-RES-001.1` and `ENG-RES-001.2`.
+
+### ENG-RES-001.1: Zero Global Science-Point Currency In Engine State
+- **ID:** `ENG-RES-001.1`
+- **Status:** `Active`
+- **Milestone:** `M6`
+- **Verification Layer:** `Static-Analysis & Property-Sim`
+- **Lineage:** `Parent: ENG-RES-001`
+- **Requirement:** Neither `sim-plug-research`, `ScenarioWorld`, nor `DiegeticSnapshot` SHALL store or emit an abstract spendable science/tech-point pool (`science_points`, `research_mana`, or unlock currency).
+- **Acceptance Criteria:** Automated inspection of serialized research state and save payloads confirms every progression counter is tied to physical trials, bottlenecks, prototypes, or scholar hours with zero global point pools.
+
+### ENG-RES-001.2: IPC & Command Rejection of Direct Technology-Purchase Commands
+- **ID:** `ENG-RES-001.2`
+- **Status:** `Active`
+- **Milestone:** `M6`
+- **Verification Layer:** `IPC-Contract`
+- **Lineage:** `Parent: ENG-RES-001`
+- **Requirement:** `player-view` `ValidatedPlayerCommand` parsing SHALL explicitly reject any command attempting to directly purchase or unlock a technology node (`unlockTechNode`, `buyResearch`, or equivalent), returning `ERR_BOUGHT_TECH_FORBIDDEN`.
+- **Acceptance Criteria:** Contract tests submitting synthetic direct tech-unlock JSON commands assert strict rejection with `ERR_BOUGHT_TECH_FORBIDDEN` and zero mutation of settlement knowledge state.
 
 ### ENG-RES-002: Know-How Empirical Process & Component Cross-Pollination
 - **ID:** `ENG-RES-002`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M6`
 - **Verification Layer:** `Integration`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-RES-002.1, ENG-RES-002.2`
 - **Requirement:** Practical Know-How discoveries SHALL arise from workplace problems and material testing as reusable physical components whose physical existence inside working devices lowers discovery and adaptation cost for adjacent machines across workshops and observers.
-- **Acceptance Criteria:** Decompose prior to `M6` into leaf tests verifying mine-pump component availability measurably accelerates rotary-drive and rail-propulsion experimentation compared to worlds lacking working pumps.
+- **Acceptance Criteria:** Decomposed into leaf requirements `ENG-RES-002.1` and `ENG-RES-002.2`.
+
+### ENG-RES-002.1: Workplace Bottleneck Empirical Know-How Discovery
+- **ID:** `ENG-RES-002.1`
+- **Status:** `Active`
+- **Milestone:** `M6`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-RES-002`
+- **Requirement:** Physical workplace bottlenecks (flooded deep mine shafts, brittle high-slag smelting, axle wear in mud) paired with active practitioners and small trial batches SHALL accumulate empirical component familiarity and surface working `TechComponentId` Know-How breakthroughs.
+- **Acceptance Criteria:** Operating an un-pumped flooding mine with metallurgist/engineer labor advances drainage-valve Know-How and yields functional component adoption without spending any abstract points.
+
+### ENG-RES-002.2: Proven Physical Component Cross-Pollination
+- **ID:** `ENG-RES-002.2`
+- **Status:** `Active`
+- **Milestone:** `M6`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-RES-002`
+- **Requirement:** Once a physical `TechComponentId` prototype operates in a workshop, observing mechanics SHALL cross-pollinate that component into related machines or processes within the same domain, cutting required empirical trial iterations by at least `35%`.
+- **Acceptance Criteria:** Controlled comparison tests demonstrate that pre-existence of a working `check_valve_assembly` / `lever_and_fulcrum` component accelerates breakthrough of related mechanical/cylinder components compared to an isolated colony lacking working precedents.
 
 ### ENG-RES-003: Know-Why Theoretical Discovery Accelerating Directed Engineering
 - **ID:** `ENG-RES-003`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M6`
 - **Verification Layer:** `Integration`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-RES-003.1, ENG-RES-003.2`
 - **Requirement:** Individuals with surplus free time studying natural phenomena and existing machines SHALL generate theoretical Know-Why models that trail initial practical inventions but subsequently make directed applied R&D dramatically faster and higher-yield.
-- **Acceptance Criteria:** Decompose prior to `M6` into leaf tests proving theoretical mastery multiplies success rates and reduces material waste on subsequent targeted engineering mandates.
+- **Acceptance Criteria:** Decomposed into leaf requirements `ENG-RES-003.1` and `ENG-RES-003.2`.
+
+### ENG-RES-003.1: Surplus-Leisure Scholarly Know-Why Synthesis
+- **ID:** `ENG-RES-003.1`
+- **Status:** `Active`
+- **Milestone:** `M6`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-RES-003`
+- **Requirement:** Scholars and leisure-supported specialists analyzing assayed materials and functioning workshop prototypes SHALL advance `TheoryDomainId` Know-Why mastery only when caloric surplus and paper/writing capacity permit freed intellectual labor.
+- **Acceptance Criteria:** Under caloric famine, scholarly Know-Why stalls; under caloric surplus with functioning prototypes, `TheoryDomainId` mastery advances monotonically and emits published treatise records.
+
+### ENG-RES-003.2: Know-Why Multiplication of Directed R&D Yield & Waste Reduction
+- **ID:** `ENG-RES-003.2`
+- **Status:** `Active`
+- **Milestone:** `M6`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-RES-003`
+- **Requirement:** Mature `TheoryDomainId` mastery (`>= 0.50`) SHALL multiply directed applied component experimentation speed (`>= 2.0x`) and cut experimental material trial waste (`>= 40%`).
+- **Acceptance Criteria:** Controlled experiments comparing zero-theory colonies against mature-metallurgy/thermodynamics colonies confirm strictly faster applied refinement and lower trial batch consumption.
 
 ### ENG-RES-004: Four Institutional Modes of Innovation
 - **ID:** `ENG-RES-004`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M6`
 - **Verification Layer:** `Integration`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-RES-004.1, ENG-RES-004.2`
 - **Requirement:** The research model SHALL support emergent transition across workplace/leisure tinkering, state war prizes and military arsenals, private patent monopolies restricting rival adaptation until expiration or espionage, and institutionalized universities/corporate/state labs.
-- **Acceptance Criteria:** Decompose prior to `M6` into leaf tests verifying patent-granted private monopolies block legal third-party adoption of covered components until patent expiry.
+- **Acceptance Criteria:** Decomposed into leaf requirements `ENG-RES-004.1` and `ENG-RES-004.2`.
+
+### ENG-RES-004.1: Four Institutional Innovation Modes & Capability Gates
+- **ID:** `ENG-RES-004.1`
+- **Status:** `Active`
+- **Milestone:** `M6`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-RES-004`
+- **Requirement:** `sim-plug-research` SHALL support switching/operating `workplace_tinkering`, `state_arsenal_prize`, `patent_monopoly`, and `research_laboratory`, gating formal laboratories on sufficient population literacy and accumulated material/theoretical capital.
+- **Acceptance Criteria:** Attempting `research_laboratory` mode under pre-literate baseline survival falls back cleanly or enforces low efficiency, whereas literate surplus colonies gain full laboratory multiplier benefits.
+
+### ENG-RES-004.2: Private Patent Monopoly Exclusion Until Expiry
+- **ID:** `ENG-RES-004.2`
+- **Status:** `Active`
+- **Milestone:** `M6`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-RES-004`
+- **Requirement:** Under `patent_monopoly`, newly chartered private breakthroughs SHALL grant time-limited exclusive component usage (`patent_duration_years`) to the originating `ActorId`, blocking rival syndicates from licensed adoption until expiration ticks pass or reverse-engineering leaks occur.
+- **Acceptance Criteria:** Issuing a patent on `forced_draft_tuyere` to Actor A rejects competing adoption by Actor B prior to `expiry_tick` and permits open adoption immediately after `expiry_tick`.
 
 ### ENG-RES-005: Four-Carrier Fragile Knowledge Persistence & Regression
 - **ID:** `ENG-RES-005`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M6`
 - **Verification Layer:** `Property-Sim`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-RES-005.1, ENG-RES-005.2`
 - **Requirement:** Every Know-How and Know-Why capability SHALL persist exclusively across practicing cohorts, living named specialists, physical prototypes/tooling, and written/printed archives; loss of all active carriers SHALL cause authentic loss of capability until rediscovered.
-- **Acceptance Criteria:** Decompose prior to `M6` into leaf tests verifying workshop destruction combined with death of unarchived master cohorts reverts a colony's ability to fabricate the lost technique.
+- **Acceptance Criteria:** Decomposed into leaf requirements `ENG-RES-005.1` and `ENG-RES-005.2`.
+
+### ENG-RES-005.1: Four-Carrier Physical Knowledge Accounting
+- **ID:** `ENG-RES-005.1`
+- **Status:** `Active`
+- **Milestone:** `M6`
+- **Verification Layer:** `Property-Sim`
+- **Lineage:** `Parent: ENG-RES-005`
+- **Requirement:** Every discovered component or theoretical treatise SHALL track non-abstract integer/entity counts across all four vulnerable physical carriers (`practicing_cohorts`, `living_specialists`, `workshop_prototypes`, `written_archives`).
+- **Acceptance Criteria:** Emitting a settlement's knowledge snapshot exposes exact live counts across all four carrier channels and flags single-carrier fragility when three carrier types sit at zero.
+
+### ENG-RES-005.2: Genuine Capability Regression Upon Total Physical Carrier Loss
+- **ID:** `ENG-RES-005.2`
+- **Status:** `Active`
+- **Milestone:** `M6`
+- **Verification Layer:** `Property-Sim`
+- **Lineage:** `Parent: ENG-RES-005`
+- **Requirement:** Whenever all four physical carriers for a capability reach zero locally and no printed copy remains reachable by active settlement links, `KnowledgeModifierPlugPort::process_prerequisites_met` SHALL revert to `false`, disabling dependent advanced recipes until rediscovered or retransmitted.
+- **Acceptance Criteria:** Destroying physical workshop prototypes and losing master cohorts/specialists in an unarchived frontier settlement causes genuine capability regression (`process_prerequisites_met == false`), whereas preserving a written archive allows restoration.
 
 ---
 
@@ -664,39 +952,102 @@ Every requirement block carries one of four normative lifecycle statuses:
 
 ### ENG-WAR-001: Prohibition of Direct Tactical Unit Micromanagement
 - **ID:** `ENG-WAR-001`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M7`
 - **Verification Layer:** `IPC-Contract`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-WAR-001.1`
 - **Requirement:** Player command interfaces SHALL NOT allow real-time hex-by-hex tactical micromanagement of individual combat units; all military direction flows through theater directives or operational battle plans subject to communication latency.
-- **Acceptance Criteria:** Decompose prior to `M7` into IPC contract tests rejecting direct immediate tactical unit movement overrides.
+- **Acceptance Criteria:** Superseded by hex-free leaf requirement `ENG-WAR-001.1`.
+
+### ENG-WAR-001.1: IPC & Command Rejection of Direct Tactical Unit Micromanagement
+- **ID:** `ENG-WAR-001.1`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `IPC-Contract`
+- **Lineage:** `Supersedes: ENG-WAR-001`
+- **Requirement:** Both `ValidatedPlayerCommand` validation and `CommandPort` SHALL reject any command seeking direct instantaneous tactical step-by-step control of individual combat units (`moveFormationUnit`, `tacticalFireTarget`, or single-unit micro coordinate overrides), returning `ERR_TACTICAL_MICRO_FORBIDDEN`.
+- **Acceptance Criteria:** Contract tests submitting direct unit tactical micro commands assert `ERR_TACTICAL_MICRO_FORBIDDEN` rejection across both Rust CLI/player-view and Electron IPC validators.
 
 ### ENG-WAR-002: "Churchill Mode" Theater Delegation & General Initiative
 - **ID:** `ENG-WAR-002`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M7`
 - **Verification Layer:** `Integration`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-WAR-002.1, ENG-WAR-002.2`
 - **Requirement:** Low-Attention strategic theater mandates SHALL assign overall goals and supply priorities while enabling field generals to execute tactical maneuvers, local withdrawals, and route pivots in real time without awaiting distant HQ approval.
-- **Acceptance Criteria:** Decompose prior to `M7` into integration tests comparing competent delegated commanders against distant micro-locked commanders during sudden river-flood flank threats.
+- **Acceptance Criteria:** Decomposed into leaf requirements `ENG-WAR-002.1` and `ENG-WAR-002.2`.
+
+### ENG-WAR-002.1: Low-Attention Strategic Theater Directive Dispatch
+- **ID:** `ENG-WAR-002.1`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-WAR-002`
+- **Requirement:** Issuing a `TheaterDirective` ("Churchill Mode") SHALL consume low Personal Attention relative to operational planning while assigning theater commander, strategic objective coordinate, defensive/offensive posture, and logistics tonnage priority.
+- **Acceptance Criteria:** Issuing a `TheaterDirective` costs strictly less Personal Attention than an equivalent `OperationalBattlePlan` and leaves subordinate formations governed by the theater general once the courier arrives.
+
+### ENG-WAR-002.2: Autonomous Field General Maneuver Around Hazards & Flanks
+- **ID:** `ENG-WAR-002.2`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-WAR-002`
+- **Requirement:** Under an active `TheaterDirective`, field commanders SHALL autonomously pivot formation headings around washed-out river crossings, deep mud mires, or sudden enemy flank envelopments in real time without awaiting slow distant HQ confirmation.
+- **Acceptance Criteria:** Exposed to a sudden flooded crossing and flank threat at high HQ courier latency, a competent general in `TheaterDirective` mode executes an autonomous flanking/withdrawal maneuver preventing encirclement losses.
 
 ### ENG-WAR-003: "Hitler Mode" Operational Battle Plans & Stale-Order Disasters
 - **ID:** `ENG-WAR-003`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M7`
 - **Verification Layer:** `Integration`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-WAR-003.1, ENG-WAR-003.2`
 - **Requirement:** High-Attention operational battle planning SHALL permit assigning division objectives, phase lines, and rigid doctrines (for example, *"No Retreat"*) while suppressing local officer initiative and exposing formations to stale-order entrapment under HQ distance latency.
-- **Acceptance Criteria:** Decompose prior to `M7` into tests showing rigid *"No Retreat"* orders combined with delayed HQ reports trap units until a commander risks insubordination or suffers encirclement.
+- **Acceptance Criteria:** Decomposed into leaf requirements `ENG-WAR-003.1` and `ENG-WAR-003.2`.
+
+### ENG-WAR-003.1: High-Attention Operational Battle Plan & "No Retreat" Standing Orders
+- **ID:** `ENG-WAR-003.1`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-WAR-003`
+- **Requirement:** Issuing an `OperationalBattlePlan` ("Hitler Mode") SHALL invest high Personal Attention slices to specify explicit objective route coordinates, sequential phase lines, and optional `no_retreat: bool` doctrine overriding normal subordinate maneuver latitude.
+- **Acceptance Criteria:** Issuing a `"No Retreat"` `OperationalBattlePlan` charges high Personal Attention capacity and locks compliant formations onto prescribed phase lines upon courier delivery.
+
+### ENG-WAR-003.2: Stale-Order Encirclement Exposure vs. Commander Insubordination
+- **ID:** `ENG-WAR-003.2`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Parent: ENG-WAR-003`
+- **Requirement:** When distant HQ latency delays updated withdrawal orders against flanking enemy pressure on an active `"No Retreat"` plan, obedient commanders SHALL hold stale coordinates into encirclement losses whereas high-initiative/low-obedience commanders may commit diegetic insubordination and withdraw independently, dispatching a delayed explanation report to HQ.
+- **Acceptance Criteria:** Controlled scenario trials against identical enemy encirclement and distant HQ lag demonstrate severe encirclement casualties under obedient `"No Retreat"` commanders versus surviving withdrawal + insubordination dispatch under high-initiative generals.
 
 ### ENG-WAR-004: Hourly Weather-Coupled Combat Physics
 - **ID:** `ENG-WAR-004`
-- **Status:** `Draft`
+- **Status:** `Superseded`
 - **Milestone:** `M7`
 - **Verification Layer:** `Property-Sim`
-- **Lineage:** `Origin`
+- **Lineage:** `Superseded-By: ENG-WAR-004.1, ENG-WAR-004.2`
 - **Requirement:** Battle resolution SHALL couple directly into hourly cell weather states: deep mud bogging heavy wagons, cavalry, and artillery; flood-swollen rivers washing out crossings and splitting wings; wet weather fouling bowstrings and propellants; and low visibility shrinking recon and slowing battlefield couriers.
-- **Acceptance Criteria:** Decompose prior to `M7` into leaf combat tests comparing identical opposing armies under dry daylight versus torrential storm conditions.
+- **Acceptance Criteria:** Decomposed into leaf requirements `ENG-WAR-004.1` and `ENG-WAR-004.2`.
+
+### ENG-WAR-004.1: Hourly Mud Miring & Flooded Crossing Wing Splitting
+- **ID:** `ENG-WAR-004.1`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Property-Sim`
+- **Lineage:** `Parent: ENG-WAR-004`
+- **Requirement:** Every hourly combat tick (`OperationalCombatPlugPort::step_hourly_combat`) SHALL sample local continuous weather mud and river flood states, reducing artillery/wagon formation march speed and combat readiness proportionally to `mud_index_01` and severing unbridged support across flooded river barriers (`flood_stage_01 > 0.65`).
+- **Acceptance Criteria:** Identical military engagements simulated under dry surface versus high-mud and river-flood conditions produce measurably slower advance rates and lower supported combat effectiveness across flooded barriers.
+
+### ENG-WAR-004.2: Precipitation Propellant Fouling & Visibility Recon Degradation
+- **ID:** `ENG-WAR-004.2`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Property-Sim`
+- **Lineage:** `Parent: ENG-WAR-004`
+- **Requirement:** Sustained precipitation (`precip_mm_hr > 2.0`) SHALL foul exposed propellants/bowstrings (mitigated only by active doctrine/shelter multipliers), while low `visibility_01` SHALL compress reconnaissance range and add stochastic delay to battlefield courier links.
+- **Acceptance Criteria:** Comparative hourly combat tests verify lower ranged firepower multipliers and slower courier reporting during heavy rain and fog compared to clear dry daylight ticks.
 
 ---
 
@@ -753,4 +1104,21 @@ Every requirement block carries one of four normative lifecycle statuses:
 
 | ID | Former Title | Status | Lineage / Rationale | Date |
 | :--- | :--- | :--- | :--- | :--- |
-| *(None yet)* | — | — | Baseline specification created; append rows whenever any `ENG-*` requirement is superseded or removed. | — |
+| `ENG-GEO-001` | Closed Goldberg Polyhedron Geodesic Sphere Topology | `Superseded` | Replaced by `ENG-GEO-001.1` (Option B continuous hex-free spherical terrain field) | 2026-11-15 |
+| `ENG-CMD-006` | Multi-Layer Organizational Hierarchy Frictions | `Superseded` | Decomposed into `ENG-CMD-006.1`..`ENG-CMD-006.4` for M5 | 2026-11-15 |
+| `ENG-CMD-007` | Five Governance & Coordination Models Shifting Friction Profiles | `Superseded` | Decomposed into `ENG-CMD-007.1`..`ENG-CMD-007.2` for M5 | 2026-11-15 |
+| `ENG-POP-006` | Mortal Leader Aging & Generational Succession Continuity | `Superseded` | Decomposed into `ENG-POP-006.1`..`ENG-POP-006.2` for M7 | 2026-11-15 |
+| `ENG-ECO-005` | Autonomous Non-State Institutional Economic Actors | `Superseded` | Decomposed into `ENG-ECO-005.1`..`ENG-ECO-005.4` for M5 | 2026-11-15 |
+| `ENG-ECO-006` | Era-Universal Multi-Medium Economic Accounting | `Superseded` | Decomposed into `ENG-ECO-006.1`..`ENG-ECO-006.2` for M5 | 2026-11-15 |
+| `ENG-ECO-007` | Cross-Era Economic Policy Levers | `Superseded` | Decomposed into `ENG-ECO-007.1`..`ENG-ECO-007.2` for M5 | 2026-11-15 |
+| `ENG-LOG-005` | Shared Road & Port Throughput Congestion | `Superseded` | Decomposed into `ENG-LOG-005.1`..`ENG-LOG-005.2` for M5 | 2026-11-15 |
+| `ENG-LOG-006` | Dynamic Carrier Chartering & Civilian Freight Crowding-Out | `Superseded` | Decomposed into `ENG-LOG-006.1`..`ENG-LOG-006.2` for M5 | 2026-11-15 |
+| `ENG-RES-001` | Strict Prohibition of Abstract Science Points & Purchasable Tech Trees | `Superseded` | Decomposed into `ENG-RES-001.1`..`ENG-RES-001.2` for M6 | 2026-11-15 |
+| `ENG-RES-002` | Know-How Empirical Process & Component Cross-Pollination | `Superseded` | Decomposed into `ENG-RES-002.1`..`ENG-RES-002.2` for M6 | 2026-11-15 |
+| `ENG-RES-003` | Know-Why Theoretical Discovery Accelerating Directed Engineering | `Superseded` | Decomposed into `ENG-RES-003.1`..`ENG-RES-003.2` for M6 | 2026-11-15 |
+| `ENG-RES-004` | Four Institutional Modes of Innovation | `Superseded` | Decomposed into `ENG-RES-004.1`..`ENG-RES-004.2` for M6 | 2026-11-15 |
+| `ENG-RES-005` | Four-Carrier Fragile Knowledge Persistence & Regression | `Superseded` | Decomposed into `ENG-RES-005.1`..`ENG-RES-005.2` for M6 | 2026-11-15 |
+| `ENG-WAR-001` | Prohibition of Direct Tactical Unit Micromanagement | `Superseded` | Replaced by `ENG-WAR-001.1` (Option B hex-free warfare IPC boundary) for M7 | 2026-11-15 |
+| `ENG-WAR-002` | "Churchill Mode" Theater Delegation & General Initiative | `Superseded` | Decomposed into `ENG-WAR-002.1`..`ENG-WAR-002.2` for M7 | 2026-11-15 |
+| `ENG-WAR-003` | "Hitler Mode" Operational Battle Plans & Stale-Order Disasters | `Superseded` | Decomposed into `ENG-WAR-003.1`..`ENG-WAR-003.2` for M7 | 2026-11-15 |
+| `ENG-WAR-004` | Hourly Weather-Coupled Combat Physics | `Superseded` | Decomposed into `ENG-WAR-004.1`..`ENG-WAR-004.2` for M7 | 2026-11-15 |

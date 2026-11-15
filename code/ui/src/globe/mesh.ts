@@ -42,36 +42,13 @@ function sortedCornerTripleKey(
 }
 
 /**
- * Builds an indexed closed manifold dual Goldberg spherical mesh with per-vertex
- * cell ownership, adjacent corner triplets (for smooth coastal/terrain relief),
- * and barycentric edge distance coordinates (`UI-GLB-001`, `UI-GLB-002`).
+ * Builds an indexed closed continuous spherical triangle mesh from welded icosphere
+ * sample vertices with adjacent triangle corner indices and barycentric weights
+ * for smooth terrain relief, coastlines, and air-gapped cartographic shading (`UI-GLB-001.1`, `UI-GLB-002`).
  */
 export function buildGoldbergGlobeGeometry(
   topology: GoldbergTopologyData,
 ): GoldbergMeshBuild {
-  const canonicalCornerPos = new Map<string, Vec3>();
-  const cellsByPos = new Map<string, number[]>();
-
-  // Pre-register every dual Voronoi corner canonically so adjacent cells share bit-identical border vertices.
-  for (const cell of topology.cells) {
-    const d = cell.cornersUnit.length;
-    for (let k = 0; k < d; k += 1) {
-      const cPos = cell.cornersUnit[k];
-      const key = sortedCornerTripleKey(
-        cell.centerUnit,
-        topology.cells[cell.neighbors[k]].centerUnit,
-        topology.cells[cell.neighbors[(k + 1) % d]].centerUnit,
-      );
-      if (!canonicalCornerPos.has(key)) {
-        canonicalCornerPos.set(key, cPos);
-        cellsByPos.set(key, [cell.cellId]);
-      } else {
-        const list = cellsByPos.get(key)!;
-        if (!list.includes(cell.cellId)) list.push(cell.cellId);
-      }
-    }
-  }
-
   const positions: number[] = [];
   const normals: number[] = [];
   const cellIds: number[] = [];
@@ -79,47 +56,25 @@ export function buildGoldbergGlobeGeometry(
   const barycentrics: number[] = [];
   const indices: number[] = [];
 
-  for (const cell of topology.cells) {
-    const d = cell.cornersUnit.length;
+  for (const [i0, i1, i2] of topology.triangles) {
     const baseVertex = positions.length / 3;
+    const triIds: readonly [number, number, number] = [i0, i1, i2];
+    const triBary: readonly [Vec3, Vec3, Vec3] = [
+      [1, 0, 0],
+      [0, 1, 0],
+      [0, 0, 1],
+    ];
 
-    // Vertex 0 of cell fan: cell center
-    const [cx, cy, cz] = cell.centerUnit;
-    positions.push(cx, cy, cz);
-    normals.push(cx, cy, cz);
-    cellIds.push(cell.cellId);
-    cornerTriplets.push(cell.cellId, cell.cellId, cell.cellId);
-    barycentrics.push(1, 0, 0);
-
-    // Vertices 1..d: dual Voronoi corners around this cell
-    for (let k = 0; k < d; k += 1) {
-      const nbA = cell.neighbors[k];
-      const nbB = cell.neighbors[(k + 1) % d];
-      const key = sortedCornerTripleKey(
-        cell.centerUnit,
-        topology.cells[nbA].centerUnit,
-        topology.cells[nbB].centerUnit,
-      );
-      const pos = canonicalCornerPos.get(key) ?? cell.cornersUnit[k];
-      const owners = cellsByPos.get(key) ?? [cell.cellId, nbA, nbB];
-      const c0 = owners[0] ?? cell.cellId;
-      const c1 = owners[1] ?? nbA;
-      const c2 = owners[2] ?? nbB;
-
-      positions.push(pos[0], pos[1], pos[2]);
-      normals.push(pos[0], pos[1], pos[2]);
-      cellIds.push(cell.cellId);
-      cornerTriplets.push(c0, c1, c2);
-      barycentrics.push(0, k % 2 === 0 ? 1 : 0, k % 2 === 0 ? 0 : 1);
+    for (let v = 0; v < 3; v += 1) {
+      const cid = triIds[v];
+      const p = topology.cells[cid].centerUnit;
+      positions.push(p[0], p[1], p[2]);
+      normals.push(p[0], p[1], p[2]);
+      cellIds.push(cid);
+      cornerTriplets.push(i0, i1, i2);
+      barycentrics.push(triBary[v][0], triBary[v][1], triBary[v][2]);
     }
-
-    // Fan triangles winding CCW outside sphere: (center, corner_k, corner_{k+1})
-    for (let k = 0; k < d; k += 1) {
-      const vCenter = baseVertex;
-      const vCur = baseVertex + 1 + k;
-      const vNext = baseVertex + 1 + ((k + 1) % d);
-      indices.push(vCenter, vCur, vNext);
-    }
+    indices.push(baseVertex, baseVertex + 1, baseVertex + 2);
   }
 
   const geometry = new THREE.BufferGeometry();

@@ -29,3 +29,19 @@ text = "Seasonal temperature or moisture stress depressed harvests across {settl
 [[strings]]
 id = "dispatch.mandate_issued_log"
 text = "Sealed mandate issued to {character_label} for sector {sector_label}."
+
+[[strings]]
+id = "dispatch.succession_crisis"
+text = "{deceased_ruler_name} passed; {successor_name} assumes office via {rule_name} with recorded HQ archives only."
+
+[[strings]]
+id = "dispatch.theater_encirclement"
+text = "Formation {formation_label} faces operational encirclement near sector {sector_label}."
+
+[[strings]]
+id = "dispatch.guild_hoarding"
+text = "Informal hoarding pushed scarcity premium on {commodity_label} across {settlement_label}."
+
+[[strings]]
+id = "dispatch.knowledge_regression"
+text = "Loss of unrecorded practitioners and treatises caused craft regression at {settlement_label}."

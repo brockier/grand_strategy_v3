@@ -1,6 +1,6 @@
 /**
  * Pure mathematical Goldberg polyhedron `GP(m, 0)` spherical topology generator
- * matching `sim-planet/src/topology.rs` bit-for-algorithm (`UI-GLB-001`).
+ * matching `sim-planet/src/topology.rs` bit-for-algorithm (`UI-GLB-001.1`).
  */
 
 export type Vec3 = readonly [number, number, number];
@@ -29,6 +29,7 @@ export interface GoldbergTopologyData {
   readonly cells: readonly GoldbergCellGeometry[];
   readonly edges: readonly GoldbergEdge[];
   readonly edgeByPair: ReadonlyMap<string, number>;
+  readonly triangles: readonly (readonly [number, number, number])[];
 }
 
 export function subdivisionToFrequency(subdivision: number): number {
@@ -157,6 +158,7 @@ export function generateGoldbergTopology(subdivision: number): GoldbergTopologyD
   const edgeVertMap = new Map<string, number>();
   const rawNeighbors: Set<number>[] = Array.from({ length: expectedCells }, () => new Set<number>());
   const chunkAssignment: number[] = Array.from({ length: expectedCells }, () => 0);
+  const triangles: [number, number, number][] = [];
 
   const edgeVertex = (a: number, b: number, step: number): number => {
     const [lo, hi, t] = a < b ? [a, b, step] : [b, a, m - step];
@@ -217,6 +219,14 @@ export function generateGoldbergTopology(subdivision: number): GoldbergTopologyD
       rawNeighbors[b].add(c);
       rawNeighbors[c].add(a);
       rawNeighbors[c].add(b);
+      const pa = positions[a];
+      const pb = positions[b];
+      const pc = positions[c];
+      const orient =
+        pa[0] * (pb[1] * pc[2] - pb[2] * pc[1]) +
+        pa[1] * (pb[2] * pc[0] - pb[0] * pc[2]) +
+        pa[2] * (pb[0] * pc[1] - pb[1] * pc[0]);
+      triangles.push(orient < 0 ? [a, c, b] : [a, b, c]);
     };
 
     for (let r = 0; r < m; r += 1) {
@@ -288,5 +298,6 @@ export function generateGoldbergTopology(subdivision: number): GoldbergTopologyD
     cells,
     edges,
     edgeByPair,
+    triangles,
   };
 }

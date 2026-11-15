@@ -37,7 +37,7 @@ const INDUSTRIAL_PALETTE: GlobePalette = {
 };
 
 describe("M2 Spherical Goldberg Mesh, Pole-Free Camera, Double-Buffered Shaders & Air-Gap", () => {
-  // @req UI-GLB-001
+  // @req UI-GLB-001.1
   it("constructs closed manifold GP(8,0) Goldberg globe with 12 pentagons and supports continuous polar navigation (UI-GLB-001)", () => {
     const topo = generateGoldbergTopology(3);
     const build = buildGoldbergGlobeGeometry(topo);

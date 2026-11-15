@@ -18,9 +18,9 @@ use sim_spine::ids::{
     InfraClassId, MandateId, SettlementId, Tick,
 };
 use sim_spine::ports::{
-    ArrivedCourierEnvelope, CanonicalSaveablePort, CarrierDefView, ConvoyTransitView,
-    CourierEnvelope, LogisticsPort, ModRegistryPort, PlanetGeometryPort, ShipmentRequest,
-    SurfaceConditionsPort, TransitChannelKind,
+    great_circle_arc_km, slerp_unit_xyz, ArrivedCourierEnvelope, CanonicalSaveablePort,
+    CarrierDefView, ConvoyTransitView, CourierEnvelope, LogisticsPort, ModRegistryPort,
+    PlanetGeometryPort, ShipmentRequest, SurfaceConditionsPort, TransitChannelKind,
 };
 
 /// Physical state and restrictions of an edge connecting two adjacent planetary cells.
@@ -68,6 +68,12 @@ pub struct ActiveConvoy {
     pub current_cell: CellId,
     pub destination_cell: CellId,
     pub planned_route: Vec<CellId>,
+    pub origin_unit_xyz: [f32; 3],
+    pub current_unit_xyz: [f32; 3],
+    pub destination_unit_xyz: [f32; 3],
+    pub route_waypoints_xyz: Vec<[f32; 3]>,
+    pub distance_travelled_km: f64,
+    pub total_route_km: f64,
     pub route_cursor: usize,
     pub progress_on_edge_km: f64,
     pub carrier_class: CarrierClassId,
@@ -100,9 +106,16 @@ impl ActiveConvoy {
             current_cell: self.current_cell,
             destination_cell: self.destination_cell,
             planned_route: self.planned_route.clone(),
+            origin_unit_xyz: self.origin_unit_xyz,
+            current_unit_xyz: self.current_unit_xyz,
+            destination_unit_xyz: self.destination_unit_xyz,
+            route_waypoints_xyz: self.route_waypoints_xyz.clone(),
+            distance_travelled_km: self.distance_travelled_km as f32,
+            total_route_km: self.total_route_km as f32,
             departure_tick: self.departure_tick,
             expected_arrival_tick: self.expected_arrival_tick,
             grace_ticks: self.grace_ticks,
+            cargo_mass_kg: self.cargo_mass_kg,
             is_hq_move: self.is_hq_move,
             stranded_no_fuel: self.stranded_no_fuel,
         }
@@ -503,10 +516,32 @@ impl LogisticsNetwork {
                 )
             })?;
 
+        let carrier_def = registry.carrier_def(req.carrier_class);
+        let route_waypoints_xyz = if let Some(carrier) = carrier_def {
+            self.string_pull_waypoints(&route, carrier, req.cargo_mass_kg, planet, weather, registry)
+        } else {
+            route.iter().map(|&c| planet.cell_unit_xyz(c)).collect()
+        };
+        let radius_km = planet.radius_km();
+        let total_route_km: f64 = route_waypoints_xyz
+            .windows(2)
+            .map(|w| f64::from(great_circle_arc_km(w[0], w[1], radius_km)))
+            .sum();
+        let discrete_route_km: f64 = route
+            .windows(2)
+            .filter_map(|w| planet.cell_edge(w[0], w[1]))
+            .map(|eid| f64::from(planet.edge_length_km(eid)))
+            .sum();
+        let adj_hours = if discrete_route_km > 1e-3 && total_route_km > 1e-3 {
+            est_hours * (total_route_km / discrete_route_km)
+        } else {
+            est_hours
+        };
+
         let convoy_id = ConvoyId(self.next_convoy_id);
         self.next_convoy_id += 1;
 
-        let travel_ticks = (est_hours.ceil() as u64).max(1);
+        let travel_ticks = (adj_hours.ceil() as u64).max(1);
         let same_cell = req.origin_cell == req.destination_cell;
         let expected_arrival = if same_cell {
             Tick(req.current_tick.0 + 1)
@@ -519,6 +554,9 @@ impl LogisticsNetwork {
 
         self.total_cargo_mass_in_transit_kg += req.cargo_mass_kg;
 
+        let origin_unit_xyz = planet.cell_unit_xyz(req.origin_cell);
+        let destination_unit_xyz = planet.cell_unit_xyz(req.destination_cell);
+
         self.convoys.push(ActiveConvoy {
             convoy_id,
             label: req.label,
@@ -529,6 +567,12 @@ impl LogisticsNetwork {
             current_cell: req.origin_cell,
             destination_cell: req.destination_cell,
             planned_route: route,
+            origin_unit_xyz,
+            current_unit_xyz: origin_unit_xyz,
+            destination_unit_xyz,
+            route_waypoints_xyz,
+            distance_travelled_km: 0.0,
+            total_route_km,
             route_cursor: 0,
             progress_on_edge_km: 0.0,
             carrier_class: req.carrier_class,
@@ -619,6 +663,18 @@ impl LogisticsNetwork {
         weather: &dyn SurfaceConditionsPort,
         registry: &dyn ModRegistryPort,
     ) -> LogisticsStepSummary {
+        self.step_hourly_with_congestion(current_tick, planet, weather, registry, None)
+    }
+
+    /// Advances all active convoys for 1 hour with optional axle-load edge congestion impedance (`ENG-LOG-005.1`).
+    pub fn step_hourly_with_congestion(
+        &mut self,
+        current_tick: Tick,
+        planet: &dyn PlanetGeometryPort,
+        weather: &dyn SurfaceConditionsPort,
+        registry: &dyn ModRegistryPort,
+        eco_plug: Option<&dyn sim_spine::NonStateEconomyPlugPort>,
+    ) -> LogisticsStepSummary {
         let mut summary = LogisticsStepSummary::default();
 
         // Weather washouts on timber bridges / unimproved crossing edges under extreme floods
@@ -665,12 +721,14 @@ impl LogisticsNetwork {
             ..
         } = self;
 
+        let radius_km = planet.radius_km();
+
         for convoy in convoys.iter_mut() {
             if convoy.arrived {
                 continue;
             }
-            if convoy.current_cell == convoy.destination_cell
-                && convoy.route_cursor + 1 >= convoy.planned_route.len()
+            if convoy.route_cursor + 1 >= convoy.route_waypoints_xyz.len()
+                && convoy.current_cell == convoy.destination_cell
             {
                 record_convoy_arrival(
                     convoy,
@@ -703,7 +761,8 @@ impl LogisticsNetwork {
             }
 
             let next_idx = convoy.route_cursor + 1;
-            if next_idx >= convoy.planned_route.len() {
+            if next_idx >= convoy.route_waypoints_xyz.len() {
+                convoy.current_unit_xyz = convoy.destination_unit_xyz;
                 convoy.current_cell = convoy.destination_cell;
                 record_convoy_arrival(
                     convoy,
@@ -715,24 +774,42 @@ impl LogisticsNetwork {
                 continue;
             }
 
-            let u = convoy.planned_route[convoy.route_cursor];
-            let v = convoy.planned_route[next_idx];
-            let Some(speed_km_hr) = eval_edge_speed_with_map(
+            let wp_a = convoy.route_waypoints_xyz[convoy.route_cursor];
+            let wp_b = convoy.route_waypoints_xyz[next_idx];
+            let speed_opt = eval_waypoint_segment_speed(
                 edges,
                 *default_infra,
                 *timber_bridge_infra,
                 *river_channel_infra,
-                u,
-                v,
+                convoy.current_unit_xyz,
+                wp_a,
+                wp_b,
                 carrier,
                 convoy.cargo_mass_kg,
                 planet,
                 weather,
                 registry,
-            ) else {
+            );
+            let Some(base_speed_km_hr) = speed_opt else {
                 // Temporarily blocked by weather (mud/flood/washout/ice); convoy holds position without advancing
                 continue;
             };
+            let cell_a = planet.nearest_sample_cell(wp_a);
+            let cell_b = planet.nearest_sample_cell(wp_b);
+            let edge_for_congestion = planet.cell_edge(cell_a, cell_b).or_else(|| {
+                convoy
+                    .planned_route
+                    .windows(2)
+                    .find(|w| w[0] == convoy.current_cell || w[1] == convoy.current_cell)
+                    .and_then(|w| planet.cell_edge(w[0], w[1]))
+            });
+            let congestion_impedance = eco_plug
+                .and_then(|p| {
+                    edge_for_congestion
+                        .map(|eid| f64::from(p.edge_congestion_multiplier(eid).max(1.0)))
+                })
+                .unwrap_or(1.0);
+            let speed_km_hr = base_speed_km_hr / congestion_impedance;
 
             let fuel_used = hourly_fuel_burn.min(convoy.fuel_remaining_kg);
             let throttle = if convoy.channel == TransitChannelKind::PhysicalCourier {
@@ -756,9 +833,11 @@ impl LogisticsNetwork {
             }
 
             let distance_step_km = speed_km_hr * throttle;
+            let congestion_wear_mult = congestion_impedance.powf(1.8);
             let spare_wear = distance_step_km
                 * carrier.spare_parts_wear_per_km
-                * (0.5 + 0.5 * load_ratio);
+                * (0.5 + 0.5 * load_ratio)
+                * congestion_wear_mult;
             if spare_wear > 0.0 && convoy.spare_parts_remaining_kg > 0.0 {
                 let consumed = spare_wear.min(convoy.spare_parts_remaining_kg);
                 convoy.spare_parts_remaining_kg -= consumed;
@@ -766,26 +845,35 @@ impl LogisticsNetwork {
             }
 
             let mut travel_budget_km = distance_step_km;
-            while travel_budget_km > 0.0 && convoy.route_cursor + 1 < convoy.planned_route.len() {
-                let seg_u = convoy.planned_route[convoy.route_cursor];
-                let seg_v = convoy.planned_route[convoy.route_cursor + 1];
-                let Some(seg_edge) = planet.cell_edge(seg_u, seg_v) else {
-                    break;
-                };
-                let edge_km = f64::from(planet.edge_length_km(seg_edge).max(1.0));
-                let rem_km = (edge_km - convoy.progress_on_edge_km).max(0.0);
+            while travel_budget_km > 0.0 && convoy.route_cursor + 1 < convoy.route_waypoints_xyz.len() {
+                let seg_a = convoy.route_waypoints_xyz[convoy.route_cursor];
+                let seg_b = convoy.route_waypoints_xyz[convoy.route_cursor + 1];
+                let seg_km = f64::from(great_circle_arc_km(seg_a, seg_b, radius_km)).max(0.001);
+                let rem_km = (seg_km - convoy.progress_on_edge_km).max(0.0);
                 if travel_budget_km >= rem_km {
+                    convoy.distance_travelled_km += rem_km;
                     travel_budget_km -= rem_km;
                     convoy.progress_on_edge_km = 0.0;
                     convoy.route_cursor += 1;
-                    convoy.current_cell = convoy.planned_route[convoy.route_cursor];
+                    convoy.current_unit_xyz = seg_b;
                 } else {
+                    convoy.distance_travelled_km += travel_budget_km;
                     convoy.progress_on_edge_km += travel_budget_km;
                     travel_budget_km = 0.0;
+                    let t = (convoy.progress_on_edge_km / seg_km).clamp(0.0, 1.0) as f32;
+                    convoy.current_unit_xyz = slerp_unit_xyz(seg_a, seg_b, t);
                 }
             }
 
-            if convoy.route_cursor + 1 >= convoy.planned_route.len() {
+            convoy.current_cell = if convoy.route_cursor + 1 >= convoy.route_waypoints_xyz.len() {
+                convoy.current_unit_xyz = convoy.destination_unit_xyz;
+                convoy.destination_cell
+            } else {
+                planet.nearest_sample_cell(convoy.current_unit_xyz)
+            };
+
+            if convoy.route_cursor + 1 >= convoy.route_waypoints_xyz.len() {
+                convoy.current_unit_xyz = convoy.destination_unit_xyz;
                 convoy.current_cell = convoy.destination_cell;
                 record_convoy_arrival(
                     convoy,
@@ -798,6 +886,139 @@ impl LogisticsNetwork {
         }
 
         summary
+    }
+
+    fn string_pull_waypoints(
+        &self,
+        route: &[CellId],
+        carrier: &CarrierDefView,
+        cargo_mass_kg: f64,
+        planet: &dyn PlanetGeometryPort,
+        weather: &dyn SurfaceConditionsPort,
+        registry: &dyn ModRegistryPort,
+    ) -> Vec<[f32; 3]> {
+        if route.is_empty() {
+            return Vec::new();
+        }
+        if route.len() <= 2 {
+            return route.iter().map(|&c| planet.cell_unit_xyz(c)).collect();
+        }
+        let allows_default = carrier.allowed_infra_classes.is_empty()
+            || carrier.allowed_infra_classes.contains(&self.default_infra);
+        if carrier.is_watercraft || !allows_default {
+            return route.iter().map(|&c| planet.cell_unit_xyz(c)).collect();
+        }
+
+        let mut waypoints = vec![planet.cell_unit_xyz(route[0])];
+        let mut anchor = 0usize;
+        while anchor + 1 < route.len() {
+            let mut best_next = anchor + 1;
+            let limit = (anchor + 10).min(route.len() - 1);
+            for probe in ((anchor + 2)..=limit).rev() {
+                if self.can_string_pull_arc(
+                    &route[anchor..=probe],
+                    carrier,
+                    cargo_mass_kg,
+                    planet,
+                    weather,
+                    registry,
+                ) {
+                    best_next = probe;
+                    break;
+                }
+            }
+            waypoints.push(planet.cell_unit_xyz(route[best_next]));
+            anchor = best_next;
+        }
+        waypoints
+    }
+
+    fn can_string_pull_arc(
+        &self,
+        slice: &[CellId],
+        carrier: &CarrierDefView,
+        cargo_mass_kg: f64,
+        planet: &dyn PlanetGeometryPort,
+        weather: &dyn SurfaceConditionsPort,
+        registry: &dyn ModRegistryPort,
+    ) -> bool {
+        if slice.len() < 3 {
+            return false;
+        }
+        let mut discrete_km = 0.0_f64;
+        for w in slice.windows(2) {
+            let Some(eid) = planet.cell_edge(w[0], w[1]) else {
+                return false;
+            };
+            if let Some(st) = self.edges.get(&eid)
+                && (st.infra_class != self.default_infra
+                    || st.river_edge
+                    || st.sea_edge
+                    || st.requires_bridge_for_land
+                    || st.washed_out)
+            {
+                return false;
+            }
+            discrete_km += f64::from(planet.edge_length_km(eid));
+        }
+
+        let start_xyz = planet.cell_unit_xyz(slice[0]);
+        let end_xyz = planet.cell_unit_xyz(slice[slice.len() - 1]);
+        let radius_km = planet.radius_km();
+        let direct_km = f64::from(great_circle_arc_km(start_xyz, end_xyz, radius_km));
+        if direct_km <= 1e-4 || direct_km >= discrete_km - 1e-3 {
+            return false;
+        }
+
+        let steps = ((slice.len() - 1) * 3).max(4);
+        let mut prev_u = start_xyz;
+        let mut prev_cell = slice[0];
+        let mut prev_elev = planet.sample_elevation_at_unit_xyz(prev_u);
+
+        for s in 1..=steps {
+            let t = (s as f32) / (steps as f32);
+            let cur_u = slerp_unit_xyz(start_xyz, end_xyz, t);
+            let cur_cell = planet.nearest_sample_cell(cur_u);
+            if planet.cell_biome_and_strata(cur_cell).is_ocean {
+                return false;
+            }
+            let cur_elev = planet.sample_elevation_at_unit_xyz(cur_u);
+            let seg_km = f64::from(great_circle_arc_km(prev_u, cur_u, radius_km)).max(0.05);
+            let slope = (((cur_elev - prev_elev).abs()) as f64 / (seg_km * 1000.0)).atan() as f32;
+            if slope > carrier.max_grade_rad {
+                return false;
+            }
+            if cur_cell != prev_cell
+                && let Some(eid) = planet.cell_edge(prev_cell, cur_cell)
+                && let Some(st) = self.edges.get(&eid)
+                && (st.washed_out
+                    || st.river_edge
+                    || st.sea_edge
+                    || st.requires_bridge_for_land
+                    || st
+                        .bridge_weight_cap_kg
+                        .is_some_and(|cap| cargo_mass_kg > cap))
+            {
+                return false;
+            }
+            if eval_continuous_land_speed(
+                self.default_infra,
+                cur_cell,
+                cur_cell,
+                slope,
+                carrier,
+                weather,
+                registry,
+            )
+            .is_none()
+            {
+                return false;
+            }
+            prev_u = cur_u;
+            prev_cell = cur_cell;
+            prev_elev = cur_elev;
+        }
+        true
     }
 }
 
@@ -839,6 +1060,12 @@ impl LogisticsPort for LogisticsNetwork {
             current_cell: env.origin_cell,
             destination_cell: env.origin_cell,
             planned_route: vec![env.origin_cell],
+            origin_unit_xyz: [0.0, 1.0, 0.0],
+            current_unit_xyz: [0.0, 1.0, 0.0],
+            destination_unit_xyz: [0.0, 1.0, 0.0],
+            route_waypoints_xyz: vec![[0.0, 1.0, 0.0]],
+            distance_travelled_km: 0.0,
+            total_route_km: 0.0,
             route_cursor: 0,
             progress_on_edge_km: 0.0,
             carrier_class: self.default_courier_carrier,
@@ -927,6 +1154,23 @@ impl CanonicalSaveablePort for LogisticsNetwork {
             for cell in &c.planned_route {
                 write_u32_le(out, cell.0);
             }
+            for &v in &c.origin_unit_xyz {
+                write_f32_bits(out, v);
+            }
+            for &v in &c.current_unit_xyz {
+                write_f32_bits(out, v);
+            }
+            for &v in &c.destination_unit_xyz {
+                write_f32_bits(out, v);
+            }
+            write_u32_le(out, c.route_waypoints_xyz.len() as u32);
+            for wp in &c.route_waypoints_xyz {
+                for &v in wp {
+                    write_f32_bits(out, v);
+                }
+            }
+            write_f64_bits(out, c.distance_travelled_km);
+            write_f64_bits(out, c.total_route_km);
             write_u32_le(out, c.route_cursor as u32);
             write_f64_bits(out, c.progress_on_edge_km);
             write_u16_le(out, c.carrier_class.0);
@@ -1019,6 +1263,32 @@ impl CanonicalSaveablePort for LogisticsNetwork {
             for _ in 0..route_len {
                 planned_route.push(CellId(read_u32_le(input)?));
             }
+            let origin_unit_xyz = [
+                read_f32_bits(input)?,
+                read_f32_bits(input)?,
+                read_f32_bits(input)?,
+            ];
+            let current_unit_xyz = [
+                read_f32_bits(input)?,
+                read_f32_bits(input)?,
+                read_f32_bits(input)?,
+            ];
+            let destination_unit_xyz = [
+                read_f32_bits(input)?,
+                read_f32_bits(input)?,
+                read_f32_bits(input)?,
+            ];
+            let wp_len = read_u32_le(input)? as usize;
+            let mut route_waypoints_xyz = Vec::with_capacity(wp_len);
+            for _ in 0..wp_len {
+                route_waypoints_xyz.push([
+                    read_f32_bits(input)?,
+                    read_f32_bits(input)?,
+                    read_f32_bits(input)?,
+                ]);
+            }
+            let distance_travelled_km = read_f64_bits(input)?;
+            let total_route_km = read_f64_bits(input)?;
             let route_cursor = read_u32_le(input)? as usize;
             let progress_on_edge_km = read_f64_bits(input)?;
             let carrier_class = CarrierClassId(read_u16_le(input)?);
@@ -1052,6 +1322,12 @@ impl CanonicalSaveablePort for LogisticsNetwork {
                 current_cell,
                 destination_cell,
                 planned_route,
+                origin_unit_xyz,
+                current_unit_xyz,
+                destination_unit_xyz,
+                route_waypoints_xyz,
+                distance_travelled_km,
+                total_route_km,
                 route_cursor,
                 progress_on_edge_km,
                 carrier_class,
@@ -1092,6 +1368,114 @@ impl CanonicalSaveablePort for LogisticsNetwork {
     }
 }
 
+fn eval_continuous_land_speed(
+    infra_id: InfraClassId,
+    u: CellId,
+    v: CellId,
+    slope: f32,
+    carrier: &CarrierDefView,
+    weather: &dyn SurfaceConditionsPort,
+    registry: &dyn ModRegistryPort,
+) -> Option<f64> {
+    if !carrier.allowed_infra_classes.is_empty()
+        && !carrier.allowed_infra_classes.contains(&infra_id)
+    {
+        return None;
+    }
+    if slope.abs() > carrier.max_grade_rad {
+        return None;
+    }
+    let surf_u = weather.surface(u);
+    let surf_v = weather.surface(v);
+    let avg_mud = 0.5 * (surf_u.mud_index_01 + surf_v.mud_index_01);
+    let max_flood = surf_u.flood_stage_01.max(surf_v.flood_stage_01);
+    let avg_snow = 0.5 * (surf_u.snow_depth_m + surf_v.snow_depth_m);
+
+    let infra = registry.infra_def(infra_id);
+    let infra_speed_mult = infra
+        .map(|i| f64::from(i.speed_multiplier.max(0.25)))
+        .unwrap_or(1.0);
+    let mud_shield = infra.map(|i| i.mud_shield_factor).unwrap_or(0.0);
+    let effective_mud = (avg_mud * (1.0 - mud_shield)).clamp(0.0, 1.0);
+    let mud_mult = f64::from((1.0 - effective_mud * carrier.mud_penalty_factor).clamp(0.18, 1.0));
+    let grade_ratio = (slope.abs() / carrier.max_grade_rad.max(0.01)).clamp(0.0, 1.0);
+    let grade_mult = f64::from(1.0 - 0.45 * grade_ratio);
+    let flood_mult = if max_flood >= 0.85 {
+        0.22
+    } else if max_flood >= 0.45 {
+        0.55
+    } else {
+        1.0
+    };
+    let snow_mult = if avg_snow >= 0.40 {
+        0.42
+    } else if avg_snow >= 0.15 {
+        0.72
+    } else {
+        1.0
+    };
+
+    let speed = f64::from(carrier.base_speed_km_hr.max(0.5))
+        * infra_speed_mult
+        * mud_mult
+        * grade_mult
+        * flood_mult
+        * snow_mult;
+    Some(speed.max(0.35))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn eval_waypoint_segment_speed(
+    edges: &BTreeMap<EdgeId, EdgeLogisticsState>,
+    default_infra: InfraClassId,
+    timber_bridge_infra: Option<InfraClassId>,
+    river_channel_infra: Option<InfraClassId>,
+    current_xyz: [f32; 3],
+    wp_a: [f32; 3],
+    wp_b: [f32; 3],
+    carrier: &CarrierDefView,
+    cargo_mass_kg: f64,
+    planet: &dyn PlanetGeometryPort,
+    weather: &dyn SurfaceConditionsPort,
+    registry: &dyn ModRegistryPort,
+) -> Option<f64> {
+    let cell_a = planet.nearest_sample_cell(wp_a);
+    let cell_b = planet.nearest_sample_cell(wp_b);
+    if cell_a != cell_b && planet.cell_edge(cell_a, cell_b).is_some() {
+        return eval_edge_speed_with_map(
+            edges,
+            default_infra,
+            timber_bridge_infra,
+            river_channel_infra,
+            cell_a,
+            cell_b,
+            carrier,
+            cargo_mass_kg,
+            planet,
+            weather,
+            registry,
+        );
+    }
+    let cur_cell = planet.nearest_sample_cell(current_xyz);
+    let rem_km = f64::from(great_circle_arc_km(current_xyz, wp_b, planet.radius_km())).max(0.1);
+    let t = (5.0 / rem_km).min(1.0) as f32;
+    let probe_xyz = slerp_unit_xyz(current_xyz, wp_b, t);
+    let probe_cell = planet.nearest_sample_cell(probe_xyz);
+    let step_km = f64::from(great_circle_arc_km(current_xyz, probe_xyz, planet.radius_km())).max(0.1);
+    let elev_cur = planet.sample_elevation_at_unit_xyz(current_xyz);
+    let elev_probe = planet.sample_elevation_at_unit_xyz(probe_xyz);
+    let slope = ((f64::from((elev_probe - elev_cur).abs())) / (step_km * 1000.0)).atan() as f32;
+    eval_continuous_land_speed(
+        default_infra,
+        cur_cell,
+        probe_cell,
+        slope,
+        carrier,
+        weather,
+        registry,
+    )
+}
+
 #[allow(clippy::too_many_arguments)]
 fn eval_edge_speed_with_map(
     edges: &BTreeMap<EdgeId, EdgeLogisticsState>,
@@ -1118,9 +1502,6 @@ fn eval_edge_speed_with_map(
     let surf_u = weather.surface(u);
     let surf_v = weather.surface(v);
     let max_ice = surf_u.ice_thickness_m.max(surf_v.ice_thickness_m);
-    let avg_mud = 0.5 * (surf_u.mud_index_01 + surf_v.mud_index_01);
-    let max_flood = surf_u.flood_stage_01.max(surf_v.flood_stage_01);
-    let avg_snow = 0.5 * (surf_u.snow_depth_m + surf_v.snow_depth_m);
 
     if carrier.is_watercraft {
         let is_water_route = Some(infra_id) == river_channel_infra || river_edge || sea_edge;
@@ -1169,48 +1550,8 @@ fn eval_edge_speed_with_map(
     {
         return None;
     }
-    if !carrier.allowed_infra_classes.is_empty()
-        && !carrier.allowed_infra_classes.contains(&infra_id)
-    {
-        return None;
-    }
-
     let slope = planet.cell_slope_rad(edge_id).abs();
-    if slope > carrier.max_grade_rad {
-        return None;
-    }
-
-    let infra = registry.infra_def(infra_id);
-    let infra_speed_mult = infra
-        .map(|i| f64::from(i.speed_multiplier.max(0.25)))
-        .unwrap_or(1.0);
-    let mud_shield = infra.map(|i| i.mud_shield_factor).unwrap_or(0.0);
-    let effective_mud = (avg_mud * (1.0 - mud_shield)).clamp(0.0, 1.0);
-    let mud_mult = f64::from((1.0 - effective_mud * carrier.mud_penalty_factor).clamp(0.18, 1.0));
-    let grade_ratio = (slope / carrier.max_grade_rad.max(0.01)).clamp(0.0, 1.0);
-    let grade_mult = f64::from(1.0 - 0.45 * grade_ratio);
-    let flood_mult = if max_flood >= 0.85 {
-        0.22
-    } else if max_flood >= 0.45 {
-        0.55
-    } else {
-        1.0
-    };
-    let snow_mult = if avg_snow >= 0.40 {
-        0.42
-    } else if avg_snow >= 0.15 {
-        0.72
-    } else {
-        1.0
-    };
-
-    let speed = f64::from(carrier.base_speed_km_hr.max(0.5))
-        * infra_speed_mult
-        * mud_mult
-        * grade_mult
-        * flood_mult
-        * snow_mult;
-    Some(speed.max(0.35))
+    eval_continuous_land_speed(infra_id, u, v, slope, carrier, weather, registry)
 }
 
 fn record_convoy_arrival(

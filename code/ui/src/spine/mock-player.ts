@@ -186,6 +186,38 @@ export class MockSnapshotPlayer implements SimBridgeApi {
       };
       openProposals?: Array<{ proposalId: number }>;
       notificationRules?: Array<{ eventClassKey: string; displayName: string; behavior: string }>;
+      governance?: {
+        activeModelKey: string;
+        activeModelName: string;
+        previousModelKey: string | null;
+        adaptationProgress01: number;
+        activePolicyKey: string;
+        activePolicyName: string;
+        taxOrTributeRate01: number;
+        charteredCarriersTotal: number;
+        availableModels: Array<{ modelKey: string; displayName: string }>;
+        availablePolicies: Array<{ policyKey: string; displayName: string; taxOrTributeRate01: number }>;
+      } | null;
+      knowledge?: {
+        settlements: Array<{ settlementId: number; innovationModeKey: string }>;
+      } | null;
+      warfare?: {
+        theaters: Array<{
+          theaterId: number;
+          commanderId: number;
+          objectiveCellId: number;
+          supplyPriority01: number;
+        }>;
+        formations: Array<{
+          formationId: number;
+          targetCellId: number;
+          doctrineKey: string;
+          noRetreatOrder: boolean;
+        }>;
+      } | null;
+      succession?: {
+        pendingTransition: { awaitingPlayerAcknowledgement: boolean } | null;
+      } | null;
     };
 
     switch (cmd.kind) {
@@ -232,10 +264,10 @@ export class MockSnapshotPlayer implements SimBridgeApi {
         next.hqPresence.etaTick = next.clockAndNotifications.tick + 12;
         break;
       case "updateNotificationRule": {
-        const rules = next.notificationRules ?? [];
-        const existing = rules.find((r) => r.eventClassKey === cmd.eventClassKey);
-        if (existing) {
-          existing.behavior = cmd.behavior;
+        const rules = [...(next.notificationRules ?? [])];
+        const idx = rules.findIndex((r) => r.eventClassKey === cmd.eventClassKey);
+        if (idx >= 0) {
+          rules[idx] = { ...rules[idx], behavior: cmd.behavior };
         } else {
           rules.push({
             eventClassKey: cmd.eventClassKey,
@@ -246,6 +278,67 @@ export class MockSnapshotPlayer implements SimBridgeApi {
         next.notificationRules = rules;
         break;
       }
+      case "switchGovernanceModel":
+        if (next.governance) {
+          const matched = next.governance.availableModels.find((m) => m.modelKey === cmd.modelKey);
+          next.governance.previousModelKey = next.governance.activeModelKey;
+          next.governance.activeModelKey = cmd.modelKey;
+          next.governance.activeModelName = matched?.displayName ?? cmd.modelKey;
+          next.governance.adaptationProgress01 = 0.05;
+        }
+        break;
+      case "enactEconomicPolicy":
+        if (next.governance) {
+          const matched = next.governance.availablePolicies.find((p) => p.policyKey === cmd.policyKey);
+          next.governance.activePolicyKey = cmd.policyKey;
+          next.governance.activePolicyName = matched?.displayName ?? cmd.policyKey;
+          if (typeof cmd.rateOverride01 === "number") {
+            next.governance.taxOrTributeRate01 = cmd.rateOverride01;
+          } else if (matched) {
+            next.governance.taxOrTributeRate01 = matched.taxOrTributeRate01;
+          }
+        }
+        break;
+      case "charterPrivateCarriers":
+        if (next.governance) {
+          next.governance.charteredCarriersTotal += cmd.count;
+        }
+        break;
+      case "setInnovationMode":
+        if (next.knowledge) {
+          for (const st of next.knowledge.settlements) {
+            if (st.settlementId === cmd.settlement) {
+              st.innovationModeKey = cmd.modeKey;
+            }
+          }
+        }
+        break;
+      case "issueTheaterDirective":
+        if (next.warfare) {
+          const theater = next.warfare.theaters.find((t) => t.theaterId === cmd.theaterId);
+          if (theater) {
+            theater.commanderId = cmd.commander;
+            theater.objectiveCellId = cmd.objectiveCell;
+            theater.supplyPriority01 = cmd.supplyPriority01;
+          }
+        }
+        break;
+      case "issueOperationalBattlePlan":
+        if (next.warfare) {
+          const formation = next.warfare.formations.find((f) => f.formationId === cmd.formationId);
+          if (formation) {
+            formation.targetCellId = cmd.targetCell;
+            formation.doctrineKey = cmd.doctrineKey;
+            formation.noRetreatOrder = cmd.noRetreat;
+          }
+        }
+        break;
+      case "acknowledgeSuccession":
+        if (next.succession) {
+          next.succession.pendingTransition = null;
+          next.clockAndNotifications.autoPauseReason = null;
+        }
+        break;
       default:
         break;
     }

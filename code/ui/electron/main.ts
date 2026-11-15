@@ -1,11 +1,13 @@
-import { app, BrowserWindow, ipcMain, session } from "electron";
-import { execFileSync } from "node:child_process";
+import { app, BrowserWindow, ipcMain, session, type WebContents } from "electron";
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import readline from "node:readline";
 import { pathToFileURL } from "node:url";
-import { parsePlayerCommand, type ValidatedCommand } from "./ipc-validator";
+import { parsePlayerCommand } from "./ipc-validator";
 import { runM2E2ESmokePhase } from "./m2-e2e-smoke";
 import { runM3M4E2ESmokePhase } from "./m3-m4-e2e-smoke";
+import { runM5M6M7E2ESmoke } from "./m5-m6-m7-e2e-smoke";
 
 // Enable Chromium Dawn WebGPU with Vulkan + WebGL2 fallback across Linux X11, Wayland & Windows.
 app.commandLine.appendSwitch("enable-unsafe-webgpu");
@@ -15,6 +17,7 @@ app.commandLine.appendSwitch("ignore-gpu-blocklist");
 if (process.env.NG_SOFTWARE_GL === "1") {
   app.commandLine.appendSwitch("use-gl", "angle");
   app.commandLine.appendSwitch("use-angle", "swiftshader-webgl");
+  app.commandLine.appendSwitch("enable-unsafe-swiftshader");
 }
 
 function getArgValue(prefix: string): string | null {
@@ -62,17 +65,110 @@ function resolveRuntimePaths(): RuntimePaths {
   };
 }
 
-interface QueuedTimedCommand {
-  readonly tick: number;
-  readonly command: ValidatedCommand;
+interface ServeStdioResponse {
+  readonly ok: boolean;
+  readonly tick?: number;
+  readonly snapshot?: Record<string, unknown>;
+  readonly errorCode?: string;
+  readonly message?: string;
+}
+
+class SimStdioSession {
+  private proc: ChildProcessWithoutNullStreams;
+  private rl: readline.Interface;
+  private waiters: Array<{
+    resolve: (resp: ServeStdioResponse) => void;
+    reject: (err: Error) => void;
+  }> = [];
+  private requestChain: Promise<unknown> = Promise.resolve();
+  private closed = false;
+  private stderrTail = "";
+
+  constructor(simCliBin: string, packDirs: string[], seed = 42) {
+    const args = ["serve-stdio"];
+    for (const p of packDirs) {
+      args.push("--pack", p);
+    }
+    args.push("--seed", String(seed));
+    this.proc = spawn(simCliBin, args, { stdio: ["pipe", "pipe", "pipe"] });
+    this.proc.stderr.setEncoding("utf8");
+    this.proc.stderr.on("data", (chunk: string) => {
+      this.stderrTail = (this.stderrTail + chunk).slice(-2048);
+    });
+    this.rl = readline.createInterface({ input: this.proc.stdout });
+    this.rl.on("line", (line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      const waiter = this.waiters.shift();
+      if (!waiter) return;
+      try {
+        const parsed = JSON.parse(trimmed) as ServeStdioResponse;
+        waiter.resolve(parsed);
+      } catch (err) {
+        waiter.reject(new Error(`Malformed sim-cli stdio JSON: ${String(err)} (${trimmed})`));
+      }
+    });
+    this.proc.on("exit", (code, signal) => {
+      this.closed = true;
+      while (this.waiters.length > 0) {
+        const waiter = this.waiters.shift();
+        waiter?.reject(
+          new Error(
+            `sim-cli serve-stdio exited prematurely (code=${String(code)}, signal=${String(signal)}): ${this.stderrTail}`,
+          ),
+        );
+      }
+    });
+  }
+
+  request(payload: unknown): Promise<ServeStdioResponse> {
+    const exec = async (): Promise<ServeStdioResponse> => {
+      if (this.closed) {
+        throw new Error("sim-cli serve-stdio session is closed");
+      }
+      return new Promise<ServeStdioResponse>((resolve, reject) => {
+        this.waiters.push({ resolve, reject });
+        this.proc.stdin.write(`${JSON.stringify(payload)}\n`, "utf8", (err) => {
+          if (err) {
+            const idx = this.waiters.findIndex((w) => w.reject === reject);
+            if (idx >= 0) this.waiters.splice(idx, 1);
+            reject(err);
+          }
+        });
+      });
+    };
+    const next = this.requestChain.then(exec, exec);
+    this.requestChain = next.catch(() => undefined);
+    return next;
+  }
+
+  async dispose(): Promise<void> {
+    if (this.closed) return;
+    this.closed = true;
+    try {
+      this.proc.stdin.write(`${JSON.stringify({ op: "quit" })}\n`, "utf8");
+      this.proc.stdin.end();
+    } catch {
+      // Ignore write failures during shutdown
+    }
+    this.rl.close();
+    setTimeout(() => {
+      if (!this.proc.killed) {
+        this.proc.kill();
+      }
+    }, 150).unref();
+  }
 }
 
 let activeExtraPacks: string[] = INITIAL_CORRUPT_PACK ? [INITIAL_CORRUPT_PACK] : [];
 let currentTick = 0;
-let isPaused = false;
+let isPaused = true;
 let speedMultiplier = 1;
 let cachedSnapshot: Record<string, unknown> | null = null;
-let queuedCommands: QueuedTimedCommand[] = [];
+let activeSession: SimStdioSession | null = null;
+let clockInterval: NodeJS.Timeout | null = null;
+let clockStepInFlight = false;
+let mainWebContents: WebContents | null = null;
 
 type RgbTuple = [number, number, number];
 
@@ -455,7 +551,100 @@ function runSimCli(simCliBin: string, subcommand: string, packDirs: string[], ex
   }
 }
 
-function computeInitialState(paths: RuntimePaths): unknown {
+let lastAutoPauseReason: string | null = null;
+const dismissedAutoPauseReasons = new Set<string>();
+
+async function disposeActiveSession(): Promise<void> {
+  if (clockInterval) {
+    clearInterval(clockInterval);
+    clockInterval = null;
+  }
+  clockStepInFlight = false;
+  if (activeSession) {
+    const old = activeSession;
+    activeSession = null;
+    await old.dispose();
+  }
+}
+
+function normalizeSnapshot(snapshot: Record<string, unknown>): Record<string, unknown> {
+  const persistedPrefs = readUserPreferences();
+  const persistedEntries = Object.entries(persistedPrefs.notificationRules);
+  if (persistedEntries.length > 0) {
+    const existingRules = Array.isArray(snapshot.notificationRules)
+      ? (snapshot.notificationRules as Array<Record<string, unknown>>)
+      : [];
+    for (const [eventClassKey, behavior] of persistedEntries) {
+      const found = existingRules.find((r) => r.eventClassKey === eventClassKey);
+      if (found) {
+        found.behavior = behavior;
+      } else {
+        existingRules.push({ eventClassKey, displayName: eventClassKey, behavior });
+      }
+    }
+    snapshot.notificationRules = existingRules;
+  }
+
+  const succession = snapshot.succession as Record<string, unknown> | null | undefined;
+  const pending = succession?.pendingTransition as Record<string, unknown> | null | undefined;
+  const awaitingSuccession = Boolean(pending && pending.awaitingPlayerAcknowledgement === true);
+
+  const clk = snapshot.clockAndNotifications as Record<string, unknown> | undefined;
+  if (clk && typeof clk === "object") {
+    if (typeof clk.tick === "number") {
+      currentTick = clk.tick;
+    }
+    const reason =
+      typeof clk.autoPauseReason === "string" && clk.autoPauseReason.length > 0
+        ? clk.autoPauseReason
+        : awaitingSuccession
+          ? "succession_transition"
+          : null;
+    if (reason && !dismissedAutoPauseReasons.has(reason)) {
+      if (reason !== lastAutoPauseReason || awaitingSuccession) {
+        isPaused = true;
+        lastAutoPauseReason = reason;
+      }
+      clk.autoPauseReason = reason;
+      clk.paused = isPaused;
+    } else if (reason && dismissedAutoPauseReasons.has(reason) && !awaitingSuccession) {
+      clk.autoPauseReason = null;
+      clk.paused = isPaused;
+    } else {
+      clk.paused = isPaused;
+    }
+    clk.speedMultiplier = speedMultiplier;
+  }
+  cachedSnapshot = snapshot;
+  return snapshot;
+}
+
+function ensureLiveClockRunning(): void {
+  if (clockInterval) return;
+  clockInterval = setInterval(() => {
+    if (isPaused || clockStepInFlight || !activeSession) return;
+    if (!mainWebContents || mainWebContents.isDestroyed()) return;
+    clockStepInFlight = true;
+    const ticks = Math.max(1, Math.min(24, speedMultiplier));
+    void activeSession
+      .request({ op: "step", ticks })
+      .then((resp) => {
+        if (resp.ok && resp.snapshot && mainWebContents && !mainWebContents.isDestroyed()) {
+          const normalized = normalizeSnapshot(resp.snapshot);
+          mainWebContents.send("sim:snapshot", normalized);
+        }
+      })
+      .catch(() => {
+        // Ignore transient errors on shutdown
+      })
+      .finally(() => {
+        clockStepInFlight = false;
+      });
+  }, 150);
+  clockInterval.unref();
+}
+
+async function startOrGetSessionState(paths: RuntimePaths): Promise<unknown> {
   const packs = activePackPaths(paths);
   const valRes = runSimCli(paths.simCliBin, "validate-mods", packs);
   if (!valRes.ok) {
@@ -483,22 +672,27 @@ function computeInitialState(paths: RuntimePaths): unknown {
     }
   }
 
-  const snapArgs = ["--ticks", String(currentTick), "--seed", "42"];
-  const persistedPrefs = readUserPreferences();
-  const persistedRuleCmds: QueuedTimedCommand[] = Object.entries(
-    (persistedPrefs.notificationRules ?? {}) as Record<string, unknown>,
-  )
-    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
-    .map(([eventClassKey, behavior]) => ({
-      tick: 1,
-      command: { kind: "updateNotificationRule", eventClassKey, behavior },
-    }));
-  const combinedCmds = [...persistedRuleCmds, ...queuedCommands];
-  if (combinedCmds.length > 0) {
-    snapArgs.push("--commands-json", JSON.stringify(combinedCmds));
-  }
-  const snapRes = runSimCli(paths.simCliBin, "dump-snapshot", packs, snapArgs);
-  if (!snapRes.ok) {
+  try {
+    if (!activeSession) {
+      activeSession = new SimStdioSession(paths.simCliBin, packs, 42);
+      const persistedPrefs = readUserPreferences();
+      for (const [eventClassKey, behavior] of Object.entries(persistedPrefs.notificationRules)) {
+        if (typeof behavior === "string") {
+          await activeSession.request({
+            op: "command",
+            command: { kind: "updateNotificationRule", eventClassKey, behavior },
+          });
+        }
+      }
+      ensureLiveClockRunning();
+    }
+    const resp = await activeSession.request({ op: "snapshot" });
+    if (!resp.ok || !resp.snapshot) {
+      throw new Error(resp.message ?? "Failed to read initial snapshot from sim-cli serve-stdio");
+    }
+    const snapshot = normalizeSnapshot(resp.snapshot);
+    return { state: "ready", snapshot };
+  } catch (err) {
     return {
       state: "mod_error",
       failure: {
@@ -507,66 +701,16 @@ function computeInitialState(paths: RuntimePaths): unknown {
           {
             severity: "Error",
             layer: "Snapshot",
-            filePath: "sim-cli",
+            filePath: "sim-cli serve-stdio",
             line: 1,
             column: 1,
-            fieldPath: "dump-snapshot",
-            message: snapRes.stdout,
+            fieldPath: "serve-stdio",
+            message: String(err),
           },
         ],
       },
     };
   }
-  const snapshot = JSON.parse(snapRes.stdout) as Record<string, unknown>;
-  const persistedEntries = Object.entries(persistedPrefs.notificationRules);
-  if (persistedEntries.length > 0) {
-    const existingRules = Array.isArray(snapshot.notificationRules)
-      ? (snapshot.notificationRules as Array<Record<string, unknown>>)
-      : [];
-    for (const [eventClassKey, behavior] of persistedEntries) {
-      const found = existingRules.find((r) => r.eventClassKey === eventClassKey);
-      if (found) {
-        found.behavior = behavior;
-      } else {
-        existingRules.push({ eventClassKey, displayName: eventClassKey, behavior });
-      }
-    }
-    snapshot.notificationRules = existingRules;
-  }
-  const clk = snapshot.clockAndNotifications as Record<string, unknown> | undefined;
-  if (clk && typeof clk === "object") {
-    clk.paused = isPaused;
-    clk.speedMultiplier = speedMultiplier;
-  }
-  cachedSnapshot = snapshot;
-  return { state: "ready", snapshot };
-}
-
-let lastAutoPauseReason: string | null = null;
-const dismissedAutoPauseReasons = new Set<string>();
-
-function computeInitialStateChecked(paths: RuntimePaths): unknown {
-  const result = computeInitialState(paths) as { state: string; snapshot?: Record<string, unknown> };
-  if (result.state === "ready" && result.snapshot) {
-    const clk = result.snapshot.clockAndNotifications as Record<string, unknown> | undefined;
-    if (clk && typeof clk === "object") {
-      const reason = typeof clk.autoPauseReason === "string" && clk.autoPauseReason.length > 0
-        ? clk.autoPauseReason
-        : null;
-      if (reason && !dismissedAutoPauseReasons.has(reason)) {
-        if (reason !== lastAutoPauseReason) {
-          isPaused = true;
-          lastAutoPauseReason = reason;
-        }
-        clk.paused = isPaused;
-      } else if (reason && dismissedAutoPauseReasons.has(reason)) {
-        clk.autoPauseReason = null;
-        clk.paused = isPaused;
-      }
-    }
-    cachedSnapshot = result.snapshot;
-  }
-  return result;
 }
 
 function createMainWindow(paths: RuntimePaths): BrowserWindow {
@@ -582,6 +726,7 @@ function createMainWindow(paths: RuntimePaths): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
+      backgroundThrottling: !headless,
     },
   });
   void win.loadFile(paths.indexHtml);
@@ -602,22 +747,22 @@ app.whenReady().then(() => {
     });
   });
 
-  ipcMain.handle("sim:get-initial-state", () => computeInitialStateChecked(paths));
+  ipcMain.handle("sim:get-initial-state", () => startOrGetSessionState(paths));
 
-  ipcMain.handle("sim:reload-mods", (_ev, recoverToDefault: boolean) => {
+  ipcMain.handle("sim:reload-mods", async (_ev, recoverToDefault: boolean) => {
+    await disposeActiveSession();
     if (recoverToDefault) {
       activeExtraPacks = [];
-      queuedCommands = [];
-      currentTick = 0;
-      isPaused = false;
-      speedMultiplier = 1;
-      lastAutoPauseReason = null;
-      dismissedAutoPauseReasons.clear();
     }
-    return computeInitialStateChecked(paths);
+    currentTick = 0;
+    isPaused = true;
+    speedMultiplier = 1;
+    lastAutoPauseReason = null;
+    dismissedAutoPauseReasons.clear();
+    return startOrGetSessionState(paths);
   });
 
-  ipcMain.handle("sim:send-command", (ev, rawCmd: unknown) => {
+  ipcMain.handle("sim:send-command", async (ev, rawCmd: unknown) => {
     const parsed = parsePlayerCommand(rawCmd);
     if (!parsed.ok) {
       return {
@@ -630,76 +775,78 @@ app.whenReady().then(() => {
     const cmd = parsed.command;
     if (cmd.kind === "setPaused") {
       isPaused = cmd.paused;
-      if (!isPaused && lastAutoPauseReason) {
+      if (!isPaused && lastAutoPauseReason && lastAutoPauseReason !== "succession_transition") {
         dismissedAutoPauseReasons.add(lastAutoPauseReason);
       }
     }
-    if (cmd.kind === "setSpeedMultiplier") speedMultiplier = cmd.multiplier;
-
-    if (cmd.kind === "stepSingleTick") {
-      currentTick += 1;
-      const boot = computeInitialStateChecked(paths) as { state: string; snapshot?: unknown };
-      if (boot.state === "ready" && boot.snapshot) {
-        ev.sender.send("sim:snapshot", boot.snapshot);
-      }
-    } else if (cmd.kind === "issueMandate" || cmd.kind === "resolveArbitrationProposal" || cmd.kind === "relocateHq") {
-      queuedCommands.push({ tick: currentTick + 1, command: cmd });
-    } else if (cmd.kind === "updateNotificationRule" || cmd.kind === "setPersonalAttentionZoom") {
-      queuedCommands.push({ tick: Math.max(1, currentTick), command: cmd });
-      if (cmd.kind === "updateNotificationRule") {
-        writeUserPreferences({ notificationRules: { [cmd.eventClassKey]: cmd.behavior } });
-      }
-      if (currentTick >= 1) {
-        const boot = computeInitialStateChecked(paths) as { state: string; snapshot?: unknown };
-        if (boot.state === "ready" && boot.snapshot) {
-          ev.sender.send("sim:snapshot", boot.snapshot);
-        }
-      } else if (cachedSnapshot) {
-        const updated = JSON.parse(JSON.stringify(cachedSnapshot)) as Record<string, unknown>;
-        if (cmd.kind === "setPersonalAttentionZoom") {
-          const dt = updated.delegationTree as Record<string, unknown> | undefined;
-          if (dt) {
-            dt.focusedMandateId = cmd.targetMandateId;
-            dt.focusedAttentionShare = cmd.share01;
-          }
-        } else {
-          const rules = Array.isArray(updated.notificationRules)
-            ? (updated.notificationRules as Array<Record<string, unknown>>)
-            : [];
-          const existing = rules.find((r) => r.eventClassKey === cmd.eventClassKey);
-          if (existing) {
-            existing.behavior = cmd.behavior;
-          } else {
-            rules.push({
-              eventClassKey: cmd.eventClassKey,
-              displayName: cmd.eventClassKey,
-              behavior: cmd.behavior,
-            });
-          }
-          updated.notificationRules = rules;
-        }
-        cachedSnapshot = updated;
-        ev.sender.send("sim:snapshot", updated);
-      }
-    } else if ((cmd.kind === "setPaused" || cmd.kind === "setSpeedMultiplier") && cachedSnapshot) {
-      const updated = JSON.parse(JSON.stringify(cachedSnapshot)) as Record<string, unknown>;
-      const clk = updated.clockAndNotifications as Record<string, unknown> | undefined;
-      if (clk && typeof clk === "object") {
-        clk.paused = isPaused;
-        clk.speedMultiplier = speedMultiplier;
-        if (cmd.kind === "setPaused" && !isPaused) {
-          clk.autoPauseReason = null;
-        }
-      }
-      cachedSnapshot = updated;
-      ev.sender.send("sim:snapshot", updated);
+    if (cmd.kind === "setSpeedMultiplier") {
+      speedMultiplier = cmd.multiplier;
     }
-    return {
-      accepted: true,
-      tick: currentTick,
-      errorCode: null,
-      message: `Executed ${cmd.kind} (paused=${isPaused}, speed=${speedMultiplier})`,
-    };
+    if (cmd.kind === "updateNotificationRule") {
+      writeUserPreferences({ notificationRules: { [cmd.eventClassKey]: cmd.behavior } });
+    }
+    if (cmd.kind === "acknowledgeSuccession") {
+      dismissedAutoPauseReasons.add("succession_transition");
+      if (lastAutoPauseReason === "succession_transition") {
+        lastAutoPauseReason = null;
+      }
+    }
+
+    if (!activeSession) {
+      // Fixture/fallback path if no engine stdio session is active
+      if (cachedSnapshot) {
+        const updated = JSON.parse(JSON.stringify(cachedSnapshot)) as Record<string, unknown>;
+        if (cmd.kind === "acknowledgeSuccession") {
+          const succ = updated.succession as Record<string, unknown> | undefined;
+          if (succ) succ.pendingTransition = null;
+          const clk = updated.clockAndNotifications as Record<string, unknown> | undefined;
+          if (clk) clk.autoPauseReason = null;
+        }
+        const normalized = normalizeSnapshot(updated);
+        ev.sender.send("sim:snapshot", normalized);
+      }
+      return {
+        accepted: true,
+        tick: currentTick,
+        errorCode: null,
+        message: `Executed ${cmd.kind} in fixture state`,
+      };
+    }
+
+    try {
+      const resp =
+        cmd.kind === "stepSingleTick"
+          ? await activeSession.request({ op: "step", ticks: 1 })
+          : await activeSession.request({ op: "command", command: cmd });
+      if (!resp.ok) {
+        return {
+          accepted: false,
+          tick: resp.tick ?? currentTick,
+          errorCode: resp.errorCode ?? "INVALID_COMMAND",
+          message: resp.message ?? "Command rejected by engine",
+        };
+      }
+      if (resp.snapshot) {
+        const normalized = normalizeSnapshot(resp.snapshot);
+        ev.sender.send("sim:snapshot", normalized);
+      }
+      if (cmd.kind === "setPaused" && !isPaused) {
+        ensureLiveClockRunning();
+      }
+      return {
+        accepted: true,
+        tick: resp.tick ?? currentTick,
+        errorCode: null,
+        message: `Executed ${cmd.kind} (paused=${isPaused}, speed=${speedMultiplier})`,
+      };
+    } catch (err) {
+      return {
+        accepted: false,
+        tick: currentTick,
+        errorCode: "SESSION_ERROR",
+        message: String(err),
+      };
+    }
   });
 
   ipcMain.handle("sim:list-skins", () => discoverSkinDescriptors(paths.skinsDir));
@@ -714,9 +861,24 @@ app.whenReady().then(() => {
     writeUserPreferences(rawPrefs);
   });
 
-  ipcMain.handle("sim:load-mock-fixture", () => undefined);
+  ipcMain.handle("sim:load-mock-fixture", (ev, fixtureJson: string) => {
+    try {
+      const parsed: unknown = JSON.parse(fixtureJson);
+      const snap = Array.isArray(parsed) ? parsed[0] : parsed;
+      if (typeof snap === "object" && snap !== null) {
+        isPaused = true;
+        lastAutoPauseReason = null;
+        dismissedAutoPauseReasons.clear();
+        const normalized = normalizeSnapshot(snap as Record<string, unknown>);
+        ev.sender.send("sim:snapshot", normalized);
+      }
+    } catch {
+      // Ignore malformed fixture strings cleanly
+    }
+  });
 
   const mainWindow = createMainWindow(paths);
+  mainWebContents = mainWindow.webContents;
 
   // Hot-reload CSS/skins in non-smoke dev runs when skin manifests or stylesheets change on disk.
   const skinWatchers: fs.FSWatcher[] = [];
@@ -741,6 +903,7 @@ app.whenReady().then(() => {
   }
   app.on("before-quit", () => {
     for (const w of skinWatchers) w.close();
+    void disposeActiveSession();
   });
 
   if (SMOKE_MODE !== null) {
@@ -755,12 +918,21 @@ app.whenReady().then(() => {
         if (SMOKE_MODE.startsWith("m2-")) {
           const m2Result = await runM2E2ESmokePhase(mainWindow, SMOKE_MODE);
           console.log("M2_SMOKE_RESULT:" + JSON.stringify(m2Result));
+          await disposeActiveSession();
           app.exit(0);
           return;
         }
         if (SMOKE_MODE.startsWith("m3-m4")) {
           const m34Result = await runM3M4E2ESmokePhase(mainWindow, SMOKE_MODE);
           console.log("M3_M4_SMOKE_RESULT:" + JSON.stringify(m34Result));
+          await disposeActiveSession();
+          app.exit(0);
+          return;
+        }
+        if (SMOKE_MODE.startsWith("m5-m6-m7")) {
+          const m567Result = await runM5M6M7E2ESmoke(mainWindow, SMOKE_MODE);
+          console.log("M5_M6_M7_SMOKE_RESULT:" + JSON.stringify(m567Result));
+          await disposeActiveSession();
           app.exit(0);
           return;
         }

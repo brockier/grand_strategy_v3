@@ -2,8 +2,8 @@
 
 **Module ID:** `ENG-EPI-09`  
 **Code Location:** `code/engine/crates/player-view/`  
-**Milestone & Design Depth:** `M3–M4: Full Detailed Design`  
-**Satisfies Requirements:** `ENG-EPI-001`, `ENG-EPI-002`, `ENG-EPI-003`, `ENG-EPI-004`, `ENG-EPI-005`, `ENG-EPI-006`, `ENG-EPI-007` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
+**Milestone & Design Depth:** `M3–M7: Full Detailed Design`  
+**Satisfies Requirements:** `ENG-EPI-001`, `ENG-EPI-002`, `ENG-EPI-003`, `ENG-EPI-004`, `ENG-EPI-005`, `ENG-EPI-006`, `ENG-EPI-007`, `ENG-RES-001.2`, `ENG-WAR-001.1`, `ENG-POP-006.2` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
 ---
 
@@ -92,7 +92,8 @@ pub struct TrackedExpeditionOrConvoy {
 2. `code/engine/crates/player-view` builds `DiegeticSnapshot` solely from `PlayerKnowledgeArchive` plus the `HqPresenceState` live sight radius. Unexplored cells omit elevation, rock strata, and weather inside serialized IPC snapshots (`CellViewState::Unexplored` carries zero terrain payload).
 
 ### 3.2 Immediate HQ Sight vs. Distant Latency (`ENG-EPI-002`, `ENG-EPI-003`, `ENG-EPI-004`)
-1. On every tick `Phase 8`, BFS within `sight_radius_cells` around `HqPresenceState::current_cell()` writes live un-perturbed observations (`observed_tick = now`, `Direct Observation (HQ)`) for local terrain, weather, stockpiles, cohorts, and visible convoys.
+1. On every tick `Phase 8`, spherical great-circle sight checks and topological horizon rings around `HqPresenceState::current_unit_xyz()` write live un-perturbed observations (`observed_tick = now`, `Direct Observation (HQ)`) for local terrain, weather, stockpiles, cohorts, visible convoys, and nearby formations, stamping continuous `(latDeg, lonDeg)` and `unitXyz` coordinates into `DiegeticSnapshot`.
+2. In `M5`–`M7`, `DiegeticSnapshot` additionally emits courier-filtered DTOs for non-state actors, regional spot prices, shared corridor congestion, empirically assayed procedural materials, 4-carrier knowledge counts, theater directives/battle plans, strictly delayed `reportedFormations`, and `rulerSuccession` transition records—while `ValidatedPlayerCommand` explicitly rejects any `moveFormationUnit` or `unlockTechNode` cheat attempts (`ENG-WAR-001.1`, `ENG-RES-001.2`).
 2. Outside HQ sight radius, `PlayerKnowledgeArchive` performs **zero automatic polling** of remote truth. Updates occur strictly when:
    - A `PhysicalCourier` `TransitEntity` reaches `HqPresenceState::current_cell()` carrying an `ArrivedCourierEnvelope` (survey report, settlement ledger snapshot, bottleneck proposal, or convoy sighting), OR
    - An electrical telegraph/radio link exists and completes transmission across wired/line nodes.

@@ -16,7 +16,7 @@ flowchart TD
     SPINE["code/engine/crates/sim-spine (Opaque IDs, Port Traits, TickPhase Bus, Plug Hooks)"]
     MOD["02 sim-data (Mod & Schema Loader)"] --> SPINE
     CLK["03 sim-clock (Hourly Clock & Sharding)"] --> SPINE
-    GEO["04 sim-planet (Goldberg Sphere & Materials)"] --> SPINE
+    GEO["04 sim-planet (Continuous Sphere Field & Materials)"] --> SPINE
     WTH["05 sim-weather (Atmosphere & Hydrology)"] --> SPINE
     ECO["06 sim-economy (Physical Goods & Production)"] --> SPINE
     LOG["07 sim-logistics (Carriers & Route Graph)"] --> SPINE
@@ -38,8 +38,8 @@ All cross-module identifiers wrap unsigned integers as `Copy + Clone + Eq + Ord 
 | Spine ID Type | Backing Width | Domain Semantics |
 | :--- | :--- | :--- |
 | `Tick` | `u64` | Discrete simulation hour index starting at `0` |
-| `CellId` | `u32` | Goldberg polyhedron hex or pentagon cell index |
-| `EdgeId` | `u32` | Directed or undirected cell-to-cell adjacency edge |
+| `CellId` | `u32` | Subdivided icosphere spherical terrain sample node index (zero hex tiles) |
+| `EdgeId` | `u32` | Directed or undirected sample-to-sample adjacency corridor |
 | `PlateId` | `u16` | Tectonic plate identifier |
 | `WatershedId` | `u32` | Hydrological drainage basin identifier |
 | `SettlementId` | `u32` | Named settled site or outpost identifier |
@@ -92,6 +92,11 @@ pub trait PlanetGeometryPort: Send + Sync {
     fn cell_biome_and_strata(&self, cell: CellId) -> CellGeologyView;
     fn watershed_downstream(&self, cell: CellId) -> Option<CellId>;
     fn great_circle_km(&self, a: CellId, b: CellId) -> f32;
+    fn nearest_sample_cell(&self, unit_xyz: [f32; 3]) -> CellId;
+    fn sample_elevation_at_unit_xyz(&self, unit_xyz: [f32; 3]) -> f32;
+    fn icosphere_triangles(&self) -> &[[u32; 3]];
+    fn watershed_id(&self, cell: CellId) -> WatershedId;
+    fn region_label(&self, cell: CellId) -> String;
 }
 
 pub trait SurfaceConditionsPort: Send + Sync {

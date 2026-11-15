@@ -3,12 +3,14 @@
 //! Headless simulation CLI and composition root wiring `sim-data`, `sim-scenario`, and `player-view`.
 
 use std::env;
+use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Instant;
 
 use player_view::{ModDiagnosticDto, ModValidationFailureState, ValidatedPlayerCommand};
 use serde::Deserialize;
+use sim_clock::ClockRunMode;
 use sim_data::{export_json_schemas, load_mod_bundle};
 use sim_scenario::{resolve_scenario_pack_stack, ScenarioWorld};
 use sim_spine::{ModRegistryPort, PhysicalLedgerPort, PlanetGeometryPort, Tick};
@@ -120,7 +122,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!(
-            "Usage: sim-cli <export-schemas|validate-mods|dump-snapshot|run|verify-determinism> [options]"
+            "Usage: sim-cli <export-schemas|validate-mods|dump-snapshot|run|verify-determinism|serve-stdio> [options]"
         );
         return ExitCode::from(2);
     }
@@ -321,6 +323,158 @@ fn main() -> ExitCode {
                     }
                 }
                 Err(diags) => emit_mod_failure_json(diags, false),
+            }
+        }
+        "serve-stdio" => {
+            let sub = &args[2..];
+            let packs = resolve_packs_from_args(sub);
+            let initial_ticks = parse_u64_flag(sub, "--ticks", 0);
+            let seed = parse_u64_flag(sub, "--seed", 42);
+            let commands_json = parse_str_flag(sub, "--commands-json");
+            let pack_refs: Vec<&Path> = packs.iter().map(PathBuf::as_path).collect();
+            match load_mod_bundle(&pack_refs) {
+                Ok(bundle) => {
+                    let mut world = ScenarioWorld::from_registry(&bundle, seed);
+                    if let Some(ref raw_cmds) = commands_json
+                        && let Err(err) = enqueue_commands_json(&mut world, raw_cmds)
+                    {
+                        eprintln!("{err}");
+                        return ExitCode::FAILURE;
+                    }
+                    if initial_ticks > 0 {
+                        world.step_ticks(&bundle, initial_ticks);
+                    }
+
+                    let stdin = io::stdin();
+                    let stdout = io::stdout();
+                    let mut out = io::BufWriter::new(stdout.lock());
+
+                    for line_res in stdin.lock().lines() {
+                        let Ok(line) = line_res else {
+                            break;
+                        };
+                        let trimmed = line.trim();
+                        if trimmed.is_empty() {
+                            continue;
+                        }
+                        let req: serde_json::Value = match serde_json::from_str(trimmed) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                let resp = serde_json::json!({
+                                    "ok": false,
+                                    "tick": world.clock.current_tick.get(),
+                                    "errorCode": "INVALID_JSON",
+                                    "message": format!("Invalid JSON request: {err}")
+                                });
+                                let _ = writeln!(out, "{resp}");
+                                let _ = out.flush();
+                                continue;
+                            }
+                        };
+
+                        let op = req.get("op").and_then(|v| v.as_str()).unwrap_or("");
+                        match op {
+                            "quit" => {
+                                let resp = serde_json::json!({
+                                    "ok": true,
+                                    "tick": world.clock.current_tick.get()
+                                });
+                                let _ = writeln!(out, "{resp}");
+                                let _ = out.flush();
+                                break;
+                            }
+                            "snapshot" => {
+                                let snap = world.compile_diegetic_snapshot(&bundle);
+                                let resp = serde_json::json!({
+                                    "ok": true,
+                                    "tick": world.clock.current_tick.get(),
+                                    "snapshot": snap
+                                });
+                                let _ = writeln!(out, "{resp}");
+                                let _ = out.flush();
+                            }
+                            "step" => {
+                                let ticks = req
+                                    .get("ticks")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(1)
+                                    .max(1);
+                                for _ in 0..ticks {
+                                    world.step_one_tick(&bundle);
+                                    if matches!(world.clock.mode, ClockRunMode::AutoPaused { .. }) {
+                                        break;
+                                    }
+                                }
+                                let snap = world.compile_diegetic_snapshot(&bundle);
+                                let resp = serde_json::json!({
+                                    "ok": true,
+                                    "tick": world.clock.current_tick.get(),
+                                    "snapshot": snap
+                                });
+                                let _ = writeln!(out, "{resp}");
+                                let _ = out.flush();
+                            }
+                            "command" => {
+                                let raw_cmd = req
+                                    .get("command")
+                                    .cloned()
+                                    .unwrap_or(serde_json::Value::Null);
+                                match serde_json::from_value::<ValidatedPlayerCommand>(raw_cmd) {
+                                    Ok(validated) => match validated.to_spine_command() {
+                                        Ok(spine_cmd) => {
+                                            world.apply_player_command_now(&bundle, spine_cmd);
+                                            let snap = world.compile_diegetic_snapshot(&bundle);
+                                            let resp = serde_json::json!({
+                                                "ok": true,
+                                                "tick": world.clock.current_tick.get(),
+                                                "snapshot": snap
+                                            });
+                                            let _ = writeln!(out, "{resp}");
+                                            let _ = out.flush();
+                                        }
+                                        Err(msg) => {
+                                            let code = if msg.starts_with("ERR_") {
+                                                msg.split(':').next().unwrap_or("INVALID_COMMAND")
+                                            } else {
+                                                "INVALID_COMMAND"
+                                            };
+                                            let resp = serde_json::json!({
+                                                "ok": false,
+                                                "tick": world.clock.current_tick.get(),
+                                                "errorCode": code,
+                                                "message": msg
+                                            });
+                                            let _ = writeln!(out, "{resp}");
+                                            let _ = out.flush();
+                                        }
+                                    },
+                                    Err(err) => {
+                                        let resp = serde_json::json!({
+                                            "ok": false,
+                                            "tick": world.clock.current_tick.get(),
+                                            "errorCode": "INVALID_COMMAND",
+                                            "message": format!("Invalid command schema: {err}")
+                                        });
+                                        let _ = writeln!(out, "{resp}");
+                                        let _ = out.flush();
+                                    }
+                                }
+                            }
+                            other => {
+                                let resp = serde_json::json!({
+                                    "ok": false,
+                                    "tick": world.clock.current_tick.get(),
+                                    "errorCode": "UNKNOWN_OP",
+                                    "message": format!("Unknown serve-stdio op '{other}'")
+                                });
+                                let _ = writeln!(out, "{resp}");
+                                let _ = out.flush();
+                            }
+                        }
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(diags) => emit_mod_failure_json(diags, true),
             }
         }
         other => {

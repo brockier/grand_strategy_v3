@@ -17,6 +17,10 @@ sim-data = { path = "../sim-data" }
 sim-economy = { path = "../sim-economy" }
 sim-logistics = { path = "../sim-logistics" }
 sim-planet = { path = "../sim-planet" }
+sim-plug-private-eco = { path = "../sim-plug-private-eco" }
+sim-plug-research = { path = "../sim-plug-research" }
+sim-plug-succession = { path = "../sim-plug-succession" }
+sim-plug-warfare = { path = "../sim-plug-warfare" }
 sim-pop = { path = "../sim-pop" }
 sim-spine = { path = "../sim-spine" }
 sim-weather = { path = "../sim-weather" }

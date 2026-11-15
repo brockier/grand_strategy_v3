@@ -38,13 +38,35 @@ fn default_planet_cfg(subdiv: u8) -> PlanetGenConfigView {
     }
 }
 
-// @req ENG-GEO-001
+// @req ENG-GEO-001.1
 #[test]
 fn geodesic_topology_has_exact_euler_counts_symmetry_and_spherical_area() {
-    let cfg = default_planet_cfg(3); // GP(8, 0) -> 10 * 8^2 + 2 = 642 cells
+    let cfg = default_planet_cfg(3); // GP(8, 0) -> 10 * 8^2 + 2 = 642 sample nodes, 20 * 8^2 = 1280 triangles
     let planet = GeneratedPlanet::generate(42, &cfg);
     let n = planet.cell_count();
     assert_eq!(n, 642);
+
+    let tris = planet.icosphere_triangles();
+    assert_eq!(tris.len(), 1280, "must expose 20 * m^2 welded icosphere triangles");
+    // Check Euler characteristic V - E + F == 2 and outward CCW winding on every triangle.
+    let v_count = n as i64;
+    let e_count = planet.topology.edge_endpoints.len() as i64;
+    let f_count = tris.len() as i64;
+    assert_eq!(v_count - e_count + f_count, 2, "icosphere Euler invariant V - E + F = 2");
+    for &[a, b, c] in tris {
+        let pa = planet.cell_unit_xyz(CellId(a));
+        let pb = planet.cell_unit_xyz(CellId(b));
+        let pc = planet.cell_unit_xyz(CellId(c));
+        let ab = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+        let ac = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
+        let nx = ab[1] * ac[2] - ab[2] * ac[1];
+        let ny = ab[2] * ac[0] - ab[0] * ac[2];
+        let nz = ab[0] * ac[1] - ab[1] * ac[0];
+        let cx = pa[0] + pb[0] + pc[0];
+        let cy = pa[1] + pb[1] + pc[1];
+        let cz = pa[2] + pb[2] + pc[2];
+        assert!(nx * cx + ny * cy + nz * cz > 0.0, "triangle winding must be outward CCW");
+    }
 
     let mut deg5 = 0u32;
     let mut deg6 = 0u32;
@@ -56,7 +78,7 @@ fn geodesic_topology_has_exact_euler_counts_symmetry_and_spherical_area() {
         match nbrs.len() {
             5 => deg5 += 1,
             6 => deg6 += 1,
-            other => panic!("unexpected Goldberg vertex degree {other}"),
+            other => panic!("unexpected vertex degree {other}"),
         }
         for &nb in nbrs {
             assert!(
@@ -80,6 +102,33 @@ fn geodesic_topology_has_exact_euler_counts_symmetry_and_spherical_area() {
         rel_err < 1e-4,
         "spherical dual area sum {area_sum} diverged from {expected_area}"
     );
+
+    // Continuous sphere sampling, barycentric elevation interpolation, and natural watershed assignment.
+    let c0 = CellId(10);
+    let nb0 = planet.cell_neighbors(c0)[0];
+    let p0 = planet.cell_unit_xyz(c0);
+    let p1 = planet.cell_unit_xyz(nb0);
+    let mid = [p0[0] + p1[0], p0[1] + p1[1], p0[2] + p1[2]];
+    let len = (mid[0] * mid[0] + mid[1] * mid[1] + mid[2] * mid[2]).sqrt();
+    let u_mid = [mid[0] / len, mid[1] / len, mid[2] / len];
+    assert_eq!(planet.nearest_sample_cell(p0), c0);
+    let sampled_elev = planet.sample_elevation_at_unit_xyz(u_mid);
+    let e0 = planet.cell_elevation_m(c0);
+    let e1 = planet.cell_elevation_m(nb0);
+    let lo = e0.min(e1) - 1e-2;
+    let hi = e0.max(e1) + 1e-2;
+    assert!(
+        sampled_elev >= lo && sampled_elev <= hi,
+        "continuous midpoint elevation {sampled_elev} must interpolate within [{lo}, {hi}]"
+    );
+    let mut land_watershed_count = 0usize;
+    for raw in 0..n {
+        let cid = CellId(raw);
+        if !planet.is_ocean[raw as usize] && planet.watershed_id(cid).0 > 0 {
+            land_watershed_count += 1;
+        }
+    }
+    assert!(land_watershed_count > 0, "land samples must belong to positive natural watersheds");
 
     // Great-circle distance bounded cleanly by [0, PI * R].
     let antipodal_max = (PI * f64::from(cfg.mean_radius_km)) as f32 + 1.0;

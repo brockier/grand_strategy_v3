@@ -45,3 +45,27 @@ id = "mandate_issued_log"
 display_name = "Written Mandate Dispatched"
 default_tier = "LogOnly"
 template_key = "dispatch.mandate_issued_log"
+
+[[event_classes]]
+id = "succession_crisis"
+display_name = "Succession & HQ Archive Handover"
+default_tier = "DispatchPopupAutoPause"
+template_key = "dispatch.succession_crisis"
+
+[[event_classes]]
+id = "theater_encirclement"
+display_name = "Operational Pocket & Encirclement Alert"
+default_tier = "DispatchPopupAutoPause"
+template_key = "dispatch.theater_encirclement"
+
+[[event_classes]]
+id = "guild_strike_or_hoarding"
+display_name = "Private Hoarding & Informal Market Surge"
+default_tier = "BannerAlert"
+template_key = "dispatch.guild_hoarding"
+
+[[event_classes]]
+id = "knowledge_regression_loss"
+display_name = "Craft Knowledge Carrier Loss"
+default_tier = "DispatchPopup"
+template_key = "dispatch.knowledge_regression"

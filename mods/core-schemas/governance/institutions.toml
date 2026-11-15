@@ -4,3 +4,38 @@ display_name = "Provisional Expedition Authority"
 base_attention_capacity = 100.0
 clerical_overhead_per_mandate = 4.0
 hierarchy_hop_latency_hours = 2
+
+[[governance_models]]
+id = "tribal_chiefdom"
+display_name = "Confederated Clan Council"
+base_attention_capacity = 72.0
+clerical_overhead_per_mandate = 3.0
+hierarchy_hop_latency_hours = 1
+
+[[governance_models]]
+id = "feudal_vassalage"
+display_name = "Feudal Charter & Bonded Levies"
+base_attention_capacity = 92.0
+clerical_overhead_per_mandate = 3.5
+hierarchy_hop_latency_hours = 6
+
+[[governance_models]]
+id = "constitutional_cabinet"
+display_name = "Constitutional Cabinet & Ministries"
+base_attention_capacity = 135.0
+clerical_overhead_per_mandate = 4.5
+hierarchy_hop_latency_hours = 3
+
+[[governance_models]]
+id = "central_planning_commissariat"
+display_name = "Central Planning Commissariat"
+base_attention_capacity = 160.0
+clerical_overhead_per_mandate = 6.5
+hierarchy_hop_latency_hours = 8
+
+[[governance_models]]
+id = "corporate_charter_board"
+display_name = "Chartered Directorate Board"
+base_attention_capacity = 120.0
+clerical_overhead_per_mandate = 3.8
+hierarchy_hop_latency_hours = 2

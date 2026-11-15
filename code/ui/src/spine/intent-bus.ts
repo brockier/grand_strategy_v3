@@ -5,7 +5,7 @@ import {
   ValidatedPlayerCommand,
 } from "./contracts";
 
-export type EntityKind = "settlement" | "character" | "convoy" | "facility" | "cell";
+export type EntityKind = "settlement" | "character" | "convoy" | "facility" | "cell" | "formation";
 
 export type UiIntent =
   | { readonly kind: "FlyGlobeToCell"; readonly cellId: number; readonly zoomAltitude?: number }

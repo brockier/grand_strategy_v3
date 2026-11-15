@@ -3,3 +3,27 @@ id = "emergency_rationing"
 display_name = "Public Granary Allocation"
 tax_or_tribute_rate = 0.0
 patent_duration_years = 0
+
+[[policy_laws]]
+id = "grain_tithe"
+display_name = "Requisition Tithe & Price Cap"
+tax_or_tribute_rate = 0.28
+patent_duration_years = 0
+
+[[policy_laws]]
+id = "customs_toll"
+display_name = "Cross-Watershed Customs Tariff"
+tax_or_tribute_rate = 0.14
+patent_duration_years = 2
+
+[[policy_laws]]
+id = "charter_monopoly"
+display_name = "Crown Guild Transit Monopoly"
+tax_or_tribute_rate = 0.20
+patent_duration_years = 5
+
+[[policy_laws]]
+id = "inventor_patent_act"
+display_name = "Exclusive Inventor Patent Registry"
+tax_or_tribute_rate = 0.08
+patent_duration_years = 10

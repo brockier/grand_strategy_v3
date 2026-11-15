@@ -3,7 +3,7 @@
 **Module ID:** `UI-GLB-02`  
 **Code Location:** `code/ui/src/globe/`  
 **Milestone & Design Depth:** `M2: Full Detailed Design`  
-**Satisfies Requirements:** `UI-GLB-001`, `UI-GLB-002`, `UI-GLB-003`, `UI-GLB-004`, `UI-GLB-005` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
+**Satisfies Requirements:** `UI-GLB-001.1`, `UI-GLB-002`, `UI-GLB-003`, `UI-GLB-004`, `UI-GLB-005` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
 
 ---
 
@@ -23,12 +23,12 @@
 
 ## 2. Encapsulated Internal State & Data Layout
 
-### 2.1 Watertight Goldberg Mesh Chunks (`UI-GLB-001`)
+### 2.1 Watertight Welded Subdivided Icosphere Mesh (`UI-GLB-001.1`)
 
 - Builds indexed `THREE.BufferGeometry` directly from `PlanetGeometryPort` topology transferred via `DiegeticStore::selectGlobeTopology()`:
-  - Each hex or pentagon cell decomposes into a center vertex plus 5 or 6 corner rim vertices (`5` or `6` fan triangles per cell) plus vertical skirt walls between adjacent cells of different surveyed elevations so 3D extrusion never leaves floating gaps.
-  - Partitioned into `20` icosahedral face chunks for frustum culling and crisp vertex attributes (`aCellId: float`, `aNormal: vec3`, `aElevationNorm: float`, `aBarycentric: vec3` for crisp anti-aliased hex borders and slope hatching).
-  - Spherical UV mapping avoids equirectangular polar pinching by computing triplanar tangent-space procedural coordinates from 3D sphere normals inside shaders (`UI-GLB-001`).
+  - Welded primal subdivided icosphere with `10 * m^2 + 2` shared unit-sphere vertices and `20 * m^2` outward-wound spherical triangles (`Euler V - E + F = 2`, zero duplicated hex-fan vertices, zero visible hex/pentagon borders).
+  - Smooth vertex interpolation carries `aSampleId`, elevation relief, precipitation wetness, and epistemic horizon values across every triangle while crisp circular cartographic reticles (`dot(normalize(vSpherePos), uHoveredUnitPos)`) mark hovered, selected, and HQ loci.
+  - Spherical UV mapping avoids equirectangular polar pinching by computing triplanar tangent-space procedural coordinates from 3D sphere normals inside shaders (`UI-GLB-001.1`).
 
 ### 2.2 Quaternion Orbital Camera Controller (`UI-GLB-002`)
 
@@ -69,7 +69,7 @@ In the globe fragment/vertex shader (`WGSL` / `GLSL` unified via Three.js `Shade
 
 ## 4. Isolated Cartridge Verification Strategy
 
-1. **Manifold Geometry Audit (`@req UI-GLB-001`):** Unit test builds Goldberg mesh for `m = 16`, asserts exact `12` pentagons, closed vertex welding, zero NaN normals, and pole-to-pole triangle aspect limits.
+1. **Manifold Geometry Audit (`@req UI-GLB-001.1`):** Unit test builds welded subdivided icosphere mesh (`m = 8`), asserts `642` vertices, `1280` triangles, zero unmatched half-edges, Euler `V - E + F = 2`, zero hex border drawing in GLSL, zero NaN normals, and pole-to-pole continuity.
 2. **Orbital & Polar Camera Tests (`@req UI-GLB-002`):** Playwright input tests drag across `+90` North Pole, tilt, reset north, zoom, and trigger `FlyGlobeToCell`, confirming finite non-NaN camera matrices and centered target coordinates.
 3. **Relief & Parchment Golden Snapshots (`@req UI-GLB-003`, `@req UI-GLB-004`):** Captures WebGPU/WebGL2 canvas screenshots at `altitude = 1.15` (3D relief), `1.9` (mid-blend), and `3.2` (full parchment contours), asserting non-zero image diffs across transitions and structural similarity against golden baselines.
 4. **60 FPS Decoupled Stress Benchmark (`@req UI-GLB-005`):** Streams 500 simulated `DiegeticSnapshot` updates per second while rotating camera and verifies 95th-percentile frame interval `<= 16.7ms`.

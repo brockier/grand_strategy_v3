@@ -2,8 +2,8 @@
 
 **Module ID:** `ENG-PLUG-12`  
 **Code Location:** `code/engine/crates/sim-plug-private-eco/`  
-**Milestone & Design Depth:** `M5: Locked Spine Port Contracts & Replaceable Baseline Design`  
-**Satisfies Requirements:** `ENG-ECO-005`, `ENG-ECO-006`, `ENG-ECO-007`, `ENG-LOG-005`, `ENG-LOG-006`, `ENG-CMD-006`, `ENG-CMD-007` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
+**Milestone & Design Depth:** `M5: Full Detailed Design`  
+**Satisfies Requirements:** `ENG-ECO-005.1`..`ENG-ECO-005.4`, `ENG-ECO-006.1`..`ENG-ECO-006.2`, `ENG-ECO-007.1`..`ENG-ECO-007.2`, `ENG-LOG-005.1`..`ENG-LOG-005.2`, `ENG-LOG-006.1`..`ENG-LOG-006.2`, `ENG-CMD-006.1`..`ENG-CMD-006.4`, `ENG-CMD-007.1`..`ENG-CMD-007.2` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
 ---
 
@@ -42,19 +42,19 @@ pub trait GovernanceFrictionPlugPort: Send + Sync {
 
 ---
 
-## 3. Replaceable Baseline Behavioral Design (`M5` Scope)
+## 3. Authoritative Behavioral Design (`M5` Scope)
 
-When decomposed into `.1`/`.2` `Active` requirements at `M5`, the baseline cartridge implements:
+Implemented inside `code/engine/crates/sim-plug-private-eco/` with `#![deny(clippy::disallowed_types)]`, deterministic `BTreeMap` arenas, and `CanonicalSaveablePort` state serialization:
 
-1. **Four Concrete Non-State Actor Engines (`ENG-ECO-005`):**
-   - *Households & Smallholders:* Hold personal reserves first; route marginal surplus to local spot exchange.
-   - *Landed Estates & Clans:* Extract in-kind grain/corvée shares on arable tracts; hoard local grain buffers during shortages and resist outside assessors.
-   - *Merchant Houses & Hauling Guilds:* Maintain private messenger sightings; detect spatial price differentials across settlements and dispatch private `TransitEntity` caravans using `LogisticsPort`.
-   - *Syndicates, Craft Guilds & Chartered Companies:* Pool capital to submit concession bids or open deep mines, smelters, canals, and railways autonomously when expected return exceeds perceived physical/political risk.
-2. **Multi-Medium Clearing (`ENG-ECO-006`):** Single unified ledger balance abstraction supporting pure physical barter ratios, in-kind tribute/corvée obligations, stamped metallic coinage, merchant promissory credit, and state command quotas.
-3. **Cross-Era Policy Levers (`ENG-ECO-007`):** Tribute/corvée, market purchase contracts/subsidies/tariffs, chartered concessions/monopolies, and direct state enterprises.
-4. **Shared Congestion & Freight Crowding-Out (`ENG-LOG-005`, `ENG-LOG-006`):** Combines state Quartermaster axle load and private caravan axle load per `EdgeId` to emit non-linear congestion multipliers and raise freight charter rates whenever state requisitioning shrinks civilian carrier supply.
-5. **Four Bureaucratic Frictions & Five Governance Trade-Offs (`ENG-CMD-006`, `ENG-CMD-007`):** Implements Direct Personal Rule, Devolved Fiefs/Tax Farming, Standardized State Bureaucracy, Guilds/Chartered Monopolies, and Open Markets/Contracts/Patents, ensuring every reform shifts friction profiles rather than removing friction.
+1. **Four Concrete Non-State Actor Engines (`ENG-ECO-005.1`..`005.4`):**
+   - *Households & Smallholders:* Hold subsistence caloric, fuel, and tool reserves first; route marginal surplus to local spot exchange.
+   - *Landed Estates & Clans:* Extract in-kind grain/corvée shares on arable tracts; hoard local grain buffers during shortages and under-report taxable reserves until audited.
+   - *Merchant Houses & Hauling Guilds:* Maintain lagged regional market price estimates; detect spatial price spreads exceeding haul cost and dispatch private arbitrage caravans via `LogisticsPort`.
+   - *Syndicates, Craft Guilds & Chartered Companies:* Pool capital to submit concession bids or finance autonomous deep mines, smelters, and transport buildouts when expected margin exceeds physical/political risk.
+2. **Multi-Medium Clearing (`ENG-ECO-006.1`..`006.2`):** Single unified accounting engine clearing bilateral physical barter ratios, in-kind tribute/corvée obligations, metallic coinage, merchant promissory credit, and state command quotas without requiring currency from tick `0`.
+3. **Cross-Era Policy Levers (`ENG-ECO-007.1`..`007.2`):** `tribute_corvee`, `market_purchase_orders` (mobilizing private production at zero Attention cost with profiteering elasticity), `chartered_concession` (trading capital savings for syndicate oligarch share), and `direct_state_enterprise`.
+4. **Shared Congestion & Freight Crowding-Out (`ENG-LOG-005.1`..`005.2`, `ENG-LOG-006.1`..`006.2`):** Aggregates state Quartermaster axle load and private caravan tonnage per corridor (`edge_congestion_multiplier <= 1.0`), accumulates corridor wear (`wear_01`), scales regional carrier charter rates non-linearly as idle private wagons shrink, and throttles civilian staple freight when the state impresses/charters carriers.
+5. **Four Bureaucratic Frictions & Five Governance Trade-Offs (`ENG-CMD-006.1`..`006.4`, `ENG-CMD-007.1`..`007.2`):** Tracks hop latency/filtering (`hop_count * hierarchy_hop_latency_hours`), Goodhart uninspected tonnage purity dilution (`inspect/audit` resets), clerical grain/literate-labor overhead, reform inertia transition countdowns, and all 5 externalized `GovernanceModelRecord` profiles (`patrimonial_rule`, `devolved_fiefs`, `state_bureaucracy`, `chartered_guilds`, `open_markets_patents`).
 
 ---
 

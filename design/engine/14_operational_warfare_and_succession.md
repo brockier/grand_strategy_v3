@@ -2,8 +2,8 @@
 
 **Module ID:** `ENG-PLUG-14`  
 **Code Location:** `code/engine/crates/sim-plug-warfare/` and `code/engine/crates/sim-plug-succession/`  
-**Milestone & Design Depth:** `M7: Locked Spine Port Contracts & Replaceable Baseline Design`  
-**Satisfies Requirements:** `ENG-WAR-001`, `ENG-WAR-002`, `ENG-WAR-003`, `ENG-WAR-004`, `ENG-POP-006` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
+**Milestone & Design Depth:** `M7: Full Detailed Design`  
+**Satisfies Requirements:** `ENG-WAR-001.1`, `ENG-WAR-002.1`..`ENG-WAR-002.2`, `ENG-WAR-003.1`..`ENG-WAR-003.2`, `ENG-WAR-004.1`..`ENG-WAR-004.2`, `ENG-POP-006.1`..`ENG-POP-006.2` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
 ---
 
@@ -45,19 +45,18 @@ pub trait SuccessionPlugPort: Send + Sync {
 
 ---
 
-## 3. Replaceable Baseline Behavioral Design (`M7` Scope)
+## 3. Authoritative Behavioral Design (`M7` Scope)
 
-When decomposed into `.1`/`.2` `Active` requirements at `M7`, these two plug cartridges govern end-game military and dynastic realism:
+Implemented across `code/engine/crates/sim-plug-warfare/` and `code/engine/crates/sim-plug-succession/` on continuous spherical terrain coordinates (`unit_xyz: [f32; 3]`):
 
-1. **Command Delegation Spectrum ("Churchill vs. Hitler", `ENG-WAR-001`, `ENG-WAR-002`, `ENG-WAR-003`):**
-   - *Churchill Mode (`TheaterDirective`):* Low Personal Attention cost; field generals inspect `SurfaceConditionsPort` and enemy contact locally with zero HQ lag, shifting crossings or executing fighting withdrawals autonomously according to their competence.
-   - *Hitler Mode (`OperationalBattlePlan`):* High Personal Attention cost; enforces player-chosen division objectives and `"No Retreat"` posture via `CourierEnvelope`. When HQ sits hundreds of kilometers behind the front and storm weather delays wires/runners, divisions execute stale yesterday orders into mud or encirclement unless bold commanders trigger insubordination checks.
-   - Relocating physical HQ near the front drops courier lag to armies while expanding lag back to core production ministries (`ENG-EPI-003`).
-2. **Weather-Coupled Hourly Combat Physics (`ENG-WAR-004`):**
-   - Queries `SurfaceConditionsPort` hourly during `TickPhase::HourlyCombatStep`: mud mires heavy artillery and supply wagons; flood surges wash out fords/pontoons and split flanking corps; heavy precipitation degrades exposed black powder and bowstrings; fog/blizzards cut reconnaissance radius and slow battlefield runners.
-3. **Mortal Generational Succession (`ENG-POP-006`):**
-   - Tracks player character aging, battlefield proximity hazard, illness, and political deposition.
-   - Upon death or ouster, invokes externalized `SuccessionRuleId` (dynastic heir, council election, military coup, chartered board appointment) transferring control strictly over `player-view`'s existing `PlayerKnowledgeArchive`, physical ledgers, standing bureaucracies, debts, and entrenched officials—discarding unarchived head knowledge cleanly.
+1. **Command Delegation Spectrum ("Churchill vs. Hitler", `ENG-WAR-001.1`, `ENG-WAR-002.1`..`002.2`, `ENG-WAR-003.1`..`003.2`):**
+   - *Strict Micro Ban:* Direct unit step-by-step tactical overrides fail command validation immediately with `ERR_TACTICAL_MICRO_FORBIDDEN`.
+   - *Churchill Mode (`TheaterDirective`):* Low Personal Attention cost; field generals read local `SurfaceConditionsPort` and enemy contact continuously without HQ lag, autonomously sidestepping flooded crossings, muddy defiles, or enveloping flanks.
+   - *Hitler Mode (`OperationalBattlePlan`):* High Personal Attention cost; prescribes explicit route coordinates, phase lines, and optional `no_retreat: bool`. When distant HQ courier lag delays relief against flank threats, obedient commanders hold into encirclement casualties whereas high-initiative/low-obedience officers break orders (`insubordination`) to save their corps and dispatch delayed explanations.
+2. **Weather-Coupled Hourly Combat Physics (`ENG-WAR-004.1`..`004.2`):**
+   - Every hourly combat tick couples `mud_index_01` (bogging heavy artillery/supply), `flood_stage_01` (blocking unbridged river crossings and splitting wings), `precip_mm_hr` (fouling propellants/bowstrings), and `visibility_01` (degrading recon and runner speed).
+3. **Mortal Generational Succession (`ENG-POP-006.1`..`006.2`):**
+   - Ages the mortal player ruler and monitors health/hazard triggers under external `SuccessionRuleRecord` definitions. Upon demise, pauses via `leader_succession`, selects the heir/appointee/magistrate, preserves 100% of `PlayerKnowledgeArchive` physical maps, ledgers, institutions, and debts, purges unrecorded personal head observations, and applies `transition_disruption_hours`.
 
 ---
 

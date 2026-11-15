@@ -4,3 +4,24 @@ display_name = "Standing Orders: Reconnaissance & Defense"
 initiative_bonus = 0.15
 strict_obedience_weight = 0.70
 rain_penalty_mitigation = 0.10
+
+[[doctrines]]
+id = "mission_command_elastic"
+display_name = "Theater Directive: Elastic Mission Command"
+initiative_bonus = 0.35
+strict_obedience_weight = 0.35
+rain_penalty_mitigation = 0.20
+
+[[doctrines]]
+id = "rigid_positional_no_retreat"
+display_name = "High-Command Order: Hold At All Costs"
+initiative_bonus = -0.10
+strict_obedience_weight = 0.95
+rain_penalty_mitigation = 0.05
+
+[[doctrines]]
+id = "deep_echelon_breakthrough"
+display_name = "Shock Column: Deep Operational Thrust"
+initiative_bonus = 0.20
+strict_obedience_weight = 0.60
+rain_penalty_mitigation = 0.15

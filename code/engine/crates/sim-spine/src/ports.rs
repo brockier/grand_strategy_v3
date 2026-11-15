@@ -2,8 +2,8 @@
 
 use crate::ids::{
     ActorId, CarrierClassId, CellId, CharacterId, CohortId, CommodityId, ConvoyId, DispatchId,
-    EdgeId, EventClassId, InfraClassId, MandateId, ProceduralMaterialId, ProcessId, SettlementId,
-    StockpileId, Tick, VocationId,
+    EdgeId, EventClassId, FormationId, InfraClassId, MandateId, ProceduralMaterialId, ProcessId,
+    SettlementId, StockpileId, TechComponentId, TheaterId, TheoryDomainId, Tick, VocationId,
 };
 
 /// Ordered execution phases for each discrete hourly simulation tick.
@@ -372,6 +372,79 @@ pub struct ScenarioInitView {
     pub characters: Vec<ScenarioCharacterSeed>,
 }
 
+/// Read-only governance institutional model definition (`ENG-CMD-006`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct GovernanceModelDefView {
+    pub id: u16,
+    pub key: String,
+    pub display_name: String,
+    pub base_attention_capacity: f32,
+    pub clerical_overhead_per_mandate: f32,
+    pub hierarchy_hop_latency_hours: u32,
+}
+
+/// Read-only fiscal / economic policy law definition (`ENG-ECO-007`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PolicyLawDefView {
+    pub id: u16,
+    pub key: String,
+    pub display_name: String,
+    pub tax_or_tribute_rate: f32,
+    pub patent_duration_years: u32,
+}
+
+/// Read-only empirical technical component ("Know-How") primitive (`ENG-RES-001`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TechComponentDefView {
+    pub id: TechComponentId,
+    pub key: String,
+    pub display_name: String,
+    pub domain_key: String,
+    pub empirical_difficulty: f32,
+}
+
+/// Read-only theoretical inquiry ("Know-Why") domain (`ENG-RES-002`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TheoryDomainDefView {
+    pub id: TheoryDomainId,
+    pub key: String,
+    pub display_name: String,
+    pub abstraction_depth: u8,
+}
+
+/// Read-only military formation template (`ENG-WAR-001`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct FormationTemplateDefView {
+    pub id: u16,
+    pub key: String,
+    pub display_name: String,
+    pub personnel_count: u32,
+    pub required_vocation: VocationId,
+    pub equipment_commodity: CommodityId,
+    pub equipment_kg_per_troop: f64,
+}
+
+/// Read-only operational doctrine definition (`ENG-WAR-002`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DoctrineDefView {
+    pub id: u16,
+    pub key: String,
+    pub display_name: String,
+    pub initiative_bonus: f32,
+    pub strict_obedience_weight: f32,
+    pub rain_penalty_mitigation: f32,
+}
+
+/// Read-only succession protocol definition (`ENG-CMD-007`, `ENG-POP-006`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct SuccessionRuleDefView {
+    pub id: u16,
+    pub key: String,
+    pub display_name: String,
+    pub continuity_fraction: f32,
+    pub transition_disruption_hours: u32,
+}
+
 /// Read-only registry port populated by `sim-data` and consumed by engine cartridges.
 pub trait ModRegistryPort: Send + Sync {
     fn commodity_def(&self, id: CommodityId) -> Option<&CommodityDefView>;
@@ -404,6 +477,34 @@ pub trait ModRegistryPort: Send + Sync {
     fn planet_gen_config(&self) -> &PlanetGenConfigView;
     fn bundle_blake3_bytes(&self) -> [u8; 32];
     fn scenario_init(&self) -> &ScenarioInitView;
+
+    fn governance_models(&self) -> &[GovernanceModelDefView] {
+        &[]
+    }
+
+    fn policy_laws(&self) -> &[PolicyLawDefView] {
+        &[]
+    }
+
+    fn tech_components(&self) -> &[TechComponentDefView] {
+        &[]
+    }
+
+    fn theory_domains(&self) -> &[TheoryDomainDefView] {
+        &[]
+    }
+
+    fn formation_templates(&self) -> &[FormationTemplateDefView] {
+        &[]
+    }
+
+    fn doctrines(&self) -> &[DoctrineDefView] {
+        &[]
+    }
+
+    fn succession_rules(&self) -> &[SuccessionRuleDefView] {
+        &[]
+    }
 }
 
 /// Surface rock geological strata classification visible cleanly across public surface ports.
@@ -459,6 +560,83 @@ pub trait PlanetGeometryPort: Send + Sync {
     fn cell_base_precip_mm_yr(&self, cell: CellId) -> f32;
     fn edge_length_km(&self, edge: EdgeId) -> f32;
     fn topo_sorted_land_cells(&self) -> &[CellId];
+
+    fn nearest_sample_cell(&self, _unit_xyz: [f32; 3]) -> CellId {
+        CellId(0)
+    }
+
+    fn sample_elevation_at_unit_xyz(&self, unit_xyz: [f32; 3]) -> f32 {
+        self.cell_elevation_m(self.nearest_sample_cell(unit_xyz))
+    }
+
+    fn icosphere_triangles(&self) -> &[[u32; 3]] {
+        &[]
+    }
+
+    fn watershed_id(&self, _cell: CellId) -> crate::ids::WatershedId {
+        crate::ids::WatershedId(0)
+    }
+
+    fn region_label(&self, cell: CellId) -> String {
+        format!("Watershed #{}", self.watershed_id(cell).0)
+    }
+
+    fn radius_km(&self) -> f32 {
+        6371.0
+    }
+}
+
+/// Normalizes a 3D direction vector to the unit sphere.
+#[must_use]
+pub fn normalize_unit_xyz(v: [f32; 3]) -> [f32; 3] {
+    let x = f64::from(v[0]);
+    let y = f64::from(v[1]);
+    let z = f64::from(v[2]);
+    let len = (x * x + y * y + z * z).sqrt();
+    if len <= 1e-12 {
+        [0.0, 1.0, 0.0]
+    } else {
+        [(x / len) as f32, (y / len) as f32, (z / len) as f32]
+    }
+}
+
+/// Computes exact spherical great-circle surface arc distance in kilometers between two unit vectors.
+#[must_use]
+pub fn great_circle_arc_km(a: [f32; 3], b: [f32; 3], radius_km: f32) -> f32 {
+    let dot = (f64::from(a[0]) * f64::from(b[0])
+        + f64::from(a[1]) * f64::from(b[1])
+        + f64::from(a[2]) * f64::from(b[2]))
+    .clamp(-1.0, 1.0);
+    (dot.acos() * f64::from(radius_km.max(1.0))) as f32
+}
+
+/// Spherical linear interpolation along the shortest great-circle arc between unit vectors `a` and `b`.
+#[must_use]
+pub fn slerp_unit_xyz(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+    let clamped = f64::from(t.clamp(0.0, 1.0));
+    let ax = f64::from(a[0]);
+    let ay = f64::from(a[1]);
+    let az = f64::from(a[2]);
+    let bx = f64::from(b[0]);
+    let by = f64::from(b[1]);
+    let bz = f64::from(b[2]);
+    let dot = (ax * bx + ay * by + az * bz).clamp(-1.0, 1.0);
+    let omega = dot.acos();
+    if omega < 1e-6 {
+        return normalize_unit_xyz([
+            (ax + (bx - ax) * clamped) as f32,
+            (ay + (by - ay) * clamped) as f32,
+            (az + (bz - az) * clamped) as f32,
+        ]);
+    }
+    let sin_omega = omega.sin();
+    let s0 = ((1.0 - clamped) * omega).sin() / sin_omega;
+    let s1 = (clamped * omega).sin() / sin_omega;
+    normalize_unit_xyz([
+        (s0 * ax + s1 * bx) as f32,
+        (s0 * ay + s1 * by) as f32,
+        (s0 * az + s1 * bz) as f32,
+    ])
 }
 
 /// Procedural subsurface commodity family stored in sealed mineral deposits.
@@ -583,9 +761,16 @@ pub struct ConvoyTransitView {
     pub current_cell: CellId,
     pub destination_cell: CellId,
     pub planned_route: Vec<CellId>,
+    pub origin_unit_xyz: [f32; 3],
+    pub current_unit_xyz: [f32; 3],
+    pub destination_unit_xyz: [f32; 3],
+    pub route_waypoints_xyz: Vec<[f32; 3]>,
+    pub distance_travelled_km: f32,
+    pub total_route_km: f32,
     pub departure_tick: Tick,
     pub expected_arrival_tick: Tick,
     pub grace_ticks: u64,
+    pub cargo_mass_kg: f64,
     pub is_hq_move: bool,
     pub stranded_no_fuel: bool,
 }
@@ -727,6 +912,34 @@ pub enum SpinePlayerCommand {
         event_class_key: String,
         behavior: NotificationBehaviorKind,
     },
+    SwitchGovernanceModel {
+        model_key: String,
+    },
+    EnactEconomicPolicy {
+        policy_key: String,
+        rate_override_01: Option<f32>,
+    },
+    CharterPrivateCarriers {
+        target_settlement: SettlementId,
+        count: u32,
+    },
+    SetInnovationMode {
+        settlement: SettlementId,
+        mode_key: String,
+    },
+    IssueTheaterDirective {
+        theater_id: TheaterId,
+        commander: CharacterId,
+        objective_cell: CellId,
+        supply_priority_01: f32,
+    },
+    IssueOperationalBattlePlan {
+        formation_id: FormationId,
+        target_cell: CellId,
+        doctrine_key: String,
+        no_retreat: bool,
+    },
+    AcknowledgeSuccession,
 }
 
 /// Command hierarchy and player input port.

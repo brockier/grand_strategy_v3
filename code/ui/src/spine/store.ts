@@ -7,16 +7,21 @@ import {
   DiegeticSnapshot,
   FacilityRowDto,
   GlobeTopologyDto,
+  GovernanceSnapshotDto,
   HqPresenceDto,
   KnownCellDto,
   KnownSettlementDto,
+  KnowledgeSnapshotDto,
+  NonStateEconomySnapshotDto,
   NotificationRuleDto,
   ObservedWeatherDto,
   PopulationCohortRowDto,
   ReportedLedgerRowDto,
+  SuccessionSnapshotDto,
   SurveyedRoadEdgeDto,
   TimeSeriesDto,
   TrackedConvoyDto,
+  WarfareSnapshotDto,
   isValidDiegeticSnapshot,
 } from "./contracts";
 
@@ -138,4 +143,24 @@ export function selectNotificationRules(store: DiegeticStoreAccess): readonly No
 
 export function selectAuditDiscrepancies(store: DiegeticStoreAccess): readonly AuditDiscrepancyDto[] {
   return store.getSnapshot()?.auditDiscrepancies ?? [];
+}
+
+export function selectGovernance(store: DiegeticStoreAccess): GovernanceSnapshotDto | null {
+  return store.getSnapshot()?.governance ?? null;
+}
+
+export function selectNonStateEconomy(store: DiegeticStoreAccess): NonStateEconomySnapshotDto | null {
+  return store.getSnapshot()?.nonStateEconomy ?? null;
+}
+
+export function selectKnowledge(store: DiegeticStoreAccess): KnowledgeSnapshotDto | null {
+  return store.getSnapshot()?.knowledge ?? null;
+}
+
+export function selectWarfare(store: DiegeticStoreAccess): WarfareSnapshotDto | null {
+  return store.getSnapshot()?.warfare ?? null;
+}
+
+export function selectSuccession(store: DiegeticStoreAccess): SuccessionSnapshotDto | null {
+  return store.getSnapshot()?.succession ?? null;
 }

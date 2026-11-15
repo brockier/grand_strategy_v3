@@ -24,6 +24,8 @@ export interface GlobeShaderController {
     hoveredCellId: number | null,
     selectedCellId: number | null,
     activeWeatherOverlay: boolean,
+    hoveredUnitXyz?: readonly [number, number, number] | null,
+    selectedUnitXyz?: readonly [number, number, number] | null,
   ): void;
   dispose(): void;
 }
@@ -116,6 +118,7 @@ uniform float uCartographicBlend;
 out vec3 vSpherePos;
 out vec3 vWorldNormal;
 out vec3 vBarycentric;
+flat out vec3 vCornerCells;
 out float vCellId;
 out vec4 vCellData;
 
@@ -128,24 +131,17 @@ vec4 sampleCellData(float cid) {
 
 void main() {
   vec4 cSelf = sampleCellData(aCellId);
-  vec4 c0 = sampleCellData(aCornerCells.x);
-  vec4 c1 = sampleCellData(aCornerCells.y);
-  vec4 c2 = sampleCellData(aCornerCells.z);
-
-  // Strict epistemic barrier: corners bordering any Unexplored cell never lift.
-  float allKnown = min(c0.a, min(c1.a, c2.a));
-  float h0 = max(0.0, c0.r - 0.5) * 2.0;
-  float h1 = max(0.0, c1.r - 0.5) * 2.0;
-  float h2 = max(0.0, c2.r - 0.5) * 2.0;
-  float avgH = (h0 + h1 + h2) / 3.0;
-  float reliefScale = (1.0 - uCartographicBlend) * 0.045 * step(0.15, allKnown);
+  float selfH = max(0.0, cSelf.r - 0.5) * 2.0;
+  // Strict epistemic barrier: Unexplored vertices remain flat and never lift.
+  float reliefScale = (1.0 - uCartographicBlend) * 0.045 * step(0.15, cSelf.a);
 
   vec3 unitP = normalize(position);
-  vec3 displaced = unitP * (1.0 + avgH * reliefScale);
+  vec3 displaced = unitP * (1.0 + selfH * reliefScale);
 
   vSpherePos = unitP;
   vWorldNormal = normalize(normalMatrix * unitP);
   vBarycentric = aBarycentric;
+  vCornerCells = aCornerCells;
   vCellId = aCellId;
   vCellData = cSelf;
 
@@ -166,6 +162,8 @@ uniform float uCartographicBlend;
 uniform vec3 uSunDir;
 uniform float uHoveredCellId;
 uniform float uSelectedCellId;
+uniform vec3 uHoveredUnitXyz;
+uniform vec3 uSelectedUnitXyz;
 uniform float uWeatherOverlay;
 
 uniform vec3 uOceanShallowRgb;
@@ -184,10 +182,18 @@ uniform vec3 uUnexploredVellumRgb;
 in vec3 vSpherePos;
 in vec3 vWorldNormal;
 in vec3 vBarycentric;
+flat in vec3 vCornerCells;
 in float vCellId;
 in vec4 vCellData;
 
 out vec4 fragColor;
+
+vec4 sampleCellData(float cid) {
+  float idx = floor(cid + 0.5);
+  float u = (mod(idx, uTexSize) + 0.5) / uTexSize;
+  float v = (floor(idx / uTexSize) + 0.5) / uTexSize;
+  return texture(uCellDataTex, vec2(u, v));
+}
 
 vec3 sampleTriplanar(sampler2D tex, vec3 p, float scale) {
   vec3 w = pow(abs(p), vec3(4.0));
@@ -211,36 +217,59 @@ float graticuleMask(vec3 p) {
 }
 
 void main() {
-  vec3 grainTex = sampleTriplanar(uParchmentGrainTex, vSpherePos, 5.5);
-  vec3 hatchTex = sampleTriplanar(uHatchPatternTex, vSpherePos, 9.0);
-  vec3 biomeTex = sampleTriplanar(uTerrainBiomeTex, vSpherePos, 4.0);
+  vec3 unitS = normalize(vSpherePos);
+  vec3 grainTex = sampleTriplanar(uParchmentGrainTex, unitS, 5.5);
+  vec3 hatchTex = sampleTriplanar(uHatchPatternTex, unitS, 9.0);
+  vec3 biomeTex = sampleTriplanar(uTerrainBiomeTex, unitS, 4.0);
 
   float grainLum = dot(grainTex, vec3(0.333));
   float hatchInk = 1.0 - dot(hatchTex, vec3(0.333));
-  float grat = graticuleMask(vSpherePos);
+  float grat = graticuleMask(unitS);
 
+  // Smooth circular spherical reticle around continuous hovered/selected coordinates,
+  // with sample-cell ID fallback when unit coordinates are omitted.
   float cid = floor(vCellId + 0.5);
-  float edgeMin = min(vBarycentric.y, vBarycentric.z);
-  float cellBorder = 1.0 - smoothstep(0.0, 0.028, vBarycentric.y + vBarycentric.z > 0.94 ? edgeMin : 1.0);
-  float isHover = step(abs(cid - uHoveredCellId), 0.25);
-  float isSelect = step(abs(cid - uSelectedCellId), 0.25);
+  bool hasHoverVec = length(uHoveredUnitXyz) > 0.5;
+  bool hasSelectVec = length(uSelectedUnitXyz) > 0.5;
+  float hoverAng = hasHoverVec ? acos(clamp(dot(unitS, normalize(uHoveredUnitXyz)), -1.0, 1.0)) : 9.0;
+  float selectAng = hasSelectVec ? acos(clamp(dot(unitS, normalize(uSelectedUnitXyz)), -1.0, 1.0)) : 9.0;
+  float hoverRing = hasHoverVec
+    ? (1.0 - smoothstep(0.008, 0.016, abs(hoverAng - 0.024))) * step(hoverAng, 0.05)
+    : step(abs(cid - uHoveredCellId), 0.25);
+  float selectRing = hasSelectVec
+    ? (1.0 - smoothstep(0.010, 0.020, abs(selectAng - 0.032))) * step(selectAng, 0.06)
+    : step(abs(cid - uSelectedCellId), 0.25);
 
-  float tier = vCellData.a;
-  // Unexplored cells have tier == 0.0: render pure opaque blank vellum/parchment without hidden info.
-  if (tier < 0.08) {
+  vec4 d0 = sampleCellData(vCornerCells.x);
+  vec4 d1 = sampleCellData(vCornerCells.y);
+  vec4 d2 = sampleCellData(vCornerCells.z);
+
+  float k0 = step(0.08, d0.a) * vBarycentric.x;
+  float k1 = step(0.08, d1.a) * vBarycentric.y;
+  float k2 = step(0.08, d2.a) * vBarycentric.z;
+  float kSum = k0 + k1 + k2;
+
+  // Unexplored areas remain pure opaque blank vellum without leaking hidden terrain data.
+  if (kSum < 0.50) {
     vec3 vellum = uUnexploredVellumRgb * (0.92 + 0.14 * grainLum);
-    vellum = mix(vellum, uContourInkRgb, 0.10 * grat + 0.06 * cellBorder);
-    if (isHover > 0.5 || isSelect > 0.5) {
-      float highlight = max(isHover * 0.25, isSelect * 0.45);
-      vellum = mix(vellum, uContourInkRgb, highlight * (0.35 + 0.65 * cellBorder));
+    vellum = mix(vellum, uContourInkRgb, 0.10 * grat);
+    if (hoverRing > 0.05 || selectRing > 0.05) {
+      float highlight = max(hoverRing * 0.45, selectRing * 0.65);
+      vellum = mix(vellum, uContourInkRgb, highlight);
     }
     fragColor = vec4(vellum, 1.0);
     return;
   }
 
-  float elevNorm = vCellData.r;
-  float rainNorm = vCellData.g;
-  float biomeCode = vCellData.b;
+  float w0 = k0 / kSum;
+  float w1 = k1 / kSum;
+  float w2 = k2 / kSum;
+
+  float elevNorm = d0.r * w0 + d1.r * w1 + d2.r * w2;
+  float rainNorm = d0.g * w0 + d1.g * w1 + d2.g * w2;
+  float tier = d0.a * w0 + d1.a * w1 + d2.a * w2;
+  float biomeCode = (k0 >= k1 && k0 >= k2) ? d0.b : ((k1 >= k2) ? d1.b : d2.b);
+
   float isRumored = step(0.08, tier) * step(tier, 0.25);
   float isStale = step(0.25, tier) * step(tier, 0.48);
   float isDatedSurvey = step(0.48, tier) * step(tier, 0.71);
@@ -313,12 +342,12 @@ void main() {
     finalRgb = mix(finalRgb, vec3(luma), 0.18);
   }
 
-  // Hover and selected cell perimeter emphasis
-  if (isHover > 0.5) {
-    finalRgb = mix(finalRgb, uSettlementMarkerRgb, 0.25 + 0.35 * hatchInk);
+  // Hover and selected continuous circular reticle emphasis
+  if (hoverRing > 0.05) {
+    finalRgb = mix(finalRgb, uSettlementMarkerRgb, hoverRing * (0.55 + 0.25 * hatchInk));
   }
-  if (isSelect > 0.5) {
-    finalRgb = mix(finalRgb, uCompassRoseRgb, 0.35);
+  if (selectRing > 0.05) {
+    finalRgb = mix(finalRgb, uCompassRoseRgb, selectRing * 0.75);
   }
 
   fragColor = vec4(finalRgb, 1.0);
@@ -349,6 +378,8 @@ export function createGlobeShaderController(initialPalette?: GlobePalette): Glob
     uSunDir: { value: new THREE.Vector3(0.45, 0.68, 0.58).normalize() },
     uHoveredCellId: { value: -1 },
     uSelectedCellId: { value: -1 },
+    uHoveredUnitXyz: { value: new THREE.Vector3(0, 0, 0) },
+    uSelectedUnitXyz: { value: new THREE.Vector3(0, 0, 0) },
     uWeatherOverlay: { value: 0 },
     uParchmentGrainTex: { value: grainFallback as THREE.Texture },
     uHatchPatternTex: { value: hatchFallback as THREE.Texture },
@@ -477,11 +508,23 @@ export function createGlobeShaderController(initialPalette?: GlobePalette): Glob
       hoveredCellId: number | null,
       selectedCellId: number | null,
       activeWeatherOverlay: boolean,
+      hoveredUnitXyz?: readonly [number, number, number] | null,
+      selectedUnitXyz?: readonly [number, number, number] | null,
     ) {
       uniforms.uCartographicBlend.value = Math.max(0, Math.min(1, blend01));
       uniforms.uSunDir.value.copy(sunDir).normalize();
       uniforms.uHoveredCellId.value = hoveredCellId ?? -1;
       uniforms.uSelectedCellId.value = selectedCellId ?? -1;
+      if (hoveredUnitXyz) {
+        uniforms.uHoveredUnitXyz.value.set(hoveredUnitXyz[0], hoveredUnitXyz[1], hoveredUnitXyz[2]);
+      } else {
+        uniforms.uHoveredUnitXyz.value.set(0, 0, 0);
+      }
+      if (selectedUnitXyz) {
+        uniforms.uSelectedUnitXyz.value.set(selectedUnitXyz[0], selectedUnitXyz[1], selectedUnitXyz[2]);
+      } else {
+        uniforms.uSelectedUnitXyz.value.set(0, 0, 0);
+      }
       uniforms.uWeatherOverlay.value = activeWeatherOverlay ? 1 : 0;
     },
     dispose() {

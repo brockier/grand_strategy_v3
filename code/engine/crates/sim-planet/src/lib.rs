@@ -163,6 +163,7 @@ pub struct GeneratedPlanet {
     pub prevailing_wind_uv: Vec<[f32; 2]>,
     pub edge_slope_rad: Vec<f32>,
     pub river_downstream: Vec<Option<CellId>>,
+    pub watershed_ids: Vec<sim_spine::WatershedId>,
     pub drainage_area_km2: Vec<f32>,
     pub topo_sorted_land_cells: Vec<CellId>,
     pub deposits: Vec<HiddenDepositView>,
@@ -653,6 +654,7 @@ impl GeneratedPlanet {
 
         let (deposits, cell_deposit_ranges) =
             seed_subsurface_deposits(world_seed, &strata, &materials, &topology.cell_area_km2);
+        let watershed_ids = compute_watershed_ids(&river_downstream, &is_ocean);
 
         Self {
             world_seed,
@@ -671,6 +673,7 @@ impl GeneratedPlanet {
             prevailing_wind_uv,
             edge_slope_rad,
             river_downstream,
+            watershed_ids,
             drainage_area_km2,
             topo_sorted_land_cells,
             deposits,
@@ -984,6 +987,40 @@ impl PlanetGeometryPort for GeneratedPlanet {
     fn topo_sorted_land_cells(&self) -> &[CellId] {
         &self.topo_sorted_land_cells
     }
+
+    fn nearest_sample_cell(&self, unit_xyz: [f32; 3]) -> CellId {
+        self.topology.nearest_sample_cell(unit_xyz)
+    }
+
+    fn sample_elevation_at_unit_xyz(&self, unit_xyz: [f32; 3]) -> f32 {
+        self.topology
+            .sample_field_at_unit_xyz(unit_xyz, &self.elevation_m)
+            .unwrap_or(self.config.base_sea_level_m)
+    }
+
+    fn icosphere_triangles(&self) -> &[[u32; 3]] {
+        &self.topology.icosphere_triangles
+    }
+
+    fn watershed_id(&self, cell: CellId) -> sim_spine::WatershedId {
+        self.watershed_ids
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(sim_spine::WatershedId(0))
+    }
+
+    fn region_label(&self, cell: CellId) -> String {
+        let wid = self.watershed_id(cell);
+        if wid.0 == 0 {
+            "Pelagic Waters".to_string()
+        } else {
+            format!("Watershed #{}", wid.0)
+        }
+    }
+
+    fn radius_km(&self) -> f32 {
+        self.topology.radius_km
+    }
 }
 
 impl SubsurfaceDepositTruthPort for GeneratedPlanet {
@@ -1153,6 +1190,7 @@ impl CanonicalSaveablePort for GeneratedPlanet {
         }
 
         let materials = read_material_catalog(input)?;
+        let watershed_ids = compute_watershed_ids(&river_downstream, &is_ocean);
 
         *self = Self {
             world_seed,
@@ -1171,6 +1209,7 @@ impl CanonicalSaveablePort for GeneratedPlanet {
             prevailing_wind_uv,
             edge_slope_rad,
             river_downstream,
+            watershed_ids,
             drainage_area_km2,
             topo_sorted_land_cells,
             deposits,
@@ -1179,6 +1218,40 @@ impl CanonicalSaveablePort for GeneratedPlanet {
         };
         Ok(())
     }
+}
+
+fn compute_watershed_ids(
+    river_downstream: &[Option<CellId>],
+    is_ocean: &[bool],
+) -> Vec<sim_spine::WatershedId> {
+    let n = river_downstream.len();
+    let mut outlet_ranks: BTreeMap<u32, sim_spine::WatershedId> = BTreeMap::new();
+    let mut next_wid = 1u32;
+    let mut out = vec![sim_spine::WatershedId(0); n];
+
+    for idx in 0..n {
+        if is_ocean[idx] {
+            continue;
+        }
+        let mut cur = idx;
+        for _ in 0..n {
+            let Some(ds) = river_downstream[cur] else {
+                break;
+            };
+            let ds_idx = ds.get() as usize;
+            if ds_idx >= n || is_ocean[ds_idx] || ds_idx == cur {
+                break;
+            }
+            cur = ds_idx;
+        }
+        let wid = *outlet_ranks.entry(cur as u32).or_insert_with(|| {
+            let id = sim_spine::WatershedId(next_wid);
+            next_wid += 1;
+            id
+        });
+        out[idx] = wid;
+    }
+    out
 }
 
 fn write_planet_gen_config(out: &mut Vec<u8>, cfg: &PlanetGenConfigView) {

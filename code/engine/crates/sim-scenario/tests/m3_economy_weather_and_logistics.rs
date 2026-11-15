@@ -658,6 +658,143 @@ fn bridges_enforce_weight_caps_and_waterways_enforce_ice_and_wind_physics() {
     );
 }
 
+// @req ENG-LOG-002.1
+#[test]
+fn convoys_advance_continuously_along_string_pulled_spherical_paths() {
+    use sim_spine::LogisticsPort;
+    let reg = load_unexplained_bundle();
+    let world = ScenarioWorld::from_registry(&reg, 42);
+    let mut logistics = LogisticsNetwork::from_planet_and_registry(&world.planet, &reg);
+
+    let porter_id = reg
+        .carrier_id_by_key("foot_porter_column")
+        .expect("foot_porter_column");
+    let porter = reg.carrier_def(porter_id).expect("porter def");
+    let dry = MockWeatherSurface {
+        override_surface: calm_dry_surface(),
+    };
+
+    // Find any multi-hop overland pair whose unimproved path admits a string-pulled shortcut.
+    let mut found_pair = None;
+    for orig_raw in 0..world.planet.cell_count() {
+        let orig = CellId(orig_raw);
+        if world.planet.is_ocean_cell(orig) {
+            continue;
+        }
+        // BFS up to depth 4 looking for a land cell reachable overland with >= 3 graph hops.
+        let mut queue = std::collections::VecDeque::new();
+        let mut seen = std::collections::BTreeMap::new();
+        queue.push_back((orig, 0u32));
+        seen.insert(orig, 0u32);
+        while let Some((cur, depth)) = queue.pop_front() {
+            if depth >= 3
+                && let Some((route, _)) =
+                    logistics.plan_route(orig, cur, porter_id, 50.0, &world.planet, &dry, &reg)
+                && route.len() >= 4
+            {
+                let discrete_km: f32 = route
+                    .windows(2)
+                    .filter_map(|w| world.planet.cell_edge(w[0], w[1]))
+                    .map(|eid| world.planet.edge_length_km(eid))
+                    .sum();
+                let gc_km = world.planet.great_circle_km(orig, cur);
+                if gc_km < discrete_km - 1.0 {
+                    found_pair = Some((orig, cur, route.len(), discrete_km));
+                    break;
+                }
+            }
+            if depth >= 4 {
+                continue;
+            }
+            for &nb in world.planet.cell_neighbors(cur) {
+                if !seen.contains_key(&nb)
+                    && !world.planet.is_ocean_cell(nb)
+                    && logistics
+                        .evaluate_edge_speed_km_hr(
+                            cur,
+                            nb,
+                            porter,
+                            50.0,
+                            &world.planet,
+                            &dry,
+                            &reg,
+                        )
+                        .is_some()
+                {
+                    seen.insert(nb, depth + 1);
+                    queue.push_back((nb, depth + 1));
+                }
+            }
+        }
+        if found_pair.is_some() {
+            break;
+        }
+    }
+
+    let (origin, dest, _route_nodes, discrete_km) =
+        found_pair.expect("expected multi-hop overland corridor");
+    let cid = logistics
+        .launch_unified_transit(
+            sim_logistics::UnifiedTransitLaunch {
+                label: "Continuous Survey".to_string(),
+                channel: sim_spine::TransitChannelKind::SurveyExpedition,
+                origin_settlement: sim_spine::SettlementId(1),
+                destination_settlement: None,
+                origin_cell: origin,
+                destination_cell: dest,
+                carrier_class: porter_id,
+                owner: ActorId(1),
+                cargo_commodity: None,
+                cargo_mass_kg: 50.0,
+                cargo_purity_01: 1.0,
+                fuel_loaded_kg: 100.0,
+                spare_parts_loaded_kg: 20.0,
+                current_tick: sim_spine::Tick(0),
+                is_hq_move: false,
+                dispatch_id: None,
+                sender: None,
+                mandate_payload_id: None,
+                subject: "Survey".to_string(),
+            },
+            &world.planet,
+            &dry,
+            &reg,
+        )
+        .expect("launch continuous convoy");
+
+    let initial_view = logistics.convoy_state(cid).expect("initial convoy view");
+    assert!(
+        initial_view.total_route_km <= discrete_km,
+        "string-pulled route {} km must never exceed graph zig-zag {} km",
+        initial_view.total_route_km,
+        discrete_km
+    );
+    assert!(
+        initial_view.route_waypoints_xyz.len() >= 2,
+        "route must record unit-sphere waypoints"
+    );
+
+    let mut prev_dist = 0.0_f32;
+    let mut saw_subcell = false;
+    for t in 1..=20u64 {
+        logistics.step_hourly(sim_spine::Tick(t), &world.planet, &dry, &reg);
+        let st = logistics.convoy_state(cid).expect("convoy state during transit");
+        assert!(
+            st.distance_travelled_km > prev_dist,
+            "convoy must advance continuously each hour: tick {t}, prev={prev_dist}, now={}",
+            st.distance_travelled_km
+        );
+        prev_dist = st.distance_travelled_km;
+        let p = st.current_unit_xyz;
+        let norm = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
+        assert!((norm - 1.0).abs() < 1e-3, "position must remain normalized on S^2");
+        if st.distance_travelled_km > 0.0 && st.distance_travelled_km < st.total_route_km {
+            saw_subcell = true;
+        }
+    }
+    assert!(saw_subcell, "must observe intermediate continuous sub-cell movement");
+}
+
 // @req ENG-LOG-004
 #[test]
 fn unified_router_conserves_cargo_in_transit_without_instant_teleportation() {

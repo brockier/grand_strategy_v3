@@ -11,9 +11,9 @@ use std::time::Instant;
 use player_view::{
     estimate_deposit_interval, perturb_reported_quantity, ArbitrationOptionDto,
     ArbitrationProposalDto, DepositEstimateDto, DiegeticDispatchDto, DiegeticSnapshot,
-    DispatchTokenDto, EdgeViewInput, FacilityRowDto, HqRelocationPreviewDto, MandateSummaryDto,
-    NotificationRuleDto, ObservedWeatherDto, PlayerKnowledgeArchive, PopulationCohortRowDto,
-    ReportedLedgerRowDto, SnapshotSubsystemInputs, TimeSeriesPointDto,
+    DispatchTokenDto, EdgeViewInput, FacilityRowDto, HqRelocationPreviewDto, M5ToM7PlugRefs,
+    MandateSummaryDto, NotificationRuleDto, ObservedWeatherDto, PlayerKnowledgeArchive,
+    PopulationCohortRowDto, ReportedLedgerRowDto, SnapshotSubsystemInputs, TimeSeriesPointDto,
 };
 use sim_clock::{
     build_worker_pool, compute_canonical_digest, execute_parallel_sorted, in_period_bucket,
@@ -25,12 +25,18 @@ use sim_core::SimWorld;
 use sim_economy::EconomyLedger;
 use sim_logistics::{LogisticsNetwork, UnifiedTransitLaunch};
 use sim_planet::GeneratedPlanet;
+use sim_plug_private_eco::PrivateEconomyPlugin;
+use sim_plug_research::KnowledgeEvolutionPlugin;
+use sim_plug_succession::SuccessionPlugin;
+use sim_plug_warfare::OperationalWarfarePlugin;
 use sim_pop::PopulationRegistry;
 use sim_spine::{
-    AutoPauseSignal, CanonicalSaveablePort, CellId, CharacterId, CommandPort, MandateId,
-    ModRegistryPort, NotificationBehaviorKind, PhaseTimingSample, PhysicalLedgerPort,
-    PlanetGeometryPort, PopulationPort, ScenarioArchetypeKind, SettlementId, SpinePlayerCommand,
-    SubsurfaceDepositTruthPort, SurfaceConditionsPort, Tick, TransitChannelKind, UnrestStage,
+    ActorId, AutoPauseSignal, CanonicalSaveablePort, CellId, CharacterId, CommandPort,
+    GovernanceFrictionPlugPort, KnowledgeModifierPlugPort, MandateId, ModRegistryPort,
+    NonStateEconomyPlugPort, NotificationBehaviorKind, OperationalCombatPlugPort,
+    PhaseTimingSample, PhysicalLedgerPort, PlanetGeometryPort, PopulationPort,
+    ScenarioArchetypeKind, SettlementId, SpinePlayerCommand, SubsurfaceDepositTruthPort,
+    SuccessionPlugPort, SurfaceConditionsPort, TheaterId, Tick, TransitChannelKind, UnrestStage,
     VocationId,
 };
 use sim_weather::WeatherEngine;
@@ -103,6 +109,10 @@ pub struct ScenarioWorld {
     pub command: CommandHierarchy,
     pub core: SimWorld,
     pub archive: PlayerKnowledgeArchive,
+    pub private_eco: PrivateEconomyPlugin,
+    pub research: KnowledgeEvolutionPlugin,
+    pub warfare: OperationalWarfarePlugin,
+    pub succession: SuccessionPlugin,
     pub telemetry: TickTelemetryRing,
     profiling_enabled: bool,
     queued_commands: BTreeMap<u64, Vec<SpinePlayerCommand>>,
@@ -263,6 +273,38 @@ impl ScenarioWorld {
         let _ = archive.observe_hq_halo(Tick(0), &planet, &economy);
         Self::record_daily_time_series(Tick(0), registry, &economy, &pop, &command, &mut archive);
 
+        let settlement_ids: Vec<SettlementId> =
+            economy.settlements().iter().map(|s| s.id).collect();
+        let private_eco = PrivateEconomyPlugin::from_registry(registry, &settlement_ids);
+        let research = KnowledgeEvolutionPlugin::from_registry(registry, &settlement_ids);
+        let hq_sid = economy.hq_settlement().unwrap_or(SettlementId(0));
+        let hq_cell = economy.hq_cell();
+        let lead_commander = pop
+            .all_characters()
+            .first()
+            .map(|c| c.id)
+            .unwrap_or(CharacterId(1));
+        let mut warfare =
+            OperationalWarfarePlugin::from_registry(registry, &planet, hq_sid, hq_cell, lead_commander);
+        if let Some(first_tpl) = registry.formation_templates().first() {
+            let tpl_key = first_tpl.key.clone();
+            let _ = warfare.muster_formation(
+                registry,
+                &planet,
+                &tpl_key,
+                TheaterId(1),
+                lead_commander,
+                hq_sid,
+                hq_cell,
+            );
+        }
+        let mut succession =
+            SuccessionPlugin::from_registry(registry, &settlement_by_key, hq_sid);
+        succession.record_physical_hq_archive(format!(
+            "Founding Charter ({}) sealed at Tick 0",
+            scenario.display_name
+        ));
+
         Self {
             clock: SimulationClock::new(world_seed),
             planet,
@@ -273,6 +315,10 @@ impl ScenarioWorld {
             command,
             core,
             archive,
+            private_eco,
+            research,
+            warfare,
+            succession,
             telemetry: TickTelemetryRing::new(),
             profiling_enabled: false,
             queued_commands: BTreeMap::new(),
@@ -401,39 +447,155 @@ impl ScenarioWorld {
             .push(cmd);
     }
 
-    /// Steps the complete 8-phase deterministic hourly pipeline forward by 1 tick.
-    pub fn step_one_tick(&mut self, registry: &dyn ModRegistryPort) {
-        let tick = Tick(self.clock.current_tick.get() + 1);
-        self.clock.current_tick = tick;
+    fn apply_single_command_at_tick(
+        &mut self,
+        tick: Tick,
+        cmd: SpinePlayerCommand,
+        registry: &dyn ModRegistryPort,
+        settlement_cells: &BTreeMap<SettlementId, CellId>,
+    ) {
+        apply_clock_command(&mut self.clock, &cmd);
+        self.core.ingest_player_command(tick, cmd.clone());
 
-        let t0 = self.profiling_enabled.then(Instant::now);
-
-        // Phase 0: IngestPlayerCommands
-        let ready_keys: Vec<u64> = self
-            .queued_commands
-            .range(..=tick.get())
-            .map(|(&k, _)| k)
-            .collect();
-        let mut cmds = Vec::new();
-        for k in ready_keys {
-            if let Some(mut v) = self.queued_commands.remove(&k) {
-                cmds.append(&mut v);
+        match &cmd {
+            SpinePlayerCommand::SwitchGovernanceModel { model_key } => {
+                if self
+                    .private_eco
+                    .switch_governance_model(model_key, registry)
+                    .is_ok()
+                {
+                    if let Some(m) = registry
+                        .governance_models()
+                        .iter()
+                        .find(|m| m.key == *model_key)
+                    {
+                        self.command.set_institutional_parameters(
+                            m.base_attention_capacity,
+                            m.clerical_overhead_per_mandate,
+                            m.hierarchy_hop_latency_hours,
+                        );
+                    }
+                    self.succession
+                        .record_physical_hq_archive(format!("Governance Charter: {model_key}"));
+                }
             }
+            SpinePlayerCommand::EnactEconomicPolicy {
+                policy_key,
+                rate_override_01,
+            } => {
+                if self
+                    .private_eco
+                    .enact_policy(policy_key, *rate_override_01, registry)
+                    .is_ok()
+                {
+                    self.succession
+                        .record_physical_hq_archive(format!("Fiscal Statute: {policy_key}"));
+                }
+            }
+            SpinePlayerCommand::CharterPrivateCarriers {
+                target_settlement,
+                count,
+            } => {
+                let _ = self
+                    .private_eco
+                    .charter_private_carriers(*target_settlement, *count);
+            }
+            SpinePlayerCommand::SetInnovationMode {
+                settlement,
+                mode_key,
+            } => {
+                let _ = self.research.set_innovation_mode(
+                    *settlement,
+                    mode_key,
+                    tick,
+                    Some(ActorId(100)),
+                );
+            }
+            SpinePlayerCommand::IssueTheaterDirective {
+                theater_id,
+                commander,
+                objective_cell,
+                supply_priority_01,
+            } => {
+                self.warfare.issue_theater_directive(
+                    *theater_id,
+                    *commander,
+                    *objective_cell,
+                    *supply_priority_01,
+                    tick,
+                    &self.planet,
+                    registry,
+                );
+                self.succession.record_physical_hq_archive(format!(
+                    "Theater Directive T#{} -> Cell #{}",
+                    theater_id.0,
+                    objective_cell.get()
+                ));
+            }
+            SpinePlayerCommand::IssueOperationalBattlePlan {
+                formation_id,
+                target_cell,
+                doctrine_key,
+                no_retreat,
+            } => {
+                let hq_cell = self.economy.hq_cell();
+                let form_cell = self
+                    .warfare
+                    .formations()
+                    .iter()
+                    .find(|f| f.formation_id == *formation_id)
+                    .map(|f| f.current_cell)
+                    .unwrap_or(hq_cell);
+                let courier_carrier = self.logistics.default_courier_carrier();
+                let courier_delay_hours = self
+                    .logistics
+                    .plan_route(
+                        hq_cell,
+                        form_cell,
+                        courier_carrier,
+                        0.0,
+                        &self.planet,
+                        &self.weather,
+                        registry,
+                    )
+                    .map(|(_, h)| h.ceil() as u64)
+                    .unwrap_or(6)
+                    .max(1);
+                let _ = self.warfare.issue_operational_battle_plan(
+                    *formation_id,
+                    *target_cell,
+                    doctrine_key.clone(),
+                    *no_retreat,
+                    tick,
+                    courier_delay_hours,
+                    &self.planet,
+                );
+                self.succession.record_physical_hq_archive(format!(
+                    "Battle Plan F#{} -> Cell #{}",
+                    formation_id.0,
+                    target_cell.get()
+                ));
+            }
+            SpinePlayerCommand::AcknowledgeSuccession => {
+                self.succession.acknowledge_succession();
+            }
+            _ => {}
         }
-        let cmd_count = cmds.len() as u32;
-        let settlement_cells = Self::settlement_cell_map(&self.economy);
-        let grain_id = registry.commodity_id_by_key("raw_grain");
 
-        for cmd in cmds {
-            apply_clock_command(&mut self.clock, &cmd);
-            self.core.ingest_player_command(tick, cmd.clone());
-            self.command.apply_player_command(
-                tick,
-                cmd,
-                self.pop.all_characters(),
-                &settlement_cells,
-            );
-        }
+        self.command.apply_player_command(
+            tick,
+            cmd,
+            self.pop.all_characters(),
+            settlement_cells,
+        );
+    }
+
+    fn flush_post_command_world_actions(
+        &mut self,
+        tick: Tick,
+        registry: &dyn ModRegistryPort,
+    ) {
+        let grain_id = registry.commodity_id_by_key("raw_grain");
 
         // Launch HQ physical relocation retinue when requested via `RelocateHq` (`ENG-EPI-003`)
         for world_act in self.command.drain_world_actions() {
@@ -558,6 +720,47 @@ impl ScenarioWorld {
                 _ => 1,
             },
         );
+    }
+
+    /// Immediately executes a validated player command at the current tick (used by live `serve-stdio` sessions while paused).
+    pub fn apply_player_command_now(
+        &mut self,
+        registry: &dyn ModRegistryPort,
+        cmd: SpinePlayerCommand,
+    ) {
+        let tick = self.clock.current_tick;
+        let settlement_cells = Self::settlement_cell_map(&self.economy);
+        self.apply_single_command_at_tick(tick, cmd, registry, &settlement_cells);
+        self.flush_post_command_world_actions(tick, registry);
+    }
+
+    /// Steps the complete 8-phase deterministic hourly pipeline forward by 1 tick.
+    pub fn step_one_tick(&mut self, registry: &dyn ModRegistryPort) {
+        let tick = Tick(self.clock.current_tick.get() + 1);
+        self.clock.current_tick = tick;
+
+        let t0 = self.profiling_enabled.then(Instant::now);
+
+        // Phase 0: IngestPlayerCommands
+        let ready_keys: Vec<u64> = self
+            .queued_commands
+            .range(..=tick.get())
+            .map(|(&k, _)| k)
+            .collect();
+        let mut cmds = Vec::new();
+        for k in ready_keys {
+            if let Some(mut v) = self.queued_commands.remove(&k) {
+                cmds.append(&mut v);
+            }
+        }
+        let cmd_count = cmds.len() as u32;
+        let settlement_cells = Self::settlement_cell_map(&self.economy);
+        let grain_id = registry.commodity_id_by_key("raw_grain");
+
+        for cmd in cmds {
+            self.apply_single_command_at_tick(tick, cmd, registry, &settlement_cells);
+        }
+        self.flush_post_command_world_actions(tick, registry);
         let p0_ns = elapsed_ns(t0);
 
         // Phase 1: HourlyWeatherAndHydrology
@@ -570,14 +773,49 @@ impl ScenarioWorld {
 
         // Phase 2: HourlyCombatStep
         let t2 = self.profiling_enabled.then(Instant::now);
-        let p2_entities = self.core.step_hourly_combat_phase(tick);
+        let encircled_before: Vec<u32> = self
+            .warfare
+            .formations()
+            .iter()
+            .filter(|f| f.encircled)
+            .map(|f| f.formation_id.0)
+            .collect();
+        let supply_line_available =
+            !self.economy.settlements().is_empty() && self.economy.total_stockpile_mass_kg() > 50.0;
+        self.warfare.step_with_world_context(
+            tick,
+            &self.planet,
+            &self.weather,
+            registry,
+            supply_line_available,
+        );
+        let newly_encircled = self
+            .warfare
+            .formations()
+            .iter()
+            .any(|f| f.encircled && !encircled_before.contains(&f.formation_id.0));
+        if newly_encircled {
+            let _ = Self::trigger_event_notification(
+                &mut self.clock,
+                registry,
+                &self.command,
+                tick,
+                "theater_encirclement",
+            );
+        }
+        let p2_entities =
+            self.core.step_hourly_combat_phase(tick) + (self.warfare.formations().len() as u32);
         let p2_ns = elapsed_ns(t2);
 
         // Phase 3: HourlyCourierAndSignalStep
         let t3 = self.profiling_enabled.then(Instant::now);
-        let log_summary =
-            self.logistics
-                .step_hourly(tick, &self.planet, &self.weather, registry);
+        let log_summary = self.logistics.step_hourly_with_congestion(
+            tick,
+            &self.planet,
+            &self.weather,
+            registry,
+            Some(&self.private_eco),
+        );
         self.economy.record_onboard_transit_burn(
             log_summary.total_fuel_burned_kg
                 + log_summary.total_spares_worn_kg
@@ -605,6 +843,10 @@ impl ScenarioWorld {
                         delivery.mass_kg,
                         delivery.purity_01,
                     );
+                }
+                if dest_sid != delivery.origin_settlement {
+                    self.research
+                        .diffuse_knowledge_carrier(delivery.origin_settlement, dest_sid, 0.25);
                 }
                 if delivery.unused_fuel_kg > 0.0
                     && let Some(fc) = carrier_fuel_comm
@@ -828,6 +1070,8 @@ impl ScenarioWorld {
                         ests.clone(),
                         format!("Surveyed by {char_name} (Tick {})", tick.get()),
                     );
+                    self.succession
+                        .record_physical_hq_archive(format!("Geological Assay: Sector Cell #{cell_u32}"));
                     self.archive.record_arrived_dispatch(DiegeticDispatchDto {
                         dispatch_id: env.dispatch_id.0,
                         title: format!("Geological Assay: Sector Cell #{cell_u32}"),
@@ -971,6 +1215,10 @@ impl ScenarioWorld {
                                 );
                             }
                         }
+                        self.succession.record_physical_hq_archive(format!(
+                            "Situation Report Ledger: {}",
+                            s_sum.display_name
+                        ));
                         self.archive.record_arrived_dispatch(DiegeticDispatchDto {
                             dispatch_id: env.dispatch_id.0,
                             title: format!("Situation Report: {}", s_sum.display_name),
@@ -1010,9 +1258,96 @@ impl ScenarioWorld {
         }
         let p3_ns = elapsed_ns(t3);
 
-        // Phase 4: DailyBucketLogisticsAndMarkets (flush Spine shipments & dispatch remote status couriers)
+        // Phase 4: Hourly non-state markets/congestion + Daily arbitrage & courier dispatches
         let t4 = self.profiling_enabled.then(Instant::now);
         let s_cells = Self::settlement_cell_map(&self.economy);
+        let is_daily_tick = tick.get().is_multiple_of(24);
+        let char_skimming_samples: Vec<(CharacterId, f32)> = self
+            .pop
+            .all_characters_full()
+            .iter()
+            .map(|c| (c.snapshot.id, c.greed_skimming_01))
+            .collect();
+        let overseer_sid = self.economy.hq_settlement().unwrap_or(SettlementId(1));
+        self.private_eco.step_with_world_context(
+            tick,
+            &self.economy,
+            &self.logistics,
+            &self.planet,
+            registry,
+            &char_skimming_samples,
+            overseer_sid,
+            2.0,
+        );
+        if is_daily_tick {
+            let default_carrier = self.logistics.default_freight_carrier();
+            for req in self.private_eco.drain_arbitrage_requests() {
+                if let (Some(&origin_cell), Some(&dest_cell)) = (
+                    s_cells.get(&req.origin_settlement),
+                    s_cells.get(&req.destination_settlement),
+                ) {
+                    let avail = self.economy.settlement_commodity_mass_kg(
+                        req.origin_settlement,
+                        req.commodity,
+                        None,
+                    );
+                    if avail > 150.0 {
+                        let take_kg = req.mass_kg.min((avail - 100.0) * 0.25);
+                        if take_kg > 1.0 {
+                            let loaded_kg = self.economy.load_fuel_into_transit(
+                                req.origin_settlement,
+                                req.commodity,
+                                take_kg,
+                            );
+                            if loaded_kg > 0.0
+                                && self
+                                    .logistics
+                                    .launch_unified_transit(
+                                        UnifiedTransitLaunch {
+                                            label: format!(
+                                                "Merchant Caravan C#{}",
+                                                req.commodity.0
+                                            ),
+                                            channel: TransitChannelKind::FreightCargo,
+                                            origin_settlement: req.origin_settlement,
+                                            destination_settlement: Some(
+                                                req.destination_settlement,
+                                            ),
+                                            origin_cell,
+                                            destination_cell: dest_cell,
+                                            carrier_class: default_carrier,
+                                            owner: req.owner,
+                                            cargo_commodity: Some(req.commodity),
+                                            cargo_mass_kg: loaded_kg,
+                                            cargo_purity_01: 0.95,
+                                            fuel_loaded_kg: 0.0,
+                                            spare_parts_loaded_kg: 0.0,
+                                            current_tick: tick,
+                                            is_hq_move: false,
+                                            dispatch_id: None,
+                                            sender: None,
+                                            mandate_payload_id: None,
+                                            subject: String::new(),
+                                        },
+                                        &self.planet,
+                                        &self.weather,
+                                        registry,
+                                    )
+                                    .is_err()
+                            {
+                                self.economy.credit_cargo_arrival(
+                                    req.origin_settlement,
+                                    req.commodity,
+                                    req.owner,
+                                    loaded_kg,
+                                    0.95,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
         self.logistics
             .flush_pending_port_shipments(&s_cells, tick, &self.planet, &self.weather, registry);
         let p4_entities = self.run_parallel_logistics_and_dispatches(tick, registry);
@@ -1027,7 +1362,6 @@ impl ScenarioWorld {
             .iter()
             .map(|s| (s.id, s.cell_id, s.display_name.clone()))
             .collect();
-        let is_daily_tick = tick.get().is_multiple_of(24);
         let mut subsistence_by_sid = BTreeMap::new();
         for &(sid, cell_id, _) in &settlement_list {
             let ambient_c = self.weather.surface(cell_id).temp_c;
@@ -1047,19 +1381,36 @@ impl ScenarioWorld {
         }
 
         if is_daily_tick {
+            let gov_skimming = self
+                .private_eco
+                .governance_state()
+                .map(|g| g.skimming_leakage_fraction * 0.35)
+                .unwrap_or(0.0);
+            let cmd_mult = self.succession.effective_command_multiplier(tick);
             let mut attn_map = BTreeMap::new();
             let mut skim_map = BTreeMap::new();
             for fac in self.economy.facilities() {
-                let over_mult = self.command.settlement_oversight_multiplier(fac.settlement);
-                attn_map.insert(fac.id, over_mult);
-                let skim = self
+                let base_over = self.command.settlement_oversight_multiplier(fac.settlement);
+                let gov_over = self
+                    .private_eco
+                    .oversight_efficiency_multiplier(fac.settlement, CharacterId(1));
+                let tech_mult = if self
+                    .research
+                    .process_prerequisites_met(fac.settlement, fac.process)
+                {
+                    1.0
+                } else {
+                    0.05
+                };
+                attn_map.insert(fac.id, base_over * gov_over * cmd_mult * tech_mult);
+                let base_skim = self
                     .pop
                     .all_characters_full()
                     .iter()
                     .find(|c| c.snapshot.home_settlement == fac.settlement)
                     .map(|c| c.greed_skimming_01 * (1.0 - c.loyalty_01 * 0.5))
                     .unwrap_or(0.0);
-                skim_map.insert(fac.id, skim);
+                skim_map.insert(fac.id, (base_skim + gov_skimming).clamp(0.0, 0.85));
             }
             for &(sid, _, _) in &settlement_list {
                 let labor_mult = self.pop.labor_efficiency_multiplier(sid);
@@ -1071,6 +1422,23 @@ impl ScenarioWorld {
                     &attn_map,
                     &skim_map,
                     Some(&self.planet),
+                );
+                let fac_count = self
+                    .economy
+                    .facilities()
+                    .iter()
+                    .filter(|f| f.settlement == sid)
+                    .count() as f32;
+                let (sat, _) = subsistence_by_sid[&sid];
+                let bottleneck_01 =
+                    (1.0 - sat.calorie_ratio_01.min(sat.clothing_ratio_01)).clamp(0.05, 1.0);
+                let leisure_01 = ((sat.calorie_ratio_01 - 0.85) * 3.0).clamp(0.0, 0.85);
+                self.research.step_settlement_knowledge(
+                    tick,
+                    sid,
+                    (fac_count * 24.0).max(8.0),
+                    bottleneck_01,
+                    leisure_01,
                 );
             }
         }
@@ -1179,6 +1547,15 @@ impl ScenarioWorld {
         }
         self.command.step_hourly(tick, self.pop.all_characters());
         if is_daily_tick {
+            if self.succession.step_aging(tick, 24) {
+                let _ = Self::trigger_event_notification(
+                    &mut self.clock,
+                    registry,
+                    &self.command,
+                    tick,
+                    "succession_crisis",
+                );
+            }
             Self::record_daily_time_series(
                 tick,
                 registry,
@@ -1392,7 +1769,7 @@ impl ScenarioWorld {
         executed
     }
 
-    /// Computes canonical Blake3 world state digest across clock and all eight simulation cartridges (`ENG-CLK-004`, `ENG-CLK-005`).
+    /// Computes canonical Blake3 world state digest across clock and all simulation cartridges (`ENG-CLK-004`, `ENG-CLK-005`).
     #[must_use]
     pub fn state_digest_bytes(&self) -> [u8; 32] {
         compute_canonical_digest(
@@ -1406,6 +1783,10 @@ impl ScenarioWorld {
                 &self.command,
                 &self.core,
                 &self.archive,
+                &self.private_eco,
+                &self.research,
+                &self.warfare,
+                &self.succession,
             ],
         )
     }
@@ -1437,6 +1818,10 @@ impl ScenarioWorld {
                 &self.command,
                 &self.core,
                 &self.archive,
+                &self.private_eco,
+                &self.research,
+                &self.warfare,
+                &self.succession,
             ],
         )
     }
@@ -1460,6 +1845,10 @@ impl ScenarioWorld {
                 &mut self.command,
                 &mut self.core,
                 &mut self.archive,
+                &mut self.private_eco,
+                &mut self.research,
+                &mut self.warfare,
+                &mut self.succession,
             ],
         )
     }
@@ -1648,7 +2037,7 @@ impl ScenarioWorld {
             relocation_previews,
         };
 
-        self.archive.compile_snapshot_m4(
+        self.archive.compile_snapshot_m7(
             self.clock.current_tick,
             paused,
             speed_multiplier,
@@ -1661,6 +2050,13 @@ impl ScenarioWorld {
             Some(&self.logistics),
             Some(&self.command),
             &extras,
+            M5ToM7PlugRefs {
+                non_state_eco: Some(&self.private_eco),
+                governance: Some(&self.private_eco),
+                knowledge: Some(&self.research),
+                warfare: Some(&self.warfare),
+                succession: Some(&self.succession),
+            },
         )
     }
 
@@ -1765,7 +2161,14 @@ fn apply_clock_command(clock: &mut SimulationClock, cmd: &SpinePlayerCommand) {
         | SpinePlayerCommand::ResolveArbitrationProposal { .. }
         | SpinePlayerCommand::SetPersonalAttentionZoom { .. }
         | SpinePlayerCommand::RelocateHq { .. }
-        | SpinePlayerCommand::UpdateNotificationRule { .. } => {}
+        | SpinePlayerCommand::UpdateNotificationRule { .. }
+        | SpinePlayerCommand::SwitchGovernanceModel { .. }
+        | SpinePlayerCommand::EnactEconomicPolicy { .. }
+        | SpinePlayerCommand::CharterPrivateCarriers { .. }
+        | SpinePlayerCommand::SetInnovationMode { .. }
+        | SpinePlayerCommand::IssueTheaterDirective { .. }
+        | SpinePlayerCommand::IssueOperationalBattlePlan { .. }
+        | SpinePlayerCommand::AcknowledgeSuccession => {}
     }
 }
 

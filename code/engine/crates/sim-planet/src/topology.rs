@@ -128,7 +128,7 @@ fn canonical_icosahedron() -> (Vec<[f64; 3]>, Vec<[usize; 3]>) {
     (verts, faces)
 }
 
-/// Closed geodesic Goldberg polyhedron CSR graph and spherical metrics (`ENG-GEO-001`).
+/// Closed geodesic sample graph and continuous subdivided icosphere mesh (`ENG-GEO-001.1`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct GoldbergTopology {
     pub frequency: u32,
@@ -136,6 +136,7 @@ pub struct GoldbergTopology {
     pub cell_unit_xyz: Vec<[f32; 3]>,
     pub cell_lat_lon_rad: Vec<[f32; 2]>,
     pub cell_area_km2: Vec<f32>,
+    pub icosphere_triangles: Vec<[u32; 3]>,
     pub neighbor_offsets: Vec<u32>,
     pub neighbor_cells: Vec<CellId>,
     pub edge_endpoints: Vec<(CellId, CellId)>,
@@ -143,8 +144,21 @@ pub struct GoldbergTopology {
     pub edge_map: BTreeMap<(u32, u32), EdgeId>,
 }
 
+fn ensure_outward_winding(positions: &[[f64; 3]], a: u32, b: u32, c: u32) -> [u32; 3] {
+    let pa = positions[a as usize];
+    let pb = positions[b as usize];
+    let pc = positions[c as usize];
+    let n = cross3(sub3(pb, pa), sub3(pc, pa));
+    let centroid = add3(pa, add3(pb, pc));
+    if dot3(n, centroid) >= 0.0 {
+        [a, b, c]
+    } else {
+        [a, c, b]
+    }
+}
+
 impl GoldbergTopology {
-    /// Generates a closed Goldberg polyhedron `GP(m, 0)` on a sphere of `radius_km`.
+    /// Generates a closed subdivided icosphere mesh & CSR sample graph `GP(m, 0)` on a sphere of `radius_km`.
     #[must_use]
     pub fn generate(frequency: u32, radius_km: f32) -> Self {
         let m = frequency.max(1);
@@ -154,6 +168,7 @@ impl GoldbergTopology {
         let mut positions: Vec<[f64; 3]> = ico_v.clone();
         let mut edge_vert_map: BTreeMap<(u32, u32, u32), u32> = BTreeMap::new();
         let mut raw_neighbors: Vec<BTreeSet<u32>> = vec![BTreeSet::new(); expected_cells];
+        let mut icosphere_triangles: Vec<[u32; 3]> = Vec::with_capacity((20 * m * m) as usize);
 
         fn edge_vertex(
             a: usize,
@@ -235,9 +250,17 @@ impl GoldbergTopology {
                 let cur = &grid[r];
                 let nxt = &grid[r + 1];
                 for c in 0..nxt.len() {
-                    link_tri(cur[c], nxt[c], cur[c + 1]);
+                    let a = cur[c];
+                    let b = nxt[c];
+                    let c_id = cur[c + 1];
+                    icosphere_triangles.push(ensure_outward_winding(&positions, a, b, c_id));
+                    link_tri(a, b, c_id);
                     if c + 1 < nxt.len() {
-                        link_tri(cur[c + 1], nxt[c], nxt[c + 1]);
+                        let a2 = cur[c + 1];
+                        let b2 = nxt[c];
+                        let c2 = nxt[c + 1];
+                        icosphere_triangles.push(ensure_outward_winding(&positions, a2, b2, c2));
+                        link_tri(a2, b2, c2);
                     }
                 }
             }
@@ -330,6 +353,7 @@ impl GoldbergTopology {
             cell_unit_xyz,
             cell_lat_lon_rad,
             cell_area_km2,
+            icosphere_triangles,
             neighbor_offsets,
             neighbor_cells,
             edge_endpoints,
@@ -368,5 +392,104 @@ impl GoldbergTopology {
             + f64::from(pa[2]) * f64::from(pb[2]))
         .clamp(-1.0, 1.0);
         (dot.acos() * f64::from(self.radius_km)) as f32
+    }
+
+    /// Finds the nearest sample node (`CellId`) to a unit-sphere 3D position via convex spherical hill-climb.
+    #[must_use]
+    pub fn nearest_sample_cell(&self, unit_xyz: [f32; 3]) -> CellId {
+        if self.cell_unit_xyz.is_empty() {
+            return CellId(0);
+        }
+        let u = norm3([
+            f64::from(unit_xyz[0]),
+            f64::from(unit_xyz[1]),
+            f64::from(unit_xyz[2]),
+        ]);
+        let dot_cell = |idx: u32| -> f64 {
+            let p = self.cell_unit_xyz[idx as usize];
+            u[0] * f64::from(p[0]) + u[1] * f64::from(p[1]) + u[2] * f64::from(p[2])
+        };
+        let mut best_id = 0u32;
+        let mut best_dot = dot_cell(0);
+        let seed_limit = self.cell_unit_xyz.len().min(12) as u32;
+        for vid in 1..seed_limit {
+            let d = dot_cell(vid);
+            if d > best_dot {
+                best_dot = d;
+                best_id = vid;
+            }
+        }
+        loop {
+            let mut improved = false;
+            for &nb in self.neighbors(CellId(best_id)) {
+                let d = dot_cell(nb.0);
+                if d > best_dot + 1e-12 {
+                    best_dot = d;
+                    best_id = nb.0;
+                    improved = true;
+                }
+            }
+            if !improved {
+                break;
+            }
+        }
+        CellId(best_id)
+    }
+
+    /// Smooth C0 barycentric spherical triangle interpolation of a scalar field at any continuous unit-sphere point.
+    #[must_use]
+    pub fn sample_field_at_unit_xyz(&self, unit_xyz: [f32; 3], field: &[f32]) -> Option<f32> {
+        if self.cell_unit_xyz.len() != field.len() || field.is_empty() {
+            return None;
+        }
+        let c = self.nearest_sample_cell(unit_xyz);
+        let c_idx = c.0 as usize;
+        let nbs = self.neighbors(c);
+        if nbs.len() < 2 {
+            return Some(field[c_idx]);
+        }
+        let u = norm3([
+            f64::from(unit_xyz[0]),
+            f64::from(unit_xyz[1]),
+            f64::from(unit_xyz[2]),
+        ]);
+        let p0_f = self.cell_unit_xyz[c_idx];
+        let p0 = [f64::from(p0_f[0]), f64::from(p0_f[1]), f64::from(p0_f[2])];
+
+        let mut best_min_w = f64::NEG_INFINITY;
+        let mut best_weights = [1.0_f64, 0.0, 0.0];
+        let mut best_ids = [c_idx, c_idx, c_idx];
+
+        for k in 0..nbs.len() {
+            let n1 = nbs[k].0 as usize;
+            let n2 = nbs[(k + 1) % nbs.len()].0 as usize;
+            let p1_f = self.cell_unit_xyz[n1];
+            let p2_f = self.cell_unit_xyz[n2];
+            let p1 = [f64::from(p1_f[0]), f64::from(p1_f[1]), f64::from(p1_f[2])];
+            let p2 = [f64::from(p2_f[0]), f64::from(p2_f[1]), f64::from(p2_f[2])];
+            let orient = if dot3(p0, cross3(p1, p2)) < 0.0 {
+                -1.0
+            } else {
+                1.0
+            };
+            let w0 = dot3(u, cross3(p1, p2)) * orient;
+            let w1 = dot3(p0, cross3(u, p2)) * orient;
+            let w2 = dot3(p0, cross3(p1, u)) * orient;
+            let min_w = w0.min(w1).min(w2);
+            if min_w > best_min_w {
+                best_min_w = min_w;
+                best_weights = [w0.max(0.0), w1.max(0.0), w2.max(0.0)];
+                best_ids = [c_idx, n1, n2];
+            }
+        }
+        let sum = best_weights[0] + best_weights[1] + best_weights[2];
+        if sum <= 1e-12 {
+            return Some(field[c_idx]);
+        }
+        let val = (best_weights[0] * f64::from(field[best_ids[0]])
+            + best_weights[1] * f64::from(field[best_ids[1]])
+            + best_weights[2] * f64::from(field[best_ids[2]]))
+            / sum;
+        Some(val as f32)
     }
 }

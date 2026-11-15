@@ -14,6 +14,10 @@ export {
   createMandateComposerWindowPlugin,
   createNotificationMatrixWindowPlugin,
 } from "./m4-panels";
+export {
+  createWarfareCommandWindowPlugin,
+  mountSuccessionTransitionModal,
+} from "./m7-warfare-succession";
 
 const SPEED_TIERS: readonly number[] = [1, 4, 24, 168];
 
@@ -132,6 +136,9 @@ export function mountCommandHud(
     { pluginId: "skin_appearance", label: "Skins" },
     { pluginId: "audio_mixer", label: "Audio" },
     { pluginId: "layout_presets", label: "Layouts" },
+    { pluginId: "institutions_inspector", label: "Institutions" },
+    { pluginId: "knowledge_archive", label: "Knowledge" },
+    { pluginId: "warfare_command", label: "Warfare" },
   ];
 
   const launcherButtons = new Map<string, HTMLButtonElement>();

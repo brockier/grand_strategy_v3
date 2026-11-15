@@ -123,6 +123,7 @@ export interface HqPresenceDto {
 export interface GlobeTopologyDto {
   readonly subdivision: number;
   readonly cellCount: number;
+  readonly triangles?: readonly (readonly [number, number, number])[];
 }
 
 export interface ObservedWeatherDto {
@@ -249,6 +250,12 @@ export interface TrackedConvoyDto {
   readonly channel?: string;
   readonly originCellId?: number;
   readonly destinationCellId?: number;
+  readonly originUnitXyz?: readonly [number, number, number];
+  readonly currentUnitXyz?: readonly [number, number, number];
+  readonly destinationUnitXyz?: readonly [number, number, number];
+  readonly routeWaypointsXyz?: readonly (readonly [number, number, number])[];
+  readonly distanceTravelledKm?: number;
+  readonly totalRouteKm?: number;
   readonly routeCells?: readonly number[];
   readonly departureTick?: number;
   readonly expectedArrivalTick?: number;
@@ -324,6 +331,213 @@ export interface ClockAndNotificationsDto {
   readonly autoPauseReason?: string | null;
 }
 
+export interface GovernanceModelOptionDto {
+  readonly modelKey: string;
+  readonly displayName: string;
+  readonly baseAttentionCapacity: number;
+  readonly clericalOverheadPerMandate: number;
+  readonly hierarchyHopLatencyHours: number;
+}
+
+export interface PolicyLawOptionDto {
+  readonly policyKey: string;
+  readonly displayName: string;
+  readonly taxOrTributeRate01: number;
+  readonly patentDurationYears: number;
+}
+
+export interface GovernanceSnapshotDto {
+  readonly activeModelKey: string;
+  readonly activeModelName: string;
+  readonly previousModelKey: string | null;
+  readonly adaptationProgress01: number;
+  readonly activePolicyKey: string;
+  readonly activePolicyName: string;
+  readonly taxOrTributeRate01: number;
+  readonly patentDurationYears: number;
+  readonly skimmingLeakageFraction: number;
+  readonly effectiveAttentionCapacity: number;
+  readonly clericalOverheadPerMandate: number;
+  readonly hierarchyHopLatencyHours: number;
+  readonly charteredCarriersTotal: number;
+  readonly bureaucraticCaptureEvents: number;
+  readonly availableModels: readonly GovernanceModelOptionDto[];
+  readonly availablePolicies: readonly PolicyLawOptionDto[];
+}
+
+export interface NonStateActorDto {
+  readonly actorId: number;
+  readonly name: string;
+  readonly kind: string;
+  readonly homeSettlementId: number;
+  readonly settlementName: string;
+  readonly workingCapitalCoins: number;
+  readonly heldCommodityKey: string | null;
+  readonly heldMassKg: number;
+  readonly hoardedMassKg: number;
+  readonly privateCarriersOwned: number;
+  readonly charteredToStateCarriers: number;
+  readonly compliance01: number;
+  readonly observedTick: number;
+  readonly confidence01: number;
+  readonly provenanceLabel: string;
+}
+
+export interface InformalMarketDto {
+  readonly settlementId: number;
+  readonly settlementName: string;
+  readonly commodityKey: string;
+  readonly commodityName: string;
+  readonly clearingPriceIndex: number;
+  readonly blackMarketPremium01: number;
+  readonly blackMarketLeakageKg: number;
+  readonly hoardedReserveKg: number;
+  readonly observedTick: number;
+  readonly confidence01: number;
+  readonly provenanceLabel: string;
+}
+
+export interface EdgeCongestionDto {
+  readonly edgeId: number;
+  readonly fromCellId: number;
+  readonly toCellId: number;
+  readonly hourlyFlowTonnes: number;
+  readonly capacityTonnes: number;
+  readonly congestionMultiplier: number;
+}
+
+export interface NonStateEconomySnapshotDto {
+  readonly actors: readonly NonStateActorDto[];
+  readonly informalMarkets: readonly InformalMarketDto[];
+  readonly congestedEdges: readonly EdgeCongestionDto[];
+}
+
+export interface KnowledgeComponentScoreDto {
+  readonly componentId: number;
+  readonly componentKey: string;
+  readonly displayName: string;
+  readonly knowHow01: number;
+}
+
+export interface TheoryDomainScoreDto {
+  readonly domainId: number;
+  readonly domainKey: string;
+  readonly displayName: string;
+  readonly knowWhy01: number;
+}
+
+export interface KnowledgeCarrierDto {
+  readonly settlementId: number;
+  readonly settlementName: string;
+  readonly componentKey: string;
+  readonly carrierKind: string;
+  readonly retentionStrength01: number;
+  readonly holderLabel: string;
+}
+
+export interface SettlementKnowledgeDto {
+  readonly settlementId: number;
+  readonly settlementName: string;
+  readonly innovationModeKey: string;
+  readonly bottleneckPressure01: number;
+  readonly leisureSurplus01: number;
+  readonly knowHow: readonly KnowledgeComponentScoreDto[];
+  readonly knowWhy: readonly TheoryDomainScoreDto[];
+  readonly activePatentHolderActorId: number | null;
+  readonly patentExpiryTick: number | null;
+  readonly regressionLosses: number;
+  readonly observedTick: number;
+  readonly confidence01: number;
+  readonly provenanceLabel: string;
+}
+
+export interface KnowledgeSnapshotDto {
+  readonly settlements: readonly SettlementKnowledgeDto[];
+  readonly carriers: readonly KnowledgeCarrierDto[];
+  readonly availableModes: readonly string[];
+}
+
+export interface DoctrineOptionDto {
+  readonly doctrineKey: string;
+  readonly displayName: string;
+  readonly initiativeBonus: number;
+  readonly strictObedienceWeight: number;
+  readonly rainPenaltyMitigation: number;
+}
+
+export interface TheaterDirectiveDto {
+  readonly theaterId: number;
+  readonly commanderId: number;
+  readonly commanderName: string;
+  readonly objectiveCellId: number;
+  readonly supplyPriority01: number;
+  readonly issuedTick: number;
+  readonly autonomousWithdrawals: number;
+}
+
+export interface MilitaryFormationDto {
+  readonly formationId: number;
+  readonly label: string;
+  readonly templateKey: string;
+  readonly theaterId: number;
+  readonly commanderId: number;
+  readonly commanderName: string;
+  readonly homeSettlementId: number;
+  readonly currentCellId: number;
+  readonly currentUnitXyz: readonly [number, number, number];
+  readonly targetCellId: number;
+  readonly targetUnitXyz: readonly [number, number, number];
+  readonly personnelCount: number;
+  readonly equipmentMassKg: number;
+  readonly munitionsDays: number;
+  readonly rationsDays: number;
+  readonly cohesion01: number;
+  readonly doctrineKey: string;
+  readonly noRetreatOrder: boolean;
+  readonly encircled: boolean;
+  readonly insubordinateWithdrawal: boolean;
+  readonly staleOrderTicks: number;
+  readonly observedTick: number;
+  readonly confidence01: number;
+  readonly provenanceLabel: string;
+}
+
+export interface WarfareSnapshotDto {
+  readonly theaters: readonly TheaterDirectiveDto[];
+  readonly formations: readonly MilitaryFormationDto[];
+  readonly availableDoctrines: readonly DoctrineOptionDto[];
+}
+
+export interface SuccessionCharacterDto {
+  readonly characterId: number;
+  readonly name: string;
+  readonly roleTitle: string;
+  readonly ageYears: number;
+  readonly health01: number;
+  readonly isAlive: boolean;
+  readonly isRuler: boolean;
+  readonly settlementId: number;
+  readonly settlementName: string;
+}
+
+export interface SuccessionTransitionDto {
+  readonly ruleKey: string;
+  readonly ruleDisplayName: string;
+  readonly deceasedRulerName: string;
+  readonly successorName: string;
+  readonly transitionTick: number;
+  readonly disruptionUntilTick: number;
+  readonly inheritedArchiveEntries: readonly string[];
+  readonly lostUnrecordedRapportCount: number;
+  readonly awaitingPlayerAcknowledgement: boolean;
+}
+
+export interface SuccessionSnapshotDto {
+  readonly roster: readonly SuccessionCharacterDto[];
+  readonly pendingTransition: SuccessionTransitionDto | null;
+  readonly effectiveCommandMultiplier: number;
+}
+
 export interface DiegeticSnapshot {
   readonly schemaVersion: number;
   readonly scenarioKey: string;
@@ -345,6 +559,11 @@ export interface DiegeticSnapshot {
   readonly openProposals?: readonly ArbitrationProposalDto[];
   readonly notificationRules?: readonly NotificationRuleDto[];
   readonly auditDiscrepancies?: readonly AuditDiscrepancyDto[];
+  readonly governance?: GovernanceSnapshotDto | null;
+  readonly nonStateEconomy?: NonStateEconomySnapshotDto | null;
+  readonly knowledge?: KnowledgeSnapshotDto | null;
+  readonly warfare?: WarfareSnapshotDto | null;
+  readonly succession?: SuccessionSnapshotDto | null;
 }
 
 export type ValidatedPlayerCommand =
@@ -378,7 +597,34 @@ export type ValidatedPlayerCommand =
       readonly kind: "updateNotificationRule";
       readonly eventClassKey: string;
       readonly behavior: string;
-    };
+    }
+  | { readonly kind: "switchGovernanceModel"; readonly modelKey: string }
+  | {
+      readonly kind: "enactEconomicPolicy";
+      readonly policyKey: string;
+      readonly rateOverride01?: number | null;
+    }
+  | {
+      readonly kind: "charterPrivateCarriers";
+      readonly targetSettlement: number;
+      readonly count: number;
+    }
+  | { readonly kind: "setInnovationMode"; readonly settlement: number; readonly modeKey: string }
+  | {
+      readonly kind: "issueTheaterDirective";
+      readonly theaterId: number;
+      readonly commander: number;
+      readonly objectiveCell: number;
+      readonly supplyPriority01: number;
+    }
+  | {
+      readonly kind: "issueOperationalBattlePlan";
+      readonly formationId: number;
+      readonly targetCell: number;
+      readonly doctrineKey: string;
+      readonly noRetreat: boolean;
+    }
+  | { readonly kind: "acknowledgeSuccession" };
 
 export interface CommandAck {
   readonly accepted: boolean;
@@ -498,11 +744,62 @@ export interface UserPreferencesDto {
 }
 
 export type GlobeRayHit =
-  | { readonly hitKind: "convoy"; readonly cellId: number; readonly convoyId: number; readonly label: string }
-  | { readonly hitKind: "settlement"; readonly cellId: number; readonly settlementId: number; readonly label: string }
-  | { readonly hitKind: "road"; readonly cellId: number; readonly edgeId: number; readonly fromCellId: number; readonly toCellId: number; readonly label: string }
-  | { readonly hitKind: "river"; readonly cellId: number; readonly toCellId: number; readonly flowNorm01: number; readonly label: string }
-  | { readonly hitKind: "cell"; readonly cellId: number; readonly label: string };
+  | {
+      readonly hitKind: "convoy";
+      readonly cellId: number;
+      readonly convoyId: number;
+      readonly label: string;
+      readonly unitXyz?: readonly [number, number, number];
+      readonly latDeg?: number;
+      readonly lonDeg?: number;
+    }
+  | {
+      readonly hitKind: "settlement";
+      readonly cellId: number;
+      readonly settlementId: number;
+      readonly label: string;
+      readonly unitXyz?: readonly [number, number, number];
+      readonly latDeg?: number;
+      readonly lonDeg?: number;
+    }
+  | {
+      readonly hitKind: "formation";
+      readonly cellId: number;
+      readonly formationId: number;
+      readonly label: string;
+      readonly unitXyz?: readonly [number, number, number];
+      readonly latDeg?: number;
+      readonly lonDeg?: number;
+    }
+  | {
+      readonly hitKind: "road";
+      readonly cellId: number;
+      readonly edgeId: number;
+      readonly fromCellId: number;
+      readonly toCellId: number;
+      readonly label: string;
+      readonly unitXyz?: readonly [number, number, number];
+      readonly latDeg?: number;
+      readonly lonDeg?: number;
+    }
+  | {
+      readonly hitKind: "river";
+      readonly cellId: number;
+      readonly toCellId: number;
+      readonly flowNorm01: number;
+      readonly label: string;
+      readonly unitXyz?: readonly [number, number, number];
+      readonly latDeg?: number;
+      readonly lonDeg?: number;
+    }
+  | {
+      readonly hitKind: "cell";
+      readonly cellId: number;
+      readonly label: string;
+      readonly unitXyz?: readonly [number, number, number];
+      readonly latDeg?: number;
+      readonly lonDeg?: number;
+    };
 
 export interface CameraTelemetry {
   readonly altitudeNorm: number;
@@ -751,6 +1048,132 @@ export function validatePlayerCommand(value: unknown): ValidatedPlayerCommand | 
         eventClassKey: raw.eventClassKey,
         behavior: raw.behavior,
       };
+    case "switchGovernanceModel":
+      if (
+        keys.length !== 2 ||
+        typeof raw.modelKey !== "string" ||
+        raw.modelKey.length === 0 ||
+        raw.modelKey.length > 64
+      ) {
+        return null;
+      }
+      return {
+        kind: "switchGovernanceModel",
+        modelKey: raw.modelKey,
+      };
+    case "enactEconomicPolicy":
+      if (
+        (keys.length !== 2 && keys.length !== 3) ||
+        typeof raw.policyKey !== "string" ||
+        raw.policyKey.length === 0 ||
+        raw.policyKey.length > 64
+      ) {
+        return null;
+      }
+      if (
+        raw.rateOverride01 !== undefined &&
+        raw.rateOverride01 !== null &&
+        (typeof raw.rateOverride01 !== "number" ||
+          !Number.isFinite(raw.rateOverride01) ||
+          raw.rateOverride01 < 0 ||
+          raw.rateOverride01 > 1)
+      ) {
+        return null;
+      }
+      return {
+        kind: "enactEconomicPolicy",
+        policyKey: raw.policyKey,
+        rateOverride01: raw.rateOverride01 === undefined ? null : (raw.rateOverride01 as number | null),
+      };
+    case "charterPrivateCarriers":
+      if (
+        keys.length !== 3 ||
+        typeof raw.targetSettlement !== "number" ||
+        !Number.isInteger(raw.targetSettlement) ||
+        raw.targetSettlement < 0 ||
+        typeof raw.count !== "number" ||
+        !Number.isInteger(raw.count) ||
+        raw.count < 1 ||
+        raw.count > 1000
+      ) {
+        return null;
+      }
+      return {
+        kind: "charterPrivateCarriers",
+        targetSettlement: raw.targetSettlement,
+        count: raw.count,
+      };
+    case "setInnovationMode":
+      if (
+        keys.length !== 3 ||
+        typeof raw.settlement !== "number" ||
+        !Number.isInteger(raw.settlement) ||
+        raw.settlement < 0 ||
+        typeof raw.modeKey !== "string" ||
+        raw.modeKey.length === 0 ||
+        raw.modeKey.length > 64
+      ) {
+        return null;
+      }
+      return {
+        kind: "setInnovationMode",
+        settlement: raw.settlement,
+        modeKey: raw.modeKey,
+      };
+    case "issueTheaterDirective":
+      if (
+        keys.length !== 5 ||
+        typeof raw.theaterId !== "number" ||
+        !Number.isInteger(raw.theaterId) ||
+        raw.theaterId < 1 ||
+        typeof raw.commander !== "number" ||
+        !Number.isInteger(raw.commander) ||
+        raw.commander < 0 ||
+        typeof raw.objectiveCell !== "number" ||
+        !Number.isInteger(raw.objectiveCell) ||
+        raw.objectiveCell < 0 ||
+        typeof raw.supplyPriority01 !== "number" ||
+        !Number.isFinite(raw.supplyPriority01) ||
+        raw.supplyPriority01 < 0 ||
+        raw.supplyPriority01 > 1
+      ) {
+        return null;
+      }
+      return {
+        kind: "issueTheaterDirective",
+        theaterId: raw.theaterId,
+        commander: raw.commander,
+        objectiveCell: raw.objectiveCell,
+        supplyPriority01: raw.supplyPriority01,
+      };
+    case "issueOperationalBattlePlan":
+      if (
+        keys.length !== 5 ||
+        typeof raw.formationId !== "number" ||
+        !Number.isInteger(raw.formationId) ||
+        raw.formationId < 1 ||
+        typeof raw.targetCell !== "number" ||
+        !Number.isInteger(raw.targetCell) ||
+        raw.targetCell < 0 ||
+        typeof raw.doctrineKey !== "string" ||
+        raw.doctrineKey.length === 0 ||
+        raw.doctrineKey.length > 64 ||
+        typeof raw.noRetreat !== "boolean"
+      ) {
+        return null;
+      }
+      return {
+        kind: "issueOperationalBattlePlan",
+        formationId: raw.formationId,
+        targetCell: raw.targetCell,
+        doctrineKey: raw.doctrineKey,
+        noRetreat: raw.noRetreat,
+      };
+    case "acknowledgeSuccession":
+      if (keys.length !== 1) {
+        return null;
+      }
+      return { kind: "acknowledgeSuccession" };
     default:
       return null;
   }

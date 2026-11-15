@@ -842,7 +842,14 @@ impl CommandPort for SimWorld {
             | SpinePlayerCommand::ResolveArbitrationProposal { .. }
             | SpinePlayerCommand::SetPersonalAttentionZoom { .. }
             | SpinePlayerCommand::RelocateHq { .. }
-            | SpinePlayerCommand::UpdateNotificationRule { .. } => {}
+            | SpinePlayerCommand::UpdateNotificationRule { .. }
+            | SpinePlayerCommand::SwitchGovernanceModel { .. }
+            | SpinePlayerCommand::EnactEconomicPolicy { .. }
+            | SpinePlayerCommand::CharterPrivateCarriers { .. }
+            | SpinePlayerCommand::SetInnovationMode { .. }
+            | SpinePlayerCommand::IssueTheaterDirective { .. }
+            | SpinePlayerCommand::IssueOperationalBattlePlan { .. }
+            | SpinePlayerCommand::AcknowledgeSuccession => {}
         }
     }
 }

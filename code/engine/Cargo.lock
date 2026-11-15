@@ -443,6 +443,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "sim-plug-private-eco"
+version = "0.1.0"
+dependencies = [
+ "sim-spine",
+]
+
+[[package]]
+name = "sim-plug-research"
+version = "0.1.0"
+dependencies = [
+ "sim-spine",
+]
+
+[[package]]
+name = "sim-plug-succession"
+version = "0.1.0"
+dependencies = [
+ "sim-spine",
+]
+
+[[package]]
+name = "sim-plug-warfare"
+version = "0.1.0"
+dependencies = [
+ "sim-spine",
+]
+
+[[package]]
 name = "sim-pop"
 version = "0.1.0"
 dependencies = [
@@ -465,6 +493,10 @@ dependencies = [
  "sim-economy",
  "sim-logistics",
  "sim-planet",
+ "sim-plug-private-eco",
+ "sim-plug-research",
+ "sim-plug-succession",
+ "sim-plug-warfare",
  "sim-pop",
  "sim-spine",
  "sim-weather",

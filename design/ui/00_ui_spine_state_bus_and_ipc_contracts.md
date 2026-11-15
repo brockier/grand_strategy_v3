@@ -44,15 +44,15 @@ export interface SimBridgeApi {
 ### 2.2 Immutable `DiegeticStore` Selectors
 
 `DiegeticStore` wraps the latest `DiegeticSnapshot` received from `code/engine/crates/player-view` (never raw `sim-core` state) and exposes memoized read-only selectors:
-1. `selectGlobeTopology(store)` — closed Goldberg cell coordinates and vertex buffer chunks
-2. `selectKnownCells(store)` — explored, rumored, and timestamped surveyed cell states
-3. `selectHqPresence(store)` — current stationary or in-transit HQ coordinate and sight radius
-4. `selectTrackedConvoys(store)` — confirmed, ghosted dead-reckoning, and overdue expedition markers
-5. `selectObservedWeather(store)` — hourly physical surface states restricted strictly to observed/reported cells
+1. `selectGlobeTopology(store)` — welded subdivided icosphere sample coordinates and spherical triangle mesh buffers (hex-free Option B)
+2. `selectKnownCells(store)` — explored, rumored, and timestamped surveyed terrain sample states
+3. `selectHqPresence(store)` — current stationary or in-transit HQ continuous unit coordinate and sight radius
+4. `selectTrackedConvoys(store)` — confirmed, ghosted dead-reckoning, and overdue expedition markers at continuous spherical positions
+5. `selectObservedWeather(store)` — hourly physical surface states restricted strictly to observed/reported sample regions
 6. `selectLedgerRows(store, kind)` — reported stockpiles, cohorts, facilities, and provenance tags
 7. `selectDelegationTree(store)` — Attention utilization, subordinate mandates, and pending escalation proposals
 8. `selectDispatchInbox(store)` — chronological arrived dispatches and active auto-pause banners
-9. `selectClockAndNotifications(store)` — formatted scenario calendar/hour, run state, and 4-tier event rules
+9. `selectClockAndNotifications(store)` — formatted scenario calendar/hour, run state, and 4-tier event rules plus M5–M7 institution, knowledge, warfare, and succession slices
 
 ### 2.3 Typed `UiIntentBus` & Plugin Registries
 

@@ -11,9 +11,11 @@ use sim_spine::{
         write_f32_bits, write_f64_bits, write_str, write_u16_le, write_u32_le, write_u64_le,
         write_u8,
     },
-    CanonicalSaveablePort, CellId, CharacterId, CharacterSnapshotView, CommandPort, LogisticsPort,
-    MandateId, ModRegistryPort, NotificationBehaviorKind, PhysicalLedgerPort, PlanetGeometryPort,
-    PopulationPort, SpinePlayerCommand, SurfaceConditionsPort, Tick,
+    slerp_unit_xyz, CanonicalSaveablePort, CellId, CharacterId, CharacterSnapshotView,
+    CommandPort, FormationId, GovernanceFrictionPlugPort, KnowledgeModifierPlugPort,
+    LogisticsPort, MandateId, ModRegistryPort, NonStateEconomyPlugPort, NotificationBehaviorKind,
+    OperationalCombatPlugPort, PhysicalLedgerPort, PlanetGeometryPort, PopulationPort,
+    SettlementId, SpinePlayerCommand, SuccessionPlugPort, SurfaceConditionsPort, TheaterId, Tick,
 };
 
 /// IPC-safe mod diagnostic payload compatible with `UI-SHL-004`.
@@ -78,6 +80,10 @@ pub enum KnownCellDto {
         biome_key: String,
         #[serde(default, rename = "isOcean")]
         is_ocean: bool,
+        #[serde(default, rename = "watershedId")]
+        watershed_id: u32,
+        #[serde(default, rename = "regionLabel")]
+        region_label: String,
     },
     Stale {
         #[serde(rename = "cellId")]
@@ -102,6 +108,10 @@ pub enum KnownCellDto {
         river_flow_norm_01: f32,
         #[serde(default, rename = "depositEstimates")]
         deposit_estimates: Vec<DepositEstimateDto>,
+        #[serde(default, rename = "watershedId")]
+        watershed_id: u32,
+        #[serde(default, rename = "regionLabel")]
+        region_label: String,
     },
     Surveyed {
         #[serde(rename = "cellId")]
@@ -126,6 +136,10 @@ pub enum KnownCellDto {
         river_flow_norm_01: f32,
         #[serde(default, rename = "depositEstimates")]
         deposit_estimates: Vec<DepositEstimateDto>,
+        #[serde(default, rename = "watershedId")]
+        watershed_id: u32,
+        #[serde(default, rename = "regionLabel")]
+        region_label: String,
     },
 }
 
@@ -224,6 +238,8 @@ pub struct HqPresenceDto {
 pub struct GlobeTopologyDto {
     pub subdivision: u8,
     pub cell_count: u32,
+    #[serde(default)]
+    pub triangles: Vec<[u32; 3]>,
 }
 
 /// Observed hourly weather strictly filtered to live HQ or arrived report cells (`UI-MAP-004`).
@@ -405,6 +421,18 @@ pub struct TrackedConvoyDto {
     #[serde(default)]
     pub route_cells: Vec<u32>,
     #[serde(default)]
+    pub origin_unit_xyz: [f32; 3],
+    #[serde(default)]
+    pub current_unit_xyz: [f32; 3],
+    #[serde(default)]
+    pub destination_unit_xyz: [f32; 3],
+    #[serde(default)]
+    pub route_waypoints_xyz: Vec<[f32; 3]>,
+    #[serde(default)]
+    pub distance_travelled_km: f32,
+    #[serde(default)]
+    pub total_route_km: f32,
+    #[serde(default)]
     pub departure_tick: u64,
     #[serde(default)]
     pub expected_arrival_tick: u64,
@@ -498,6 +526,295 @@ pub struct AuditDiscrepancyDto {
     pub detected_tick: u64,
 }
 
+/// Selectable governance institutional model metadata (`ENG-CMD-006`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GovernanceModelOptionDto {
+    pub model_key: String,
+    pub display_name: String,
+    pub base_attention_capacity: f32,
+    pub clerical_overhead_per_mandate: f32,
+    pub hierarchy_hop_latency_hours: u32,
+}
+
+/// Selectable economic or fiscal policy law metadata (`ENG-ECO-007`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PolicyLawOptionDto {
+    pub policy_key: String,
+    pub display_name: String,
+    pub tax_or_tribute_rate_01: f32,
+    pub patent_duration_years: u32,
+}
+
+/// Active governance institutional posture, transition friction, and fiscal parameters (`ENG-CMD-006`, `ENG-ECO-007`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GovernanceSnapshotDto {
+    pub active_model_key: String,
+    pub active_model_name: String,
+    pub previous_model_key: Option<String>,
+    pub adaptation_progress_01: f32,
+    pub active_policy_key: String,
+    pub active_policy_name: String,
+    pub tax_or_tribute_rate_01: f32,
+    pub patent_duration_years: u32,
+    pub skimming_leakage_fraction: f32,
+    pub effective_attention_capacity: f32,
+    pub clerical_overhead_per_mandate: f32,
+    pub hierarchy_hop_latency_hours: u32,
+    pub chartered_carriers_total: u32,
+    pub bureaucratic_capture_events: u64,
+    #[serde(default)]
+    pub available_models: Vec<GovernanceModelOptionDto>,
+    #[serde(default)]
+    pub available_policies: Vec<PolicyLawOptionDto>,
+}
+
+/// Reported autonomous non-state economic actor summary (`ENG-ECO-005`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NonStateActorDto {
+    pub actor_id: u32,
+    pub name: String,
+    pub kind: String,
+    pub home_settlement_id: u32,
+    pub settlement_name: String,
+    pub working_capital_coins: f64,
+    pub held_commodity_key: Option<String>,
+    pub held_mass_kg: f64,
+    pub hoarded_mass_kg: f64,
+    pub private_carriers_owned: u32,
+    pub chartered_to_state_carriers: u32,
+    pub compliance_01: f32,
+    pub observed_tick: u64,
+    pub confidence_01: f32,
+    pub provenance_label: String,
+}
+
+/// Local settlement price discovery and informal/black-market summary (`ENG-ECO-005`, `ENG-ECO-006`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InformalMarketDto {
+    pub settlement_id: u32,
+    pub settlement_name: String,
+    pub commodity_key: String,
+    pub commodity_name: String,
+    pub clearing_price_index: f32,
+    pub black_market_premium_01: f32,
+    pub black_market_leakage_kg: f64,
+    pub hoarded_reserve_kg: f64,
+    pub observed_tick: u64,
+    pub confidence_01: f32,
+    pub provenance_label: String,
+}
+
+/// Shared infrastructure edge congestion readout (`ENG-LOG-005`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EdgeCongestionDto {
+    pub edge_id: u32,
+    pub from_cell_id: u32,
+    pub to_cell_id: u32,
+    pub hourly_flow_tonnes: f32,
+    pub capacity_tonnes: f32,
+    pub congestion_multiplier: f32,
+}
+
+/// Snapshot slice for non-state actors, informal markets, and shared freight congestion (`UI-MAP-006`, `UI-DAT-006`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NonStateEconomySnapshotDto {
+    #[serde(default)]
+    pub actors: Vec<NonStateActorDto>,
+    #[serde(default)]
+    pub informal_markets: Vec<InformalMarketDto>,
+    #[serde(default)]
+    pub congested_edges: Vec<EdgeCongestionDto>,
+}
+
+/// Empirical technical Know-How component score (`ENG-RES-001`, `ENG-RES-002`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeComponentScoreDto {
+    pub component_id: u16,
+    pub component_key: String,
+    pub display_name: String,
+    pub know_how_01: f32,
+}
+
+/// Theoretical inquiry Know-Why score (`ENG-RES-002`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TheoryDomainScoreDto {
+    pub domain_id: u16,
+    pub domain_key: String,
+    pub display_name: String,
+    pub know_why_01: f32,
+}
+
+/// Fragile physical carrier storing empirical or practical knowledge (`ENG-RES-004`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeCarrierDto {
+    pub settlement_id: u32,
+    pub settlement_name: String,
+    pub component_key: String,
+    pub carrier_kind: String,
+    pub retention_strength_01: f32,
+    pub holder_label: String,
+}
+
+/// Per-settlement emergence, patent, Know-How, and Know-Why status (`ENG-RES-001`..`005`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettlementKnowledgeDto {
+    pub settlement_id: u32,
+    pub settlement_name: String,
+    pub innovation_mode_key: String,
+    pub bottleneck_pressure_01: f32,
+    pub leisure_surplus_01: f32,
+    #[serde(default)]
+    pub know_how: Vec<KnowledgeComponentScoreDto>,
+    #[serde(default)]
+    pub know_why: Vec<TheoryDomainScoreDto>,
+    pub active_patent_holder_actor_id: Option<u32>,
+    pub patent_expiry_tick: Option<u64>,
+    pub regression_losses: u32,
+    pub observed_tick: u64,
+    pub confidence_01: f32,
+    pub provenance_label: String,
+}
+
+/// Knowledge evolution and fragile archive snapshot (`UI-DAT-007`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnowledgeSnapshotDto {
+    #[serde(default)]
+    pub settlements: Vec<SettlementKnowledgeDto>,
+    #[serde(default)]
+    pub carriers: Vec<KnowledgeCarrierDto>,
+    #[serde(default)]
+    pub available_modes: Vec<String>,
+}
+
+/// Operational combat doctrine metadata (`ENG-WAR-002`, `ENG-WAR-003`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DoctrineOptionDto {
+    pub doctrine_key: String,
+    pub display_name: String,
+    pub initiative_bonus: f32,
+    pub strict_obedience_weight: f32,
+    pub rain_penalty_mitigation: f32,
+}
+
+/// High-level theater command directive (`ENG-WAR-002`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TheaterDirectiveDto {
+    pub theater_id: u32,
+    pub commander_id: u32,
+    pub commander_name: String,
+    pub objective_cell_id: u32,
+    pub supply_priority_01: f32,
+    pub issued_tick: u64,
+    pub autonomous_withdrawals: u32,
+}
+
+/// Deployed physical military formation in continuous spherical coordinates (`ENG-WAR-001`..`004`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MilitaryFormationDto {
+    pub formation_id: u32,
+    pub label: String,
+    pub template_key: String,
+    pub theater_id: u32,
+    pub commander_id: u32,
+    pub commander_name: String,
+    pub home_settlement_id: u32,
+    pub current_cell_id: u32,
+    pub current_unit_xyz: [f32; 3],
+    pub target_cell_id: u32,
+    pub target_unit_xyz: [f32; 3],
+    pub personnel_count: u32,
+    pub equipment_mass_kg: f64,
+    pub munitions_days: f32,
+    pub rations_days: f32,
+    pub cohesion_01: f32,
+    pub doctrine_key: String,
+    pub no_retreat_order: bool,
+    pub encircled: bool,
+    pub insubordinate_withdrawal: bool,
+    pub stale_order_ticks: u64,
+    pub observed_tick: u64,
+    pub confidence_01: f32,
+    pub provenance_label: String,
+}
+
+/// Operational warfare and supply-line overlay snapshot (`UI-MAP-007`, `UI-HUD-007`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WarfareSnapshotDto {
+    #[serde(default)]
+    pub theaters: Vec<TheaterDirectiveDto>,
+    #[serde(default)]
+    pub formations: Vec<MilitaryFormationDto>,
+    #[serde(default)]
+    pub available_doctrines: Vec<DoctrineOptionDto>,
+}
+
+/// Mortal ruler and officeholder lifecycle readout (`ENG-POP-006`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuccessionCharacterDto {
+    pub character_id: u32,
+    pub name: String,
+    pub role_title: String,
+    pub age_years: f32,
+    pub health_01: f32,
+    pub is_alive: bool,
+    pub is_ruler: bool,
+    pub settlement_id: u32,
+    pub settlement_name: String,
+}
+
+/// Active or completed succession transition briefing bound strictly to physical HQ archives (`ENG-CMD-007`, `UI-HUD-007`).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuccessionTransitionDto {
+    pub rule_key: String,
+    pub rule_display_name: String,
+    pub deceased_ruler_name: String,
+    pub successor_name: String,
+    pub transition_tick: u64,
+    pub disruption_until_tick: u64,
+    pub inherited_archive_entries: usize,
+    pub lost_unrecorded_rapport_count: usize,
+    pub awaiting_player_acknowledgement: bool,
+}
+
+/// Roster lifecycle and succession transition state (`UI-HUD-007`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SuccessionSnapshotDto {
+    #[serde(default)]
+    pub roster: Vec<SuccessionCharacterDto>,
+    #[serde(default)]
+    pub pending_transition: Option<SuccessionTransitionDto>,
+    pub effective_command_multiplier: f32,
+}
+
+impl Default for SuccessionSnapshotDto {
+    fn default() -> Self {
+        Self {
+            roster: Vec::new(),
+            pending_transition: None,
+            effective_command_multiplier: 1.0,
+        }
+    }
+}
+
 /// Simulation clock and notification status DTO.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -543,6 +860,16 @@ pub struct DiegeticSnapshot {
     pub notification_rules: Vec<NotificationRuleDto>,
     #[serde(default)]
     pub audit_discrepancies: Vec<AuditDiscrepancyDto>,
+    #[serde(default)]
+    pub governance: GovernanceSnapshotDto,
+    #[serde(default)]
+    pub non_state_economy: NonStateEconomySnapshotDto,
+    #[serde(default)]
+    pub knowledge: KnowledgeSnapshotDto,
+    #[serde(default)]
+    pub warfare: WarfareSnapshotDto,
+    #[serde(default)]
+    pub succession: SuccessionSnapshotDto,
 }
 
 /// Validated player command envelope received across IPC from Electron (`UI-SHL-002`).
@@ -590,6 +917,54 @@ pub enum ValidatedPlayerCommand {
         #[serde(rename = "eventClassKey")]
         event_class_key: String,
         behavior: String,
+    },
+    SwitchGovernanceModel {
+        #[serde(rename = "modelKey")]
+        model_key: String,
+    },
+    EnactEconomicPolicy {
+        #[serde(rename = "policyKey")]
+        policy_key: String,
+        #[serde(default, rename = "rateOverride01")]
+        rate_override_01: Option<f32>,
+    },
+    CharterPrivateCarriers {
+        #[serde(rename = "targetSettlement")]
+        target_settlement: u32,
+        count: u32,
+    },
+    SetInnovationMode {
+        settlement: u32,
+        #[serde(rename = "modeKey")]
+        mode_key: String,
+    },
+    IssueTheaterDirective {
+        #[serde(rename = "theaterId")]
+        theater_id: u32,
+        commander: u32,
+        #[serde(rename = "objectiveCell")]
+        objective_cell: u32,
+        #[serde(rename = "supplyPriority01")]
+        supply_priority_01: f32,
+    },
+    IssueOperationalBattlePlan {
+        #[serde(rename = "formationId")]
+        formation_id: u32,
+        #[serde(rename = "targetCell")]
+        target_cell: u32,
+        #[serde(rename = "doctrineKey")]
+        doctrine_key: String,
+        #[serde(default, rename = "noRetreat")]
+        no_retreat: bool,
+    },
+    AcknowledgeSuccession,
+    IssueTacticalMicroCommand {
+        #[serde(default, rename = "unitId")]
+        unit_id: u64,
+    },
+    BuyOrSelectTechTarget {
+        #[serde(default, rename = "techKey")]
+        tech_key: String,
     },
 }
 
@@ -657,6 +1032,63 @@ impl ValidatedPlayerCommand {
                     behavior: parsed,
                 })
             }
+            ValidatedPlayerCommand::SwitchGovernanceModel { model_key } => {
+                Ok(SpinePlayerCommand::SwitchGovernanceModel {
+                    model_key: model_key.clone(),
+                })
+            }
+            ValidatedPlayerCommand::EnactEconomicPolicy {
+                policy_key,
+                rate_override_01,
+            } => Ok(SpinePlayerCommand::EnactEconomicPolicy {
+                policy_key: policy_key.clone(),
+                rate_override_01: rate_override_01.map(|v| v.clamp(0.0, 1.0)),
+            }),
+            ValidatedPlayerCommand::CharterPrivateCarriers {
+                target_settlement,
+                count,
+            } => Ok(SpinePlayerCommand::CharterPrivateCarriers {
+                target_settlement: SettlementId(*target_settlement),
+                count: (*count).min(1000),
+            }),
+            ValidatedPlayerCommand::SetInnovationMode {
+                settlement,
+                mode_key,
+            } => Ok(SpinePlayerCommand::SetInnovationMode {
+                settlement: SettlementId(*settlement),
+                mode_key: mode_key.clone(),
+            }),
+            ValidatedPlayerCommand::IssueTheaterDirective {
+                theater_id,
+                commander,
+                objective_cell,
+                supply_priority_01,
+            } => Ok(SpinePlayerCommand::IssueTheaterDirective {
+                theater_id: TheaterId((*theater_id).min(u32::from(u16::MAX)) as u16),
+                commander: CharacterId(*commander),
+                objective_cell: CellId(*objective_cell),
+                supply_priority_01: supply_priority_01.clamp(0.0, 1.0),
+            }),
+            ValidatedPlayerCommand::IssueOperationalBattlePlan {
+                formation_id,
+                target_cell,
+                doctrine_key,
+                no_retreat,
+            } => Ok(SpinePlayerCommand::IssueOperationalBattlePlan {
+                formation_id: FormationId(*formation_id),
+                target_cell: CellId(*target_cell),
+                doctrine_key: doctrine_key.clone(),
+                no_retreat: *no_retreat,
+            }),
+            ValidatedPlayerCommand::AcknowledgeSuccession => {
+                Ok(SpinePlayerCommand::AcknowledgeSuccession)
+            }
+            ValidatedPlayerCommand::IssueTacticalMicroCommand { unit_id } => Err(format!(
+                "ERR_TACTICAL_MICRO_FORBIDDEN: Individual tactical micro for unit #{unit_id} is forbidden; issue operational directives or battle plans."
+            )),
+            ValidatedPlayerCommand::BuyOrSelectTechTarget { tech_key } => Err(format!(
+                "ERR_BOUGHT_TECH_FORBIDDEN: Technology '{tech_key}' cannot be bought or picked from a deterministic tree; foster empirical production or leisure conditions."
+            )),
         }
     }
 }
@@ -681,6 +1113,16 @@ pub struct EdgeViewInput {
     pub washed_out: bool,
     pub river_edge: bool,
     pub bridge_cap_kg: Option<f64>,
+}
+
+/// Auxiliary M5-M7 optional plug trait references supplied through `sim-spine` ports (`ENG-EPI-001`).
+#[derive(Clone, Copy, Default)]
+pub struct M5ToM7PlugRefs<'a> {
+    pub non_state_eco: Option<&'a dyn NonStateEconomyPlugPort>,
+    pub governance: Option<&'a dyn GovernanceFrictionPlugPort>,
+    pub knowledge: Option<&'a dyn KnowledgeModifierPlugPort>,
+    pub warfare: Option<&'a dyn OperationalCombatPlugPort>,
+    pub succession: Option<&'a dyn SuccessionPlugPort>,
 }
 
 /// Auxiliary subsystem view inputs supplied by composition root (`sim-scenario`) when compiling snapshots.
@@ -872,6 +1314,8 @@ impl PlayerKnowledgeArchive {
                 provenance_label,
                 biome_key,
                 is_ocean,
+                watershed_id: 0,
+                region_label: String::new(),
             },
         );
     }
@@ -888,6 +1332,8 @@ impl PlayerKnowledgeArchive {
         let cid = CellId(cell_id);
         let elev = planet.cell_elevation_m(cid);
         let geo = planet.cell_biome_and_strata(cid);
+        let watershed_id = planet.watershed_id(cid).0;
+        let region_label = planet.region_label(cid);
         let river_downstream_cell_id = planet.watershed_downstream(cid).map(CellId::get);
         let river_flow_norm_01 = if geo.is_ocean {
             0.0
@@ -912,6 +1358,8 @@ impl PlayerKnowledgeArchive {
                 river_downstream_cell_id,
                 river_flow_norm_01,
                 deposit_estimates,
+                watershed_id,
+                region_label,
             },
         );
     }
@@ -927,6 +1375,8 @@ impl PlayerKnowledgeArchive {
         let cid = CellId(cell_id);
         let elev = planet.cell_elevation_m(cid);
         let geo = planet.cell_biome_and_strata(cid);
+        let watershed_id = planet.watershed_id(cid).0;
+        let region_label = planet.region_label(cid);
         let river_downstream_cell_id = planet.watershed_downstream(cid).map(CellId::get);
         let river_flow_norm_01 = if geo.is_ocean {
             0.0
@@ -947,6 +1397,8 @@ impl PlayerKnowledgeArchive {
                 river_downstream_cell_id,
                 river_flow_norm_01,
                 deposit_estimates: Vec::new(),
+                watershed_id,
+                region_label,
             },
         );
     }
@@ -1076,6 +1528,8 @@ impl PlayerKnowledgeArchive {
                     river_downstream_cell_id,
                     river_flow_norm_01,
                     deposit_estimates,
+                    watershed_id,
+                    region_label,
                     ..
                 } => {
                     let age = tick.get().saturating_sub(observed_tick);
@@ -1095,6 +1549,8 @@ impl PlayerKnowledgeArchive {
                                 river_downstream_cell_id,
                                 river_flow_norm_01,
                                 deposit_estimates,
+                                watershed_id,
+                                region_label,
                             },
                         );
                     } else if let Some(KnownCellDto::Surveyed {
@@ -1115,6 +1571,8 @@ impl PlayerKnowledgeArchive {
                     river_downstream_cell_id,
                     river_flow_norm_01,
                     deposit_estimates,
+                    watershed_id,
+                    region_label,
                     ..
                 } => {
                     let age = tick.get().saturating_sub(observed_tick);
@@ -1133,6 +1591,8 @@ impl PlayerKnowledgeArchive {
                             river_downstream_cell_id,
                             river_flow_norm_01,
                             deposit_estimates,
+                            watershed_id,
+                            region_label,
                         },
                     );
                 }
@@ -1146,14 +1606,17 @@ impl PlayerKnowledgeArchive {
                 .get(&cid_u32)
                 .map(|c| c.deposit_estimates().to_vec())
                 .unwrap_or_default();
-            let elev = planet.cell_elevation_m(CellId(cid_u32));
-            let geo = planet.cell_biome_and_strata(CellId(cid_u32));
+            let cid = CellId(cid_u32);
+            let elev = planet.cell_elevation_m(cid);
+            let geo = planet.cell_biome_and_strata(cid);
+            let watershed_id = planet.watershed_id(cid).0;
+            let region_label = planet.region_label(cid);
             let river_downstream_cell_id =
-                planet.watershed_downstream(CellId(cid_u32)).map(CellId::get);
+                planet.watershed_downstream(cid).map(CellId::get);
             let river_flow_norm_01 = if geo.is_ocean {
                 0.0
             } else {
-                (planet.cell_drainage_area_km2(CellId(cid_u32)) / 2500.0).clamp(0.0, 1.0)
+                (planet.cell_drainage_area_km2(cid) / 2500.0).clamp(0.0, 1.0)
             };
             self.surveyed_cells.insert(
                 cid_u32,
@@ -1169,6 +1632,8 @@ impl PlayerKnowledgeArchive {
                     river_downstream_cell_id,
                     river_flow_norm_01,
                     deposit_estimates: prev_estimates,
+                    watershed_id,
+                    region_label,
                 },
             );
         }
@@ -1243,7 +1708,7 @@ impl PlayerKnowledgeArchive {
         )
     }
 
-    /// Compiles the full M3+M4 air-gapped `DiegeticSnapshot` reading exclusively through Spine ports (`ENG-EPI-001..007`).
+    /// Compiles the full M3+M4 air-gapped `DiegeticSnapshot` with neutral M5-M7 plugs (`ENG-EPI-001..007`).
     #[allow(clippy::too_many_arguments)]
     pub fn compile_snapshot_m4(
         &mut self,
@@ -1259,6 +1724,41 @@ impl PlayerKnowledgeArchive {
         logistics: Option<&dyn LogisticsPort>,
         command: Option<&dyn CommandPort>,
         extras: &SnapshotSubsystemInputs,
+    ) -> DiegeticSnapshot {
+        self.compile_snapshot_m7(
+            tick,
+            paused,
+            speed_multiplier,
+            auto_pause_reason,
+            registry,
+            planet,
+            weather,
+            ledger,
+            population,
+            logistics,
+            command,
+            extras,
+            M5ToM7PlugRefs::default(),
+        )
+    }
+
+    /// Compiles the full M0-M7 + Option B continuous sphere air-gapped `DiegeticSnapshot` strictly through Spine ports (`ENG-EPI-001..007`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn compile_snapshot_m7(
+        &mut self,
+        tick: Tick,
+        paused: bool,
+        speed_multiplier: u32,
+        auto_pause_reason: Option<String>,
+        registry: &dyn ModRegistryPort,
+        planet: &dyn PlanetGeometryPort,
+        weather: &dyn SurfaceConditionsPort,
+        ledger: &dyn PhysicalLedgerPort,
+        population: &dyn PopulationPort,
+        logistics: Option<&dyn LogisticsPort>,
+        command: Option<&dyn CommandPort>,
+        extras: &SnapshotSubsystemInputs,
+        plugs: M5ToM7PlugRefs<'_>,
     ) -> DiegeticSnapshot {
         let scenario = registry.scenario_init();
         let hq_cell = ledger.hq_cell();
@@ -1307,12 +1807,21 @@ impl PlayerKnowledgeArchive {
         let hq_sid = ledger.hq_settlement();
         let mut known_settlements = Vec::new();
         let mut surveyed_settlement_cells = BTreeSet::new();
+        let mut known_settlement_meta: BTreeMap<u32, (String, u32, bool)> = BTreeMap::new();
+        let mut all_settlement_names: BTreeMap<u32, String> = BTreeMap::new();
         for settlement in ledger.settlements() {
+            let sid_u32 = settlement.id.get();
+            all_settlement_names.insert(sid_u32, settlement.display_name.clone());
             let scell = settlement.cell_id.get();
-            if live_cells.contains(&scell) || self.surveyed_cells.contains_key(&scell) {
+            let is_live = live_cells.contains(&scell);
+            if is_live || self.surveyed_cells.contains_key(&scell) {
                 surveyed_settlement_cells.insert(scell);
+                known_settlement_meta.insert(
+                    sid_u32,
+                    (settlement.display_name.clone(), scell, is_live),
+                );
                 known_settlements.push(KnownSettlementDto {
-                    settlement_id: settlement.id.get(),
+                    settlement_id: sid_u32,
                     settlement_name: settlement.display_name.clone(),
                     cell_id: scell,
                     is_hq: hq_sid == Some(settlement.id),
@@ -1441,11 +1950,13 @@ impl PlayerKnowledgeArchive {
                     hq_dest_cell = Some(convoy.destination_cell.get());
                     hq_eta_tick = Some(convoy.expected_arrival_tick.get());
                 }
-                let (status, projected_cell, conf, prov) =
+                let (status, projected_cell, current_unit_xyz, distance_travelled_km, conf, prov) =
                     if live_cells.contains(&convoy.current_cell.get()) {
                         (
                             "confirmed_sighting".to_owned(),
                             convoy.current_cell.get(),
+                            convoy.current_unit_xyz,
+                            convoy.distance_travelled_km,
                             1.0,
                             format!("Confirmed HQ Sight (Tick {})", tick.get()),
                         )
@@ -1464,9 +1975,16 @@ impl PlayerKnowledgeArchive {
                             .get(idx)
                             .map(|c| c.get())
                             .unwrap_or(convoy.origin_cell.get());
+                        let dead_reckoned_xyz = slerp_unit_xyz(
+                            convoy.origin_unit_xyz,
+                            convoy.destination_unit_xyz,
+                            frac as f32,
+                        );
                         (
                             "en_route_projected".to_owned(),
                             proj_c,
+                            dead_reckoned_xyz,
+                            (frac as f32) * convoy.total_route_km,
                             0.64,
                             format!(
                                 "Dead-Reckoned Estimate (ETA Tick {})",
@@ -1477,6 +1995,8 @@ impl PlayerKnowledgeArchive {
                         (
                             "delayed_projected".to_owned(),
                             convoy.destination_cell.get(),
+                            convoy.destination_unit_xyz,
+                            convoy.total_route_km,
                             0.42,
                             format!(
                                 "Awaiting Overdue Arrival (ETA was Tick {})",
@@ -1487,6 +2007,8 @@ impl PlayerKnowledgeArchive {
                         (
                             "overdue".to_owned(),
                             convoy.destination_cell.get(),
+                            convoy.destination_unit_xyz,
+                            convoy.total_route_km,
                             0.20,
                             format!(
                                 "OVERDUE — No Courier Confirmation Since Tick {}",
@@ -1504,6 +2026,12 @@ impl PlayerKnowledgeArchive {
                     origin_cell_id: convoy.origin_cell.get(),
                     destination_cell_id: convoy.destination_cell.get(),
                     route_cells: convoy.planned_route.iter().map(|c| c.get()).collect(),
+                    origin_unit_xyz: convoy.origin_unit_xyz,
+                    current_unit_xyz,
+                    destination_unit_xyz: convoy.destination_unit_xyz,
+                    route_waypoints_xyz: convoy.route_waypoints_xyz.clone(),
+                    distance_travelled_km,
+                    total_route_km: convoy.total_route_km,
                     departure_tick: convoy.departure_tick.get(),
                     expected_arrival_tick: convoy.expected_arrival_tick.get(),
                     confidence_01: conf,
@@ -1594,6 +2122,378 @@ impl PlayerKnowledgeArchive {
             })
             .collect();
 
+        let mut char_names = BTreeMap::new();
+        for ch in population.all_characters() {
+            char_names.insert(ch.id.get(), ch.display_name.clone());
+        }
+
+        let available_models: Vec<GovernanceModelOptionDto> = registry
+            .governance_models()
+            .iter()
+            .map(|m| GovernanceModelOptionDto {
+                model_key: m.key.clone(),
+                display_name: m.display_name.clone(),
+                base_attention_capacity: m.base_attention_capacity,
+                clerical_overhead_per_mandate: m.clerical_overhead_per_mandate,
+                hierarchy_hop_latency_hours: m.hierarchy_hop_latency_hours,
+            })
+            .collect();
+        let available_policies: Vec<PolicyLawOptionDto> = registry
+            .policy_laws()
+            .iter()
+            .map(|p| PolicyLawOptionDto {
+                policy_key: p.key.clone(),
+                display_name: p.display_name.clone(),
+                tax_or_tribute_rate_01: p.tax_or_tribute_rate,
+                patent_duration_years: p.patent_duration_years,
+            })
+            .collect();
+        let governance_dto = if let Some(gov) = plugs.governance.and_then(|g| g.governance_state())
+        {
+            GovernanceSnapshotDto {
+                active_model_key: gov.active_model_key,
+                active_model_name: gov.active_model_name,
+                previous_model_key: gov.previous_model_key,
+                adaptation_progress_01: gov.adaptation_progress_01,
+                active_policy_key: gov.active_policy_key,
+                active_policy_name: gov.active_policy_name,
+                tax_or_tribute_rate_01: gov.tax_or_tribute_rate_01,
+                patent_duration_years: gov.patent_duration_years,
+                skimming_leakage_fraction: gov.skimming_leakage_fraction,
+                effective_attention_capacity: gov.effective_attention_capacity,
+                clerical_overhead_per_mandate: gov.clerical_overhead_per_mandate,
+                hierarchy_hop_latency_hours: gov.hierarchy_hop_latency_hours,
+                chartered_carriers_total: gov.chartered_carriers_total,
+                bureaucratic_capture_events: gov.bureaucratic_capture_events,
+                available_models,
+                available_policies,
+            }
+        } else {
+            GovernanceSnapshotDto {
+                effective_attention_capacity: cap_attn,
+                clerical_overhead_per_mandate: scenario.clerical_overhead_per_mandate,
+                hierarchy_hop_latency_hours: scenario.hierarchy_hop_latency_hours,
+                adaptation_progress_01: 1.0,
+                available_models,
+                available_policies,
+                ..GovernanceSnapshotDto::default()
+            }
+        };
+
+        let surveyed_edge_endpoints: BTreeMap<u32, (u32, u32)> = surveyed_roads
+            .iter()
+            .map(|r| (r.edge_id, (r.from_cell_id, r.to_cell_id)))
+            .collect();
+        let non_state_economy_dto = if let Some(eco) = plugs.non_state_eco {
+            let actors = eco
+                .non_state_actors()
+                .iter()
+                .filter_map(|a| {
+                    let (s_name, _, is_live) = known_settlement_meta.get(&a.home_settlement.get())?;
+                    Some(NonStateActorDto {
+                        actor_id: a.actor_id.get(),
+                        name: a.name.clone(),
+                        kind: a.kind.as_str().to_owned(),
+                        home_settlement_id: a.home_settlement.get(),
+                        settlement_name: s_name.clone(),
+                        working_capital_coins: a.working_capital_coins,
+                        held_commodity_key: a
+                            .held_commodity
+                            .and_then(|cid| registry.commodity_def(cid).map(|c| c.key.clone())),
+                        held_mass_kg: a.held_mass_kg,
+                        hoarded_mass_kg: a.hoarded_mass_kg,
+                        private_carriers_owned: a.private_carriers_owned,
+                        chartered_to_state_carriers: a.chartered_to_state_carriers,
+                        compliance_01: a.compliance_01,
+                        observed_tick: tick.get(),
+                        confidence_01: if *is_live { 1.0 } else { 0.78 },
+                        provenance_label: if *is_live {
+                            "Direct Observation (HQ)".to_owned()
+                        } else {
+                            "Commercial Guild Dispatch".to_owned()
+                        },
+                    })
+                })
+                .collect();
+            let informal_markets = eco
+                .informal_markets()
+                .iter()
+                .filter_map(|m| {
+                    let (s_name, _, is_live) = known_settlement_meta.get(&m.settlement.get())?;
+                    let (c_key, c_name) = registry
+                        .commodity_def(m.commodity)
+                        .map(|c| (c.key.clone(), c.display_name.clone()))
+                        .unwrap_or_default();
+                    Some(InformalMarketDto {
+                        settlement_id: m.settlement.get(),
+                        settlement_name: s_name.clone(),
+                        commodity_key: c_key,
+                        commodity_name: c_name,
+                        clearing_price_index: m.clearing_price_index,
+                        black_market_premium_01: m.black_market_premium_01,
+                        black_market_leakage_kg: m.black_market_leakage_kg,
+                        hoarded_reserve_kg: m.hoarded_reserve_kg,
+                        observed_tick: tick.get(),
+                        confidence_01: if *is_live { 1.0 } else { 0.75 },
+                        provenance_label: if *is_live {
+                            "Direct Market Audit (HQ)".to_owned()
+                        } else {
+                            "Remote Market Report".to_owned()
+                        },
+                    })
+                })
+                .collect();
+            let congested_edges = eco
+                .congested_edges()
+                .iter()
+                .filter_map(|ce| {
+                    if !seen_edges.contains(&ce.edge_id.get()) {
+                        return None;
+                    }
+                    let (from_cell_id, to_cell_id) = surveyed_edge_endpoints
+                        .get(&ce.edge_id.get())
+                        .copied()
+                        .unwrap_or((0, 0));
+                    Some(EdgeCongestionDto {
+                        edge_id: ce.edge_id.get(),
+                        from_cell_id,
+                        to_cell_id,
+                        hourly_flow_tonnes: ce.hourly_flow_tonnes,
+                        capacity_tonnes: ce.capacity_tonnes,
+                        congestion_multiplier: ce.congestion_multiplier,
+                    })
+                })
+                .collect();
+            NonStateEconomySnapshotDto {
+                actors,
+                informal_markets,
+                congested_edges,
+            }
+        } else {
+            NonStateEconomySnapshotDto::default()
+        };
+
+        let tech_display_by_id: BTreeMap<u16, String> = registry
+            .tech_components()
+            .iter()
+            .map(|c| (c.id.0, c.display_name.clone()))
+            .collect();
+        let theory_display_by_id: BTreeMap<u16, String> = registry
+            .theory_domains()
+            .iter()
+            .map(|d| (d.id.0, d.display_name.clone()))
+            .collect();
+        let knowledge_dto = if let Some(kn) = plugs.knowledge {
+            let settlements = kn
+                .settlement_knowledge_views()
+                .iter()
+                .filter_map(|sk| {
+                    let (s_name, _, is_live) = known_settlement_meta.get(&sk.settlement.get())?;
+                    let know_how = sk
+                        .know_how_levels
+                        .iter()
+                        .map(|(cid, key, val)| KnowledgeComponentScoreDto {
+                            component_id: cid.0,
+                            component_key: key.clone(),
+                            display_name: tech_display_by_id
+                                .get(&cid.0)
+                                .cloned()
+                                .unwrap_or_else(|| key.clone()),
+                            know_how_01: *val,
+                        })
+                        .collect();
+                    let know_why = sk
+                        .know_why_levels
+                        .iter()
+                        .map(|(did, key, val)| TheoryDomainScoreDto {
+                            domain_id: did.0,
+                            domain_key: key.clone(),
+                            display_name: theory_display_by_id
+                                .get(&did.0)
+                                .cloned()
+                                .unwrap_or_else(|| key.clone()),
+                            know_why_01: *val,
+                        })
+                        .collect();
+                    Some(SettlementKnowledgeDto {
+                        settlement_id: sk.settlement.get(),
+                        settlement_name: s_name.clone(),
+                        innovation_mode_key: sk.innovation_mode_key.clone(),
+                        bottleneck_pressure_01: sk.bottleneck_pressure_01,
+                        leisure_surplus_01: sk.leisure_surplus_01,
+                        know_how,
+                        know_why,
+                        active_patent_holder_actor_id: sk
+                            .active_patent_holder
+                            .map(|a| a.get()),
+                        patent_expiry_tick: sk.patent_expiry_tick.map(Tick::get),
+                        regression_losses: sk.regression_losses,
+                        observed_tick: tick.get(),
+                        confidence_01: if *is_live { 1.0 } else { 0.80 },
+                        provenance_label: if *is_live {
+                            "Direct Archive Audit (HQ)".to_owned()
+                        } else {
+                            "Guild Master Courier".to_owned()
+                        },
+                    })
+                })
+                .collect();
+            let carriers = kn
+                .knowledge_carriers()
+                .iter()
+                .filter_map(|kc| {
+                    let (s_name, _, _) = known_settlement_meta.get(&kc.settlement.get())?;
+                    Some(KnowledgeCarrierDto {
+                        settlement_id: kc.settlement.get(),
+                        settlement_name: s_name.clone(),
+                        component_key: kc.component_key.clone(),
+                        carrier_kind: kc.carrier_kind.as_str().to_owned(),
+                        retention_strength_01: kc.retention_strength_01,
+                        holder_label: kc.holder_label.clone(),
+                    })
+                })
+                .collect();
+            KnowledgeSnapshotDto {
+                settlements,
+                carriers,
+                available_modes: vec![
+                    "guild_secrecy".to_owned(),
+                    "state_arsenal".to_owned(),
+                    "open_scholarly_patronage".to_owned(),
+                    "private_patent_exclusivity".to_owned(),
+                ],
+            }
+        } else {
+            KnowledgeSnapshotDto::default()
+        };
+
+        let available_doctrines: Vec<DoctrineOptionDto> = registry
+            .doctrines()
+            .iter()
+            .map(|d| DoctrineOptionDto {
+                doctrine_key: d.key.clone(),
+                display_name: d.display_name.clone(),
+                initiative_bonus: d.initiative_bonus,
+                strict_obedience_weight: d.strict_obedience_weight,
+                rain_penalty_mitigation: d.rain_penalty_mitigation,
+            })
+            .collect();
+        let warfare_dto = if let Some(war) = plugs.warfare {
+            let theaters = war
+                .theaters()
+                .iter()
+                .map(|t| TheaterDirectiveDto {
+                    theater_id: u32::from(t.theater_id.0),
+                    commander_id: t.commander.get(),
+                    commander_name: char_names
+                        .get(&t.commander.get())
+                        .cloned()
+                        .unwrap_or_else(|| format!("Commander #{}", t.commander.get())),
+                    objective_cell_id: t.objective_cell.get(),
+                    supply_priority_01: t.supply_priority_01,
+                    issued_tick: t.issued_tick.get(),
+                    autonomous_withdrawals: t.autonomous_withdrawals,
+                })
+                .collect();
+            let formations = war
+                .formations()
+                .iter()
+                .filter(|f| {
+                    live_cells.contains(&f.current_cell.get())
+                        || self.surveyed_cells.contains_key(&f.current_cell.get())
+                        || known_settlement_meta.contains_key(&f.home_settlement.get())
+                })
+                .map(|f| {
+                    let is_live = live_cells.contains(&f.current_cell.get());
+                    MilitaryFormationDto {
+                        formation_id: f.formation_id.0,
+                        label: f.label.clone(),
+                        template_key: f.template_key.clone(),
+                        theater_id: u32::from(f.theater_id.0),
+                        commander_id: f.commander.get(),
+                        commander_name: char_names
+                            .get(&f.commander.get())
+                            .cloned()
+                            .unwrap_or_else(|| format!("Commander #{}", f.commander.get())),
+                        home_settlement_id: f.home_settlement.get(),
+                        current_cell_id: f.current_cell.get(),
+                        current_unit_xyz: f.current_unit_xyz,
+                        target_cell_id: f.target_cell.get(),
+                        target_unit_xyz: f.target_unit_xyz,
+                        personnel_count: f.personnel_count,
+                        equipment_mass_kg: f.equipment_mass_kg,
+                        munitions_days: f.munitions_days,
+                        rations_days: f.rations_days,
+                        cohesion_01: f.cohesion_01,
+                        doctrine_key: f.doctrine_key.clone(),
+                        no_retreat_order: f.no_retreat_order,
+                        encircled: f.encircled,
+                        insubordinate_withdrawal: f.insubordinate_withdrawal,
+                        stale_order_ticks: f.stale_order_ticks,
+                        observed_tick: tick.get(),
+                        confidence_01: if is_live { 1.0 } else { 0.62 },
+                        provenance_label: if is_live {
+                            "Direct Staff Observation".to_owned()
+                        } else {
+                            "Theater Courier Dispatch".to_owned()
+                        },
+                    }
+                })
+                .collect();
+            WarfareSnapshotDto {
+                theaters,
+                formations,
+                available_doctrines,
+            }
+        } else {
+            WarfareSnapshotDto {
+                available_doctrines,
+                ..WarfareSnapshotDto::default()
+            }
+        };
+
+        let succession_dto = if let Some(suc) = plugs.succession {
+            let roster = suc
+                .roster_characters()
+                .iter()
+                .filter(|c| {
+                    known_settlement_meta.contains_key(&c.settlement.get()) || c.is_ruler
+                })
+                .map(|c| SuccessionCharacterDto {
+                    character_id: c.character_id.get(),
+                    name: c.name.clone(),
+                    role_title: c.role_title.clone(),
+                    age_years: c.age_years,
+                    health_01: c.health_01,
+                    is_alive: c.is_alive,
+                    is_ruler: c.is_ruler,
+                    settlement_id: c.settlement.get(),
+                    settlement_name: all_settlement_names
+                        .get(&c.settlement.get())
+                        .cloned()
+                        .unwrap_or_else(|| format!("Settlement #{}", c.settlement.get())),
+                })
+                .collect();
+            let pending_transition = suc.pending_transition().map(|tr| SuccessionTransitionDto {
+                rule_key: tr.rule_key.clone(),
+                rule_display_name: tr.rule_display_name.clone(),
+                deceased_ruler_name: tr.deceased_ruler_name.clone(),
+                successor_name: tr.successor_name.clone(),
+                transition_tick: tr.transition_tick.get(),
+                disruption_until_tick: tr.disruption_until_tick.get(),
+                inherited_archive_entries: tr.inherited_archive_entries,
+                lost_unrecorded_rapport_count: tr.lost_unrecorded_rapport_count,
+                awaiting_player_acknowledgement: tr.awaiting_player_acknowledgement,
+            });
+            SuccessionSnapshotDto {
+                roster,
+                pending_transition,
+                effective_command_multiplier: suc.effective_command_multiplier(tick),
+            }
+        } else {
+            SuccessionSnapshotDto::default()
+        };
+
         let active_alert_count = u32::from(auto_pause_reason.is_some())
             + (extras.open_proposals.len() as u32)
             + (self.archived_dispatches.len().min(99) as u32);
@@ -1605,6 +2505,7 @@ impl PlayerKnowledgeArchive {
             globe_topology: GlobeTopologyDto {
                 subdivision: scenario.goldberg_subdivision,
                 cell_count: total_cells,
+                triangles: planet.icosphere_triangles().to_vec(),
             },
             known_cells,
             hq_presence: HqPresenceDto {
@@ -1658,6 +2559,11 @@ impl PlayerKnowledgeArchive {
             open_proposals: extras.open_proposals.clone(),
             notification_rules: extras.notification_rules.clone(),
             audit_discrepancies: self.audit_discrepancies.clone(),
+            governance: governance_dto,
+            non_state_economy: non_state_economy_dto,
+            knowledge: knowledge_dto,
+            warfare: warfare_dto,
+            succession: succession_dto,
         }
     }
 }
@@ -1728,6 +2634,8 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     river_downstream_cell_id,
                     river_flow_norm_01,
                     deposit_estimates,
+                    watershed_id,
+                    region_label,
                 } => {
                     write_u8(out, 1);
                     write_u32_le(out, *cell_id);
@@ -1747,6 +2655,8 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     }
                     write_f32_bits(out, *river_flow_norm_01);
                     write_deposit_estimates(out, deposit_estimates);
+                    write_u32_le(out, *watershed_id);
+                    write_str(out, region_label);
                 }
                 KnownCellDto::Rumored {
                     cell_id,
@@ -1756,6 +2666,8 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     provenance_label,
                     biome_key,
                     is_ocean,
+                    watershed_id,
+                    region_label,
                 } => {
                     write_u8(out, 2);
                     write_u32_le(out, *cell_id);
@@ -1765,6 +2677,8 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     write_str(out, provenance_label);
                     write_str(out, biome_key);
                     write_u8(out, u8::from(*is_ocean));
+                    write_u32_le(out, *watershed_id);
+                    write_str(out, region_label);
                 }
                 KnownCellDto::Stale {
                     cell_id,
@@ -1778,6 +2692,8 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     river_downstream_cell_id,
                     river_flow_norm_01,
                     deposit_estimates,
+                    watershed_id,
+                    region_label,
                 } => {
                     write_u8(out, 3);
                     write_u32_le(out, *cell_id);
@@ -1797,6 +2713,8 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     }
                     write_f32_bits(out, *river_flow_norm_01);
                     write_deposit_estimates(out, deposit_estimates);
+                    write_u32_le(out, *watershed_id);
+                    write_str(out, region_label);
                 }
             }
         }
@@ -1929,6 +2847,8 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     },
                     river_flow_norm_01: read_f32_bits(input)?,
                     deposit_estimates: read_deposit_estimates(input)?,
+                    watershed_id: read_u32_le(input)?,
+                    region_label: read_str(input)?,
                 },
                 2 => KnownCellDto::Rumored {
                     cell_id: read_u32_le(input)?,
@@ -1938,6 +2858,8 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     provenance_label: read_str(input)?,
                     biome_key: read_str(input)?,
                     is_ocean: read_u8(input)? != 0,
+                    watershed_id: read_u32_le(input)?,
+                    region_label: read_str(input)?,
                 },
                 3 => KnownCellDto::Stale {
                     cell_id: read_u32_le(input)?,
@@ -1955,6 +2877,8 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     },
                     river_flow_norm_01: read_f32_bits(input)?,
                     deposit_estimates: read_deposit_estimates(input)?,
+                    watershed_id: read_u32_le(input)?,
+                    region_label: read_str(input)?,
                 },
                 other => return Err(format!("invalid KnownCellDto tag {other}")),
             };

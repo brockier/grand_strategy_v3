@@ -3,3 +3,15 @@ id = "council_senior_appointee"
 display_name = "Appointed Colony Deputy Succession"
 continuity_fraction = 0.85
 transition_disruption_hours = 72
+
+[[succession_rules]]
+id = "hereditary_primogeniture"
+display_name = "Hereditary Lineage Charter"
+continuity_fraction = 0.72
+transition_disruption_hours = 120
+
+[[succession_rules]]
+id = "constitutional_election"
+display_name = "Assembly Vote & Sealed Archive Handover"
+continuity_fraction = 0.92
+transition_disruption_hours = 48

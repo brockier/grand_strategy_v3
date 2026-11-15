@@ -9,10 +9,12 @@ use schemars::schema_for;
 use serde::{Deserialize, Serialize};
 use sim_spine::{
     ActorId, CalendarConfigView, CarrierClassId, CarrierDefView, CohortArchetypeDefView,
-    CommodityDefView, CommodityId, EventClassId, InfraClassId, InfraDefView, ModRegistryPort,
-    NaturalBoundsView, NotificationBehaviorKind, PlanetGenConfigView, ProcessDefView, ProcessId,
+    CommodityDefView, CommodityId, DoctrineDefView, EventClassId, FormationTemplateDefView,
+    GovernanceModelDefView, InfraClassId, InfraDefView, ModRegistryPort, NaturalBoundsView,
+    NotificationBehaviorKind, PlanetGenConfigView, PolicyLawDefView, ProcessDefView, ProcessId,
     ProcessQuantityView, ScenarioArchetypeKind, ScenarioCharacterSeed, ScenarioInitView,
-    ScenarioSettlementSeed, VocationDefView, VocationId,
+    ScenarioSettlementSeed, SuccessionRuleDefView, TechComponentDefView, TechComponentId,
+    TheoryDomainDefView, TheoryDomainId, VocationDefView, VocationId,
 };
 
 use crate::schema::{
@@ -94,6 +96,13 @@ pub struct CompiledModBundle {
     calendar_view: CalendarConfigView,
     planet_gen_view: PlanetGenConfigView,
     scenario_view: ScenarioInitView,
+    governance_model_defs: Vec<GovernanceModelDefView>,
+    policy_law_defs: Vec<PolicyLawDefView>,
+    tech_component_defs: Vec<TechComponentDefView>,
+    theory_domain_defs: Vec<TheoryDomainDefView>,
+    formation_template_defs: Vec<FormationTemplateDefView>,
+    doctrine_defs: Vec<DoctrineDefView>,
+    succession_rule_defs: Vec<SuccessionRuleDefView>,
     digest_bytes: [u8; 32],
     digest_hex: String,
 }
@@ -197,6 +206,34 @@ impl ModRegistryPort for CompiledModBundle {
 
     fn scenario_init(&self) -> &ScenarioInitView {
         &self.scenario_view
+    }
+
+    fn governance_models(&self) -> &[GovernanceModelDefView] {
+        &self.governance_model_defs
+    }
+
+    fn policy_laws(&self) -> &[PolicyLawDefView] {
+        &self.policy_law_defs
+    }
+
+    fn tech_components(&self) -> &[TechComponentDefView] {
+        &self.tech_component_defs
+    }
+
+    fn theory_domains(&self) -> &[TheoryDomainDefView] {
+        &self.theory_domain_defs
+    }
+
+    fn formation_templates(&self) -> &[FormationTemplateDefView] {
+        &self.formation_template_defs
+    }
+
+    fn doctrines(&self) -> &[DoctrineDefView] {
+        &self.doctrine_defs
+    }
+
+    fn succession_rules(&self) -> &[SuccessionRuleDefView] {
+        &self.succession_rule_defs
     }
 }
 
@@ -1634,8 +1671,8 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
         },
         commodities_and_knowledge: CommoditiesAndKnowledgeDomain {
             commodities: commodities.clone(),
-            tech_components,
-            theory_domains,
+            tech_components: tech_components.clone(),
+            theory_domains: theory_domains.clone(),
         },
         processes: ProcessesDomain {
             processes: processes.clone(),
@@ -1650,15 +1687,15 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
         },
         characters: CharactersDomain {
             traits,
-            succession_rules,
+            succession_rules: succession_rules.clone(),
         },
         governance: GovernanceDomain {
             governance_models: governance_models.clone(),
-            policy_laws,
+            policy_laws: policy_laws.clone(),
         },
         warfare: WarfareDomain {
-            formation_templates,
-            doctrines,
+            formation_templates: formation_templates.clone(),
+            doctrines: doctrines.clone(),
         },
         scenario_and_calendar: ScenarioAndCalendarDomain {
             calendar: Some(calendar_rec.clone()),
@@ -1964,6 +2001,99 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
             .collect(),
     };
 
+    let governance_model_defs: Vec<GovernanceModelDefView> = governance_models
+        .iter()
+        .enumerate()
+        .map(|(idx, g)| GovernanceModelDefView {
+            id: idx as u16,
+            key: g.id.clone(),
+            display_name: g.display_name.clone(),
+            base_attention_capacity: g.base_attention_capacity,
+            clerical_overhead_per_mandate: g.clerical_overhead_per_mandate,
+            hierarchy_hop_latency_hours: g.hierarchy_hop_latency_hours,
+        })
+        .collect();
+
+    let policy_law_defs: Vec<PolicyLawDefView> = policy_laws
+        .iter()
+        .enumerate()
+        .map(|(idx, p)| PolicyLawDefView {
+            id: idx as u16,
+            key: p.id.clone(),
+            display_name: p.display_name.clone(),
+            tax_or_tribute_rate: p.tax_or_tribute_rate,
+            patent_duration_years: p.patent_duration_years,
+        })
+        .collect();
+
+    let tech_component_defs: Vec<TechComponentDefView> = tech_components
+        .iter()
+        .enumerate()
+        .map(|(idx, t)| TechComponentDefView {
+            id: TechComponentId(idx as u16),
+            key: t.id.clone(),
+            display_name: t.display_name.clone(),
+            domain_key: t.domain.clone(),
+            empirical_difficulty: t.empirical_difficulty,
+        })
+        .collect();
+
+    let theory_domain_defs: Vec<TheoryDomainDefView> = theory_domains
+        .iter()
+        .enumerate()
+        .map(|(idx, d)| TheoryDomainDefView {
+            id: TheoryDomainId(idx as u16),
+            key: d.id.clone(),
+            display_name: d.display_name.clone(),
+            abstraction_depth: d.abstraction_depth,
+        })
+        .collect();
+
+    let formation_template_defs: Vec<FormationTemplateDefView> = formation_templates
+        .iter()
+        .enumerate()
+        .map(|(idx, f)| FormationTemplateDefView {
+            id: idx as u16,
+            key: f.id.clone(),
+            display_name: f.display_name.clone(),
+            personnel_count: f.personnel_count,
+            required_vocation: vocation_by_key
+                .get(f.required_vocation.as_str())
+                .copied()
+                .unwrap_or(VocationId(0)),
+            equipment_commodity: commodity_by_key
+                .get(f.equipment_commodity.as_str())
+                .copied()
+                .unwrap_or(CommodityId(0)),
+            equipment_kg_per_troop: f.equipment_kg_per_troop,
+        })
+        .collect();
+
+    let doctrine_defs: Vec<DoctrineDefView> = doctrines
+        .iter()
+        .enumerate()
+        .map(|(idx, d)| DoctrineDefView {
+            id: idx as u16,
+            key: d.id.clone(),
+            display_name: d.display_name.clone(),
+            initiative_bonus: d.initiative_bonus,
+            strict_obedience_weight: d.strict_obedience_weight,
+            rain_penalty_mitigation: d.rain_penalty_mitigation,
+        })
+        .collect();
+
+    let succession_rule_defs: Vec<SuccessionRuleDefView> = succession_rules
+        .iter()
+        .enumerate()
+        .map(|(idx, s)| SuccessionRuleDefView {
+            id: idx as u16,
+            key: s.id.clone(),
+            display_name: s.display_name.clone(),
+            continuity_fraction: s.continuity_fraction,
+            transition_disruption_hours: s.transition_disruption_hours,
+        })
+        .collect();
+
     Ok(CompiledModBundle {
         merged_doc,
         commodity_defs,
@@ -1982,6 +2112,13 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
         calendar_view,
         planet_gen_view,
         scenario_view,
+        governance_model_defs,
+        policy_law_defs,
+        tech_component_defs,
+        theory_domain_defs,
+        formation_template_defs,
+        doctrine_defs,
+        succession_rule_defs,
         digest_bytes,
         digest_hex,
     })

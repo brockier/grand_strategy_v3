@@ -61,7 +61,7 @@ function collectAllMandates(tree: DelegationTreeDto | null): MandateSummaryDto[]
   return Array.from(byId.values());
 }
 
-function estimateCourierEtaHours(
+export function estimateCourierEtaHours(
   subdivision: number,
   fromCellId: number,
   toCellId: number,

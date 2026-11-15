@@ -304,6 +304,18 @@ impl CommandHierarchy {
         self.notification_rules.insert(event_key, behavior);
     }
 
+    /// Updates effective governance capacity, clerical overhead, and hop latency parameters (`ENG-CMD-006`).
+    pub fn set_institutional_parameters(
+        &mut self,
+        base_attention_capacity: f32,
+        clerical_overhead_per_mandate: f32,
+        hierarchy_hop_latency_hours: u32,
+    ) {
+        self.base_attention_capacity = base_attention_capacity.max(20.0);
+        self.clerical_overhead_per_mandate = clerical_overhead_per_mandate.max(1.0);
+        self.hierarchy_hop_latency_hours = hierarchy_hop_latency_hours;
+    }
+
     /// Computes total clerical maintenance overhead strictly as a function of active mandates.
     pub fn clerical_overhead_total(&self) -> f32 {
         let active_count = self
@@ -631,7 +643,14 @@ impl CommandHierarchy {
             | SpinePlayerCommand::StepSingleTick
             | SpinePlayerCommand::SetSpeedMultiplier(_)
             | SpinePlayerCommand::AcknowledgeNotification(_)
-            | SpinePlayerCommand::StubPing { .. }) => {
+            | SpinePlayerCommand::StubPing { .. }
+            | SpinePlayerCommand::SwitchGovernanceModel { .. }
+            | SpinePlayerCommand::EnactEconomicPolicy { .. }
+            | SpinePlayerCommand::CharterPrivateCarriers { .. }
+            | SpinePlayerCommand::SetInnovationMode { .. }
+            | SpinePlayerCommand::IssueTheaterDirective { .. }
+            | SpinePlayerCommand::IssueOperationalBattlePlan { .. }
+            | SpinePlayerCommand::AcknowledgeSuccession) => {
                 self.pending_world_actions
                     .push(CommandWorldAction { tick, command: other });
             }

@@ -5,6 +5,7 @@ import {
   GoldbergCellGeometry,
   GoldbergTopologyData,
   RgbTuple,
+  Vec3,
 } from "../spine";
 import { geodesicPointsBetween } from "./mesh";
 
@@ -24,6 +25,11 @@ export interface FeatureOverlayRenderSummary {
   readonly stormCellCount: number;
   readonly floodedRiverCount: number;
   readonly commContourCount: number;
+  readonly tradeRibbonCount: number;
+  readonly congestedCorridorCount: number;
+  readonly theaterVectorCount: number;
+  readonly formationCount: number;
+  readonly noRetreatCount: number;
 }
 
 /**
@@ -48,6 +54,13 @@ export class GlobeFeatureOverlayGroup {
   private convoyLostMat: THREE.LineBasicMaterial;
   private floodRingMat: THREE.MeshBasicMaterial;
   private snowMarkerMat: THREE.MeshBasicMaterial;
+  private tradeRibbonMat: THREE.LineBasicMaterial;
+  private congestionMat: THREE.LineBasicMaterial;
+  private theaterVectorMat: THREE.LineDashedMaterial;
+  private phaseLineMat: THREE.LineBasicMaterial;
+  private formationFreshMat: THREE.MeshBasicMaterial;
+  private formationStaleMat: THREE.MeshBasicMaterial;
+  private noRetreatRingMat: THREE.MeshBasicMaterial;
   private lastSummary: FeatureOverlayRenderSummary = {
     activeModeId: "terrain",
     previewDestinationCellId: null,
@@ -60,6 +73,11 @@ export class GlobeFeatureOverlayGroup {
     stormCellCount: 0,
     floodedRiverCount: 0,
     commContourCount: 0,
+    tradeRibbonCount: 0,
+    congestedCorridorCount: 0,
+    theaterVectorCount: 0,
+    formationCount: 0,
+    noRetreatCount: 0,
   };
 
   constructor(palette?: GlobePalette) {
@@ -123,6 +141,40 @@ export class GlobeFeatureOverlayGroup {
       transparent: true,
       opacity: 0.75,
     });
+    this.tradeRibbonMat = new THREE.LineBasicMaterial({
+      color: rgbToThreeColor(palette?.landMidRgb ?? [176, 162, 116]),
+      transparent: true,
+      opacity: 0.88,
+    });
+    this.congestionMat = new THREE.LineBasicMaterial({
+      color: rgbToThreeColor(palette?.settlementMarkerRgb ?? [139, 46, 34]),
+      transparent: true,
+      opacity: 0.94,
+    });
+    this.theaterVectorMat = new THREE.LineDashedMaterial({
+      color: rgbToThreeColor(palette?.settlementMarkerRgb ?? [139, 46, 34]),
+      dashSize: 0.032,
+      gapSize: 0.014,
+      transparent: true,
+      opacity: 0.9,
+    });
+    this.phaseLineMat = new THREE.LineBasicMaterial({
+      color: rgbToThreeColor(palette?.contourInkRgb ?? [59, 44, 29]),
+      transparent: true,
+      opacity: 0.85,
+    });
+    this.formationFreshMat = new THREE.MeshBasicMaterial({
+      color: rgbToThreeColor(palette?.settlementMarkerRgb ?? [139, 46, 34]),
+    });
+    this.formationStaleMat = new THREE.MeshBasicMaterial({
+      color: rgbToThreeColor(palette?.roadOchreRgb ?? [166, 89, 40]),
+      transparent: true,
+      opacity: 0.55,
+    });
+    this.noRetreatRingMat = new THREE.MeshBasicMaterial({
+      color: rgbToThreeColor(palette?.contourInkRgb ?? [59, 44, 29]),
+      side: THREE.DoubleSide,
+    });
   }
 
   setPalette(palette: GlobePalette): void {
@@ -140,6 +192,13 @@ export class GlobeFeatureOverlayGroup {
     this.convoyLostMat.color.copy(rgbToThreeColor(palette.settlementMarkerRgb));
     this.floodRingMat.color.copy(rgbToThreeColor(palette.riverWaterRgb));
     this.snowMarkerMat.color.copy(rgbToThreeColor(palette.peakSnowRgb));
+    this.tradeRibbonMat.color.copy(rgbToThreeColor(palette.landMidRgb));
+    this.congestionMat.color.copy(rgbToThreeColor(palette.settlementMarkerRgb));
+    this.theaterVectorMat.color.copy(rgbToThreeColor(palette.settlementMarkerRgb));
+    this.phaseLineMat.color.copy(rgbToThreeColor(palette.contourInkRgb));
+    this.formationFreshMat.color.copy(rgbToThreeColor(palette.settlementMarkerRgb));
+    this.formationStaleMat.color.copy(rgbToThreeColor(palette.roadOchreRgb));
+    this.noRetreatRingMat.color.copy(rgbToThreeColor(palette.contourInkRgb));
   }
 
   getSummary(): FeatureOverlayRenderSummary {
@@ -292,7 +351,7 @@ export class GlobeFeatureOverlayGroup {
       }
     }
 
-    // 5. Dead-reckoning vs live tracked convoys (`UI-MAP-002`)
+    // 5. Dead-reckoning vs live tracked convoys (`UI-MAP-002` + Option B continuous coordinates)
     let confirmedConvoyCount = 0;
     let projectedConvoyCount = 0;
     let overdueConvoyCount = 0;
@@ -302,17 +361,20 @@ export class GlobeFeatureOverlayGroup {
 
     for (const convoy of snapshot.trackedConvoys) {
       const cell = cellMap.get(convoy.projectedCellId);
-      if (!cell) continue;
+      const convoyUnit: Vec3 | null = convoy.currentUnitXyz
+        ? [convoy.currentUnitXyz[0], convoy.currentUnitXyz[1], convoy.currentUnitXyz[2]]
+        : cell?.centerUnit ?? null;
+      if (!convoyUnit) continue;
       const statusLower = convoy.status.toLowerCase();
       const pos = new THREE.Vector3(
-        cell.centerUnit[0] * 1.022,
-        cell.centerUnit[1] * 1.022,
-        cell.centerUnit[2] * 1.022,
+        convoyUnit[0] * 1.022,
+        convoyUnit[1] * 1.022,
+        convoyUnit[2] * 1.022,
       );
 
       if (statusLower.includes("lost") || statusLower.includes("missing")) {
         lostConvoyCount += 1;
-        const n = new THREE.Vector3(...cell.centerUnit).normalize();
+        const n = new THREE.Vector3(...convoyUnit).normalize();
         const refAxis = Math.abs(n.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
         const east = new THREE.Vector3().crossVectors(refAxis, n).normalize().multiplyScalar(0.014);
         const north = new THREE.Vector3().crossVectors(n, east).normalize().multiplyScalar(0.014);
@@ -335,14 +397,26 @@ export class GlobeFeatureOverlayGroup {
         this.group.add(marker);
       }
 
-      const route = convoy.routeCells ?? [];
-      for (let i = 0; i + 1 < route.length; i += 1) {
-        const src = cellMap.get(route[i]);
-        const dst = cellMap.get(route[i + 1]);
-        if (!src || !dst) continue;
-        const arc = geodesicPointsBetween(src.centerUnit, dst.centerUnit, 6, 1.016);
-        for (let k = 0; k < arc.length - 1; k += 1) {
-          dashedRouteSegs.push(arc[k], arc[k + 1]);
+      const waypoints = convoy.routeWaypointsXyz;
+      if (waypoints && waypoints.length >= 2) {
+        for (let i = 0; i + 1 < waypoints.length; i += 1) {
+          const wpA: Vec3 = [waypoints[i][0], waypoints[i][1], waypoints[i][2]];
+          const wpB: Vec3 = [waypoints[i + 1][0], waypoints[i + 1][1], waypoints[i + 1][2]];
+          const arc = geodesicPointsBetween(wpA, wpB, 4, 1.016);
+          for (let k = 0; k < arc.length - 1; k += 1) {
+            dashedRouteSegs.push(arc[k], arc[k + 1]);
+          }
+        }
+      } else {
+        const route = convoy.routeCells ?? [];
+        for (let i = 0; i + 1 < route.length; i += 1) {
+          const src = cellMap.get(route[i]);
+          const dst = cellMap.get(route[i + 1]);
+          if (!src || !dst) continue;
+          const arc = geodesicPointsBetween(src.centerUnit, dst.centerUnit, 6, 1.016);
+          for (let k = 0; k < arc.length - 1; k += 1) {
+            dashedRouteSegs.push(arc[k], arc[k + 1]);
+          }
         }
       }
     }
@@ -410,6 +484,152 @@ export class GlobeFeatureOverlayGroup {
       }
     }
 
+    // 7. M5 Trade ribbons & corridor congestion bottlenecks (`UI-MAP-006.1`, `UI-MAP-006.2`)
+    let tradeRibbonCount = 0;
+    let congestedCorridorCount = 0;
+    if (activeModeId === "trade") {
+      const tradeSegs: THREE.Vector3[] = [];
+      for (const convoy of snapshot.trackedConvoys) {
+        const origCell =
+          convoy.originCellId !== undefined ? cellMap.get(convoy.originCellId) : undefined;
+        const destCell =
+          convoy.destinationCellId !== undefined ? cellMap.get(convoy.destinationCellId) : undefined;
+        const srcUnit: Vec3 | null = convoy.originUnitXyz
+          ? [convoy.originUnitXyz[0], convoy.originUnitXyz[1], convoy.originUnitXyz[2]]
+          : origCell?.centerUnit ?? null;
+        const dstUnit: Vec3 | null = convoy.destinationUnitXyz
+          ? [convoy.destinationUnitXyz[0], convoy.destinationUnitXyz[1], convoy.destinationUnitXyz[2]]
+          : destCell?.centerUnit ?? null;
+        if (srcUnit && dstUnit) {
+          tradeRibbonCount += 1;
+          const arc = geodesicPointsBetween(srcUnit, dstUnit, 12, 1.019);
+          for (let i = 0; i < arc.length - 1; i += 1) {
+            tradeSegs.push(arc[i], arc[i + 1]);
+          }
+        }
+      }
+      const settlementCellById = new Map<number, GoldbergCellGeometry>();
+      for (const st of snapshot.knownSettlements ?? []) {
+        const sc = cellMap.get(st.cellId);
+        if (sc) settlementCellById.set(st.settlementId, sc);
+      }
+      const markets = snapshot.nonStateEconomy?.informalMarkets ?? [];
+      for (let i = 0; i < markets.length; i += 1) {
+        for (let j = i + 1; j < markets.length; j += 1) {
+          const a = markets[i];
+          const b = markets[j];
+          if (a.commodityKey !== b.commodityKey || a.settlementId === b.settlementId) continue;
+          const cellA = settlementCellById.get(a.settlementId);
+          const cellB = settlementCellById.get(b.settlementId);
+          if (!cellA || !cellB) continue;
+          tradeRibbonCount += 1;
+          const arc = geodesicPointsBetween(cellA.centerUnit, cellB.centerUnit, 10, 1.019);
+          for (let k = 0; k < arc.length - 1; k += 1) {
+            tradeSegs.push(arc[k], arc[k + 1]);
+          }
+        }
+      }
+      if (tradeSegs.length > 0) {
+        const geom = new THREE.BufferGeometry().setFromPoints(tradeSegs);
+        this.group.add(new THREE.LineSegments(geom, this.tradeRibbonMat));
+      }
+
+      const congestedSegs: THREE.Vector3[] = [];
+      for (const edge of snapshot.nonStateEconomy?.congestedEdges ?? []) {
+        if (edge.congestionMultiplier <= 1.05) continue;
+        const src = cellMap.get(edge.fromCellId);
+        const dst = cellMap.get(edge.toCellId);
+        if (!src || !dst) continue;
+        congestedCorridorCount += 1;
+        const arc = geodesicPointsBetween(src.centerUnit, dst.centerUnit, 8, 1.021);
+        for (let k = 0; k < arc.length - 1; k += 1) {
+          congestedSegs.push(arc[k], arc[k + 1]);
+        }
+      }
+      if (congestedSegs.length > 0) {
+        const geom = new THREE.BufferGeometry().setFromPoints(congestedSegs);
+        this.group.add(new THREE.LineSegments(geom, this.congestionMat));
+      }
+    }
+
+    // 8. M7 Operational warfare theaters, phase lines, no-retreat postures & courier-lagged formations (`UI-MAP-007.1`, `UI-MAP-007.2`)
+    let theaterVectorCount = 0;
+    let formationCount = 0;
+    let noRetreatCount = 0;
+    if (activeModeId === "warfare" || activeModeId === "terrain") {
+      const currentTick = snapshot.clockAndNotifications.tick;
+      const phaseSegs: THREE.Vector3[] = [];
+      for (const formation of snapshot.warfare?.formations ?? []) {
+        formationCount += 1;
+        const fUnit: Vec3 = [
+          formation.currentUnitXyz[0],
+          formation.currentUnitXyz[1],
+          formation.currentUnitXyz[2],
+        ];
+        const ageTicks = Math.max(0, currentTick - formation.observedTick);
+        const isFresh = ageTicks <= 6;
+        const markerGeom = isFresh
+          ? new THREE.BoxGeometry(0.017, 0.017, 0.017)
+          : new THREE.OctahedronGeometry(0.015, 0);
+        const markerMesh = new THREE.Mesh(
+          markerGeom,
+          isFresh ? this.formationFreshMat : this.formationStaleMat,
+        );
+        markerMesh.position.set(fUnit[0] * 1.023, fUnit[1] * 1.023, fUnit[2] * 1.023);
+        this.group.add(markerMesh);
+
+        if (activeModeId === "warfare") {
+          if (formation.targetCellId !== formation.currentCellId) {
+            const targetUnit: Vec3 = [
+              formation.targetUnitXyz[0],
+              formation.targetUnitXyz[1],
+              formation.targetUnitXyz[2],
+            ];
+            const arc = geodesicPointsBetween(fUnit, targetUnit, 10, 1.022);
+            for (let k = 0; k < arc.length - 1; k += 1) {
+              phaseSegs.push(arc[k], arc[k + 1]);
+            }
+          }
+          if (formation.noRetreatOrder) {
+            noRetreatCount += 1;
+            const nrRingGeom = new THREE.RingGeometry(0.020, 0.027, 16);
+            const nrRing = new THREE.Mesh(nrRingGeom, this.noRetreatRingMat);
+            const n = new THREE.Vector3(...fUnit).normalize();
+            nrRing.position.copy(n.clone().multiplyScalar(1.024));
+            nrRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), n);
+            this.group.add(nrRing);
+          }
+        }
+      }
+      if (phaseSegs.length > 0) {
+        const geom = new THREE.BufferGeometry().setFromPoints(phaseSegs);
+        this.group.add(new THREE.LineSegments(geom, this.phaseLineMat));
+      }
+
+      if (activeModeId === "warfare") {
+        for (const theater of snapshot.warfare?.theaters ?? []) {
+          const dstCell = cellMap.get(theater.objectiveCellId);
+          const theaterFormation = (snapshot.warfare?.formations ?? []).find(
+            (f) => f.theaterId === theater.theaterId,
+          );
+          const srcUnit: Vec3 | null = theaterFormation
+            ? [
+                theaterFormation.currentUnitXyz[0],
+                theaterFormation.currentUnitXyz[1],
+                theaterFormation.currentUnitXyz[2],
+              ]
+            : hqCell?.centerUnit ?? null;
+          if (!srcUnit || !dstCell) continue;
+          theaterVectorCount += 1;
+          const arcPts = geodesicPointsBetween(srcUnit, dstCell.centerUnit, 12, 1.024);
+          const geom = new THREE.BufferGeometry().setFromPoints(arcPts);
+          const line = new THREE.Line(geom, this.theaterVectorMat);
+          line.computeLineDistances();
+          this.group.add(line);
+        }
+      }
+    }
+
     this.lastSummary = {
       activeModeId,
       previewDestinationCellId: activePreviewTarget,
@@ -422,6 +642,11 @@ export class GlobeFeatureOverlayGroup {
       stormCellCount,
       floodedRiverCount,
       commContourCount,
+      tradeRibbonCount,
+      congestedCorridorCount,
+      theaterVectorCount,
+      formationCount,
+      noRetreatCount,
     };
   }
 
@@ -446,5 +671,12 @@ export class GlobeFeatureOverlayGroup {
     this.convoyLostMat.dispose();
     this.floodRingMat.dispose();
     this.snowMarkerMat.dispose();
+    this.tradeRibbonMat.dispose();
+    this.congestionMat.dispose();
+    this.theaterVectorMat.dispose();
+    this.phaseLineMat.dispose();
+    this.formationFreshMat.dispose();
+    this.formationStaleMat.dispose();
+    this.noRetreatRingMat.dispose();
   }
 }

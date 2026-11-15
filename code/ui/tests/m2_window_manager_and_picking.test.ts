@@ -17,6 +17,7 @@ import {
 } from "../src/windows";
 import { createEntityInspectorWindowPlugin, createLedgerStubPlugin } from "../src/views";
 import { createDispatchInboxStubPlugin } from "../src/dispatches";
+import { unitToLatLonDegrees } from "../src/globe";
 import { OcclusionAwareCellPicker } from "../src/overlays";
 
 const FIXTURE_PATH = path.resolve(__dirname, "fixtures/colony_m2_snapshot.json");
@@ -184,7 +185,7 @@ describe("M2 Desktop Window Manager, Docking, Layout Serialization & Chrome-Occl
   });
 
   // @req UI-WIN-005
-  // @req UI-MAP-005
+  // @req UI-MAP-005.1
   it("maintains deterministic z-order stacking, stops wheel propagation, and blocks map picking under chrome (UI-WIN-005, UI-MAP-005)", () => {
     const winA = manager.openWindow("physical_ledger", { x: 100, y: 100, width: 380, height: 280 })!;
     const winB = manager.openWindow("dispatch_inbox", { x: 200, y: 140, width: 380, height: 260 })!;
@@ -208,10 +209,27 @@ describe("M2 Desktop Window Manager, Docking, Layout Serialization & Chrome-Occl
     const emitted: UiIntent[] = [];
     bus.subscribe((i) => emitted.push(i));
 
+    const sampleUnit: [number, number, number] = [0, 0, 1];
+    const eqCoords = unitToLatLonDegrees(sampleUnit);
+    const northCoords = unitToLatLonDegrees([0, 1, 0]);
+    const southCoords = unitToLatLonDegrees([0, -1, 0]);
+    expect(eqCoords.latDeg).toBeCloseTo(0, 4);
+    expect(eqCoords.lonDeg).toBeCloseTo(0, 4);
+    expect(northCoords.latDeg).toBeCloseTo(90, 4);
+    expect(southCoords.latDeg).toBeCloseTo(-90, 4);
+
     const host: GlobeLayerHost = {
       overlayRootId: "globe-overlay-root",
       getCanvasElement: () => canvas,
-      pickGlobeAtNdc: () => ({ hitKind: "settlement", cellId: 0, settlementId: 0, label: "First Landing Perimeter (HQ)" }),
+      pickGlobeAtNdc: () => ({
+        hitKind: "settlement",
+        cellId: 0,
+        settlementId: 0,
+        label: "First Landing Perimeter (HQ)",
+        unitXyz: sampleUnit,
+        latDeg: eqCoords.latDeg,
+        lonDeg: eqCoords.lonDeg,
+      }),
       isPointOccludedByChrome: (x, y) => manager.isPointOccluded(x, y),
     };
     const picker = new OcclusionAwareCellPicker();
@@ -222,14 +240,20 @@ describe("M2 Desktop Window Manager, Docking, Layout Serialization & Chrome-Occl
     canvas.dispatchEvent(new dom.window.MouseEvent("click", { clientX: 180, clientY: 180, bubbles: true }));
     expect(emitted.some((e) => e.kind === "SelectMapFeature")).toBe(false);
 
-    // Coordinate (10, 400) is open canvas -> picks settlement -> emits SelectMapFeature + FocusEntityInspector
+    // Coordinate (10, 400) is open canvas -> picks settlement with continuous coordinates -> emits SelectMapFeature + FocusEntityInspector
     canvas.dispatchEvent(new dom.window.MouseEvent("pointermove", { clientX: 10, clientY: 400, bubbles: true }));
     expect(dom.window.document.getElementById("map-hover-tooltip")?.hidden).toBe(false);
     expect(dom.window.document.getElementById("map-hover-tooltip")?.textContent).toContain("First Landing Perimeter");
 
     canvas.dispatchEvent(new dom.window.MouseEvent("pointerdown", { clientX: 10, clientY: 400, bubbles: true }));
     canvas.dispatchEvent(new dom.window.MouseEvent("click", { clientX: 10, clientY: 400, bubbles: true }));
-    expect(emitted.some((e) => e.kind === "SelectMapFeature")).toBe(true);
+    const selectEv = emitted.find((e) => e.kind === "SelectMapFeature");
+    expect(selectEv).toBeDefined();
+    if (selectEv?.kind === "SelectMapFeature") {
+      expect(selectEv.hit?.unitXyz).toEqual(sampleUnit);
+      expect(selectEv.hit?.latDeg).toBeCloseTo(0, 4);
+      expect(selectEv.hit?.lonDeg).toBeCloseTo(0, 4);
+    }
     expect(emitted.some((e) => e.kind === "FocusEntityInspector")).toBe(true);
 
     picker.dispose();

@@ -21,6 +21,16 @@ export interface OverlayTelemetrySummary {
   readonly convoyCount: number;
   readonly projectedConvoyCount: number;
   readonly overdueConvoyCount: number;
+  readonly tradeRibbonCount: number;
+  readonly regionalMarketCount: number;
+  readonly maxPricePremiumPct: number;
+  readonly congestedEdgeCount: number;
+  readonly maxCongestionMultiplier: number;
+  readonly latestMarketObservedTick: number;
+  readonly theaterCount: number;
+  readonly formationCount: number;
+  readonly staleFormationCount: number;
+  readonly noRetreatFormationCount: number;
 }
 
 /** Baseline map overlay plugin cartridge for M0..M4 shell verification. */
@@ -36,30 +46,14 @@ export function createBaselineOverlayPlugin(): MapLayerPlugin {
   };
 }
 
-/** Future Milestone M5 trade & logistics congestion overlay contract stub. */
+/** Milestone M5 trade & logistics congestion overlay contract helper (`UI-MAP-006.1`, `UI-MAP-006.2`). */
 export function createTradeAndCongestionStubLayer(): MapLayerPlugin {
-  return {
-    layerId: "trade_and_congestion_stub",
-    displayName: "Trade & Congestion (M5)",
-    supportsMode: (modeId) => modeId === "trade",
-    mount(_host: GlobeLayerHost, _store: DiegeticStoreAccess, _bus: UiIntentBus) {},
-    onSnapshotUpdate(_snapshot: DiegeticSnapshot) {},
-    onFrameRender(_cameraAltitudeNorm: number, _elapsedSec: number) {},
-    dispose() {},
-  };
+  return new TradeAndCongestionOverlayLayer();
 }
 
-/** Future Milestone M7 operational warfare fronts overlay contract stub. */
+/** Milestone M7 operational warfare fronts overlay contract helper (`UI-MAP-007.1`, `UI-MAP-007.2`). */
 export function createOperationalWarfareStubLayer(): MapLayerPlugin {
-  return {
-    layerId: "operational_warfare_stub",
-    displayName: "Operational Warfare (M7)",
-    supportsMode: (modeId) => modeId === "warfare",
-    mount(_host: GlobeLayerHost, _store: DiegeticStoreAccess, _bus: UiIntentBus) {},
-    onSnapshotUpdate(_snapshot: DiegeticSnapshot) {},
-    onFrameRender(_cameraAltitudeNorm: number, _elapsedSec: number) {},
-    dispose() {},
-  };
+  return new OperationalWarfareOverlayLayer();
 }
 
 /**
@@ -105,6 +99,50 @@ export function summarizeOverlaySnapshot(
     else if (!s.includes("confirmed") && !s.includes("live")) projectedConvoyCount += 1;
   }
 
+  const markets = snapshot.nonStateEconomy?.informalMarkets ?? [];
+  const settlementByCommodity = new Map<string, Set<number>>();
+  let maxPricePremiumPct = 0;
+  let latestMarketObservedTick = 0;
+  for (const market of markets) {
+    const bucket = settlementByCommodity.get(market.commodityKey) ?? new Set<number>();
+    bucket.add(market.settlementId);
+    settlementByCommodity.set(market.commodityKey, bucket);
+    maxPricePremiumPct = Math.max(maxPricePremiumPct, Math.round(market.blackMarketPremium01 * 100));
+    latestMarketObservedTick = Math.max(latestMarketObservedTick, market.observedTick);
+  }
+  let marketPairRibbons = 0;
+  for (const set of settlementByCommodity.values()) {
+    if (set.size > 1) {
+      marketPairRibbons += (set.size * (set.size - 1)) / 2;
+    }
+  }
+  const convoyRibbons = snapshot.trackedConvoys.filter(
+    (c) => c.originCellId !== undefined && c.destinationCellId !== undefined,
+  ).length;
+  const tradeRibbonCount = convoyRibbons + marketPairRibbons;
+
+  const congested = (snapshot.nonStateEconomy?.congestedEdges ?? []).filter(
+    (e) => e.congestionMultiplier > 1.05,
+  );
+  const maxCongestionMultiplier = congested.reduce(
+    (acc, e) => Math.max(acc, e.congestionMultiplier),
+    1.0,
+  );
+
+  const theaters = snapshot.warfare?.theaters ?? [];
+  const formations = snapshot.warfare?.formations ?? [];
+  const currentTick = snapshot.clockAndNotifications.tick;
+  let staleFormationCount = 0;
+  let noRetreatFormationCount = 0;
+  for (const f of formations) {
+    if (currentTick - f.observedTick > 6) {
+      staleFormationCount += 1;
+    }
+    if (f.noRetreatOrder) {
+      noRetreatFormationCount += 1;
+    }
+  }
+
   return {
     activeModeId,
     unexploredCount,
@@ -118,6 +156,16 @@ export function summarizeOverlaySnapshot(
     convoyCount: snapshot.trackedConvoys.length,
     projectedConvoyCount,
     overdueConvoyCount,
+    tradeRibbonCount,
+    regionalMarketCount: markets.length,
+    maxPricePremiumPct,
+    congestedEdgeCount: congested.length,
+    maxCongestionMultiplier,
+    latestMarketObservedTick,
+    theaterCount: theaters.length,
+    formationCount: formations.length,
+    staleFormationCount,
+    noRetreatFormationCount,
   };
 }
 
@@ -211,6 +259,66 @@ export class LogisticsConvoyOverlayLayer implements MapLayerPlugin {
   }
 }
 
+/** Trade Flows, Regional Price Spreads & Corridor Congestion overlay plugin (`UI-MAP-006.1`, `UI-MAP-006.2`). */
+export class TradeAndCongestionOverlayLayer implements MapLayerPlugin {
+  readonly layerId = "trade_and_congestion";
+  readonly displayName = "Trade & Corridor Congestion";
+  private lastSummary: OverlayTelemetrySummary | null = null;
+
+  public supportsMode(modeId: string): boolean {
+    return modeId === "trade";
+  }
+
+  public mount(_host: GlobeLayerHost, store: DiegeticStoreAccess, _bus: UiIntentBus): void {
+    const snap = store.getSnapshot();
+    if (snap) this.onSnapshotUpdate(snap);
+  }
+
+  public onSnapshotUpdate(snapshot: DiegeticSnapshot): void {
+    this.lastSummary = summarizeOverlaySnapshot(snapshot, "trade");
+  }
+
+  public onFrameRender(_cameraAltitudeNorm: number, _elapsedSec: number): void {}
+
+  public getSummary(): OverlayTelemetrySummary | null {
+    return this.lastSummary;
+  }
+
+  public dispose(): void {
+    this.lastSummary = null;
+  }
+}
+
+/** Operational Warfare Theaters, Battle Plans & Courier-Lagged Formations overlay plugin (`UI-MAP-007.1`, `UI-MAP-007.2`). */
+export class OperationalWarfareOverlayLayer implements MapLayerPlugin {
+  readonly layerId = "operational_warfare";
+  readonly displayName = "Operational Warfare Fronts";
+  private lastSummary: OverlayTelemetrySummary | null = null;
+
+  public supportsMode(modeId: string): boolean {
+    return modeId === "warfare";
+  }
+
+  public mount(_host: GlobeLayerHost, store: DiegeticStoreAccess, _bus: UiIntentBus): void {
+    const snap = store.getSnapshot();
+    if (snap) this.onSnapshotUpdate(snap);
+  }
+
+  public onSnapshotUpdate(snapshot: DiegeticSnapshot): void {
+    this.lastSummary = summarizeOverlaySnapshot(snapshot, "warfare");
+  }
+
+  public onFrameRender(_cameraAltitudeNorm: number, _elapsedSec: number): void {}
+
+  public getSummary(): OverlayTelemetrySummary | null {
+    return this.lastSummary;
+  }
+
+  public dispose(): void {
+    this.lastSummary = null;
+  }
+}
+
 /** Diegetic bottom-left map overlay lens selector & legend rendered over the globe (`UI-MAP-001`..`004`). */
 export class OverlayToolbarLayer implements MapLayerPlugin {
   readonly layerId = "overlay_mode_switcher";
@@ -242,6 +350,8 @@ export class OverlayToolbarLayer implements MapLayerPlugin {
       { id: "epistemic", label: "Recon & Delay" },
       { id: "weather", label: "Weather" },
       { id: "logistics", label: "Logistics" },
+      { id: "trade", label: "Trade" },
+      { id: "warfare", label: "Warfare" },
     ];
 
     const buttons = new Map<string, HTMLButtonElement>();
@@ -304,6 +414,12 @@ export class OverlayToolbarLayer implements MapLayerPlugin {
     } else if (this.activeModeId === "logistics") {
       this.legendEl.textContent =
         `Convoys ${summary.convoyCount} · Projected ${summary.projectedConvoyCount} · Overdue ${summary.overdueConvoyCount}`;
+    } else if (this.activeModeId === "trade") {
+      this.legendEl.textContent =
+        `Ribbons ${summary.tradeRibbonCount} · Markets ${summary.regionalMarketCount} (Spread +${summary.maxPricePremiumPct}%, Tick ${summary.latestMarketObservedTick}) · Bottlenecks ${summary.congestedEdgeCount} (Max ${summary.maxCongestionMultiplier.toFixed(2)}x)`;
+    } else if (this.activeModeId === "warfare") {
+      this.legendEl.textContent =
+        `Theaters ${summary.theaterCount} · Formations ${summary.formationCount} (Stale ${summary.staleFormationCount}) · No-Retreat ${summary.noRetreatFormationCount}`;
     } else if (this.activeModeId === "epistemic") {
       this.legendEl.textContent =
         `Live ${summary.liveSightCount} · Surveyed ${summary.surveyedCount} · Stale ${summary.staleCount} · Rumored ${summary.rumoredCount}`;
@@ -345,8 +461,24 @@ function clientPointToNdc(canvas: HTMLCanvasElement, clientX: number, clientY: n
 }
 
 function formatHoverTooltipText(hit: GlobeRayHit, snapshot: DiegeticSnapshot | null): string {
-  if (!snapshot) return hit.label;
+  const coordSuffix =
+    hit.latDeg !== undefined && hit.lonDeg !== undefined
+      ? ` (${hit.latDeg.toFixed(1)}°, ${hit.lonDeg.toFixed(1)}°)`
+      : "";
+  if (!snapshot) return `${hit.label}${coordSuffix}`;
   const currentTick = snapshot.clockAndNotifications.tick;
+  if (hit.hitKind === "formation") {
+    const formation = snapshot.warfare?.formations.find((f) => f.formationId === hit.formationId);
+    if (formation) {
+      const desc = describeProvenanceBadge({
+        currentTick,
+        observedTick: formation.observedTick,
+        confidence01: formation.confidence01,
+        provenanceLabel: formation.provenanceLabel,
+      });
+      return `${hit.label} — ${formation.personnelCount} personnel (${desc.badgeText})${coordSuffix}`;
+    }
+  }
   if (hit.hitKind === "convoy") {
     const convoy = snapshot.trackedConvoys.find((c) => c.convoyId === hit.convoyId);
     if (convoy && convoy.provenanceLabel) {
@@ -356,7 +488,7 @@ function formatHoverTooltipText(hit: GlobeRayHit, snapshot: DiegeticSnapshot | n
         confidence01: convoy.confidence01 ?? 0.65,
         provenanceLabel: convoy.provenanceLabel,
       });
-      return `${hit.label} — ${convoy.status} (${desc.badgeText})`;
+      return `${hit.label} — ${convoy.status} (${desc.badgeText})${coordSuffix}`;
     }
   }
   const cell = snapshot.knownCells.find((k) => k.cellId === hit.cellId);
@@ -368,9 +500,9 @@ function formatHoverTooltipText(hit: GlobeRayHit, snapshot: DiegeticSnapshot | n
       provenanceLabel: cell.provenanceLabel,
       isLiveSight: cell.tier === "surveyed" ? cell.isLiveHqSight : false,
     });
-    return `${hit.label} [${desc.badgeText}]`;
+    return `${hit.label} [${desc.badgeText}]${coordSuffix}`;
   }
-  return hit.label;
+  return `${hit.label}${coordSuffix}`;
 }
 
 /**
@@ -474,6 +606,12 @@ export class OcclusionAwareCellPicker implements MapLayerPlugin {
           kind: "FocusEntityInspector",
           entityKind: "convoy",
           entityId: hit.convoyId,
+        });
+      } else if (hit.hitKind === "formation") {
+        bus.emit({
+          kind: "FocusEntityInspector",
+          entityKind: "formation",
+          entityId: hit.formationId,
         });
       } else if (hit.hitKind === "cell" || hit.hitKind === "river" || hit.hitKind === "road") {
         bus.emit({

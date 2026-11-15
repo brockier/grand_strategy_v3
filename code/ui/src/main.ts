@@ -13,11 +13,11 @@ import {
   EpistemicCurrencyOverlayLayer,
   LogisticsConvoyOverlayLayer,
   OcclusionAwareCellPicker,
+  OperationalWarfareOverlayLayer,
   OverlayToolbarLayer,
+  TradeAndCongestionOverlayLayer,
   WeatherHydrologyOverlayLayer,
   createBaselineOverlayPlugin,
-  createOperationalWarfareStubLayer,
-  createTradeAndCongestionStubLayer,
 } from "./overlays";
 import {
   DesktopWindowManager,
@@ -27,6 +27,8 @@ import {
 import {
   createDelegationOrgTreeWindowPlugin,
   createEntityInspectorWindowPlugin,
+  createInstitutionsInspectorWindowPlugin,
+  createKnowledgeArchiveWindowPlugin,
   createLayoutPresetsWindowPlugin,
   createLedgerStubPlugin,
   createTimeSeriesChartWindowPlugin,
@@ -38,7 +40,9 @@ import {
   createHqRelocationPlannerWindowPlugin,
   createMandateComposerWindowPlugin,
   createNotificationMatrixWindowPlugin,
+  createWarfareCommandWindowPlugin,
   mountCommandHud,
+  mountSuccessionTransitionModal,
 } from "./hud";
 import { SkinManager, createSkinSwitcherWindowPlugin } from "./skins";
 import { AudioMixerEngine, createAudioSettingsWindowPlugin } from "./audio";
@@ -123,8 +127,8 @@ async function bootstrapShell(): Promise<void> {
   registry.registerMapLayer(new LogisticsConvoyOverlayLayer());
   registry.registerMapLayer(new OverlayToolbarLayer());
   registry.registerMapLayer(new OcclusionAwareCellPicker());
-  registry.registerMapLayer(createTradeAndCongestionStubLayer());
-  registry.registerMapLayer(createOperationalWarfareStubLayer());
+  registry.registerMapLayer(new TradeAndCongestionOverlayLayer());
+  registry.registerMapLayer(new OperationalWarfareOverlayLayer());
 
   registry.registerWindowPlugin(createPlaceholderWindowPlugin());
   registry.registerWindowPlugin(createLedgerStubPlugin());
@@ -137,6 +141,9 @@ async function bootstrapShell(): Promise<void> {
   registry.registerWindowPlugin(createAttentionZoomWindowPlugin());
   registry.registerWindowPlugin(createHqRelocationPlannerWindowPlugin());
   registry.registerWindowPlugin(createNotificationMatrixWindowPlugin());
+  registry.registerWindowPlugin(createInstitutionsInspectorWindowPlugin());
+  registry.registerWindowPlugin(createKnowledgeArchiveWindowPlugin());
+  registry.registerWindowPlugin(createWarfareCommandWindowPlugin());
   registry.registerWindowPlugin(createSkinSwitcherWindowPlugin(skinManager));
   registry.registerWindowPlugin(createAudioSettingsWindowPlugin(audioEngine));
   registry.registerWindowPlugin(createLayoutPresetsWindowPlugin());
@@ -184,6 +191,7 @@ async function bootstrapShell(): Promise<void> {
   }
 
   mountCommandHud(appRoot, store, bus);
+  mountSuccessionTransitionModal(appRoot, store, bus);
 
   const globe = await initializeGlobeViewport(canvas, store, bus, registry.getMapLayers(), {
     initialPalette: skinManager.getActiveBundle()?.globePalette,
