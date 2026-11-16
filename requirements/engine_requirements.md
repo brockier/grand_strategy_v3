@@ -252,6 +252,15 @@ Every requirement block carries one of four normative lifecycle statuses:
 - **Requirement:** Generating a planet from the same 64-bit seed, planetary parameter file, and mod bundle SHALL produce bit-identical cell geometry, hydrology, hidden deposits, and procedural material tables across platforms.
 - **Acceptance Criteria:** Two independent planet generations using identical seed and mod bundle inputs yield identical Blake3 hashes over terrain, mineral deposits, and procedural material tables.
 
+### ENG-GEO-007: Multi-Scale Ridged Orogeny, Continental Shelves, Fjords & Biophysical Climate Fields
+- **ID:** `ENG-GEO-007`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Property-Sim`
+- **Lineage:** `Origin`
+- **Requirement:** Planetary generation at configurable higher density (`goldberg_subdivision = 24`, yielding `5,762` sample nodes and `11,520` triangles) SHALL synthesize domain-warped anisotropic ridged mountain belts, two-tier continental-shelf (`-15m` to `-180m`) versus abyssal-basin bathymetry, high-latitude glacial fjord and archipelago carving, fluvial valley incision, integer `strahler_order`, and continuous `aridity_index_01` and `soil_fertility_01` biophysical fields exposed for explored cells through `PlanetGeometryPort` and `player-view`.
+- **Acceptance Criteria:** Property tests at `m = 24` verify `5,762` cells and `11,520` triangles, non-trivial continental-shelf ocean coverage (`-200m .. 0m` >= 5% of ocean cells), hierarchical Strahler stream orders (`max >= 3`), bounded biophysical indices (`aridity_index_01` and `soil_fertility_01` in `[0.0, 1.0]`), circular geodesic HQ sight horizons, and bit-exact canonical save/load determinism.
+
 ---
 
 ## 6. Dynamic Hourly Weather & Surface Physics (`ENG-WTH`)

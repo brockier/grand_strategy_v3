@@ -584,6 +584,26 @@ pub trait PlanetGeometryPort: Send + Sync {
     fn radius_km(&self) -> f32 {
         6371.0
     }
+
+    fn cell_mean_annual_temp_c(&self, _cell: CellId) -> f32 {
+        12.0
+    }
+
+    fn cell_aridity_index_01(&self, _cell: CellId) -> f32 {
+        0.5
+    }
+
+    fn cell_soil_fertility_01(&self, _cell: CellId) -> f32 {
+        0.5
+    }
+
+    fn cell_strahler_order(&self, _cell: CellId) -> u8 {
+        1
+    }
+
+    fn cell_strata_code(&self, _cell: CellId) -> u8 {
+        4
+    }
 }
 
 /// Normalizes a 3D direction vector to the unit sphere.

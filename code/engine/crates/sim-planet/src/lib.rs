@@ -142,9 +142,57 @@ fn fbm_sphere(p: [f32; 3], seed: u64, octaves: u8) -> f64 {
     }
 }
 
+/// Domain-warped ridged multifractal noise producing sharp curved Alpine/Carpathian cordilleras.
+fn ridged_fbm_sphere(p: [f32; 3], seed: u64, octaves: u8, base_freq: f64) -> f64 {
+    let wx = value_noise_3d(
+        f64::from(p[0]) * 3.1 + 1.7,
+        f64::from(p[1]) * 3.1 - 0.9,
+        f64::from(p[2]) * 3.1 + 2.3,
+        seed ^ 0xA1B2_C3D4,
+    ) * 0.28;
+    let wy = value_noise_3d(
+        f64::from(p[1]) * 3.1 - 2.1,
+        f64::from(p[2]) * 3.1 + 1.4,
+        f64::from(p[0]) * 3.1 - 0.6,
+        seed ^ 0xB2C3_D4E5,
+    ) * 0.28;
+    let wz = value_noise_3d(
+        f64::from(p[2]) * 3.1 + 0.8,
+        f64::from(p[0]) * 3.1 - 1.9,
+        f64::from(p[1]) * 3.1 + 1.1,
+        seed ^ 0xC3D4_E5F6,
+    ) * 0.28;
+
+    let mut amp = 0.55;
+    let mut freq = base_freq;
+    let mut sum = 0.0;
+    let mut norm = 0.0;
+    let mut weight = 1.0;
+    for oct in 0..octaves {
+        let s = seed.wrapping_add(u64::from(oct).wrapping_mul(0xD1B5_4A32_D192_ED03));
+        let n = value_noise_3d(
+            (f64::from(p[0]) + wx) * freq,
+            (f64::from(p[1]) + wy) * freq,
+            (f64::from(p[2]) + wz) * freq,
+            s,
+        );
+        let signal = (1.0 - n.abs()).clamp(0.0, 1.0).powf(2.2) * weight;
+        weight = (signal * 1.65).clamp(0.25, 1.0);
+        sum += signal * amp;
+        norm += amp;
+        amp *= 0.52;
+        freq *= 2.08;
+    }
+    if norm > 0.0 {
+        (sum / norm).clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
 /// Complete planetary body containing closed Goldberg topology, tectonic relief,
 /// acyclic watershed drainage, rain-shadow climatology, strata-conditioned deposits,
-/// and seeded procedural material catalog.
+/// continuous biophysical climate/fertility indices, and seeded procedural material catalog.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GeneratedPlanet {
     pub world_seed: u64,
@@ -160,11 +208,14 @@ pub struct GeneratedPlanet {
     pub biome_keys: Vec<String>,
     pub base_precip_mm_yr: Vec<f32>,
     pub mean_annual_temp_c: Vec<f32>,
+    pub aridity_index_01: Vec<f32>,
+    pub soil_fertility_01: Vec<f32>,
     pub prevailing_wind_uv: Vec<[f32; 2]>,
     pub edge_slope_rad: Vec<f32>,
     pub river_downstream: Vec<Option<CellId>>,
     pub watershed_ids: Vec<sim_spine::WatershedId>,
     pub drainage_area_km2: Vec<f32>,
+    pub strahler_order: Vec<u8>,
     pub topo_sorted_land_cells: Vec<CellId>,
     pub deposits: Vec<HiddenDepositView>,
     pub cell_deposit_ranges: Vec<(usize, usize)>,
@@ -338,18 +389,39 @@ impl GeneratedPlanet {
             raw_tectonic_uplift_m[idx] = diffused_uplift[idx];
         }
 
-        // Combine crustal buoyancy, tectonic uplift, and multi-octave spherical FBM relief.
+        // Combine crustal buoyancy, tectonic uplift, curved ridged orogeny, and coastal/fjord carving.
         let mut raw_elev = Vec::with_capacity(n);
         for (idx, &pos) in topology.cell_unit_xyz.iter().enumerate() {
             let base = plate_base_elev[plate_id[idx].get() as usize];
-            let fbm_macro = fbm_sphere(pos, world_seed ^ 0x4444_5555, 4) as f32 * 950.0;
+            let fbm_macro = fbm_sphere(pos, world_seed ^ 0x4444_5555, 5) as f32 * 960.0;
             let fbm_micro = fbm_sphere(
-                [pos[0] * 3.1, pos[1] * 3.1, pos[2] * 3.1],
+                [pos[0] * 3.8, pos[1] * 3.8, pos[2] * 3.8],
                 world_seed ^ 0x6666_7777,
-                3,
+                4,
             ) as f32
-                * 260.0;
-            raw_elev.push(base + raw_tectonic_uplift_m[idx] + fbm_macro + fbm_micro);
+                * 320.0;
+            // Curved ridged multifractal belts amplify convergent mountain chains and shield highlands.
+            let ridge = ridged_fbm_sphere(pos, world_seed ^ 0x7777_8888, 5, 3.2) as f32;
+            let ridge_uplift = raw_tectonic_uplift_m[idx] * (0.62 + 0.78 * ridge)
+                + if base > 0.0 {
+                    (ridge - 0.38).max(0.0) * 820.0
+                } else {
+                    0.0
+                };
+            // High-latitude glacial fjord and skerry trough incision near coastal belts.
+            let lat_deg = topology.cell_lat_lon_rad[idx][0].abs().to_degrees();
+            let fjord_lat_mask = ((lat_deg - 42.0) / 24.0).clamp(0.0, 1.0);
+            let fjord_noise = fbm_sphere(
+                [pos[0] * 9.5, pos[1] * 9.5, pos[2] * 9.5],
+                world_seed ^ 0x9999_AAAA,
+                3,
+            ) as f32;
+            let fjord_incision = if base > 0.0 {
+                fjord_lat_mask * (fjord_noise.abs() - 0.14).max(0.0) * 520.0
+            } else {
+                0.0
+            };
+            raw_elev.push(base + ridge_uplift + fbm_macro + fbm_micro - fjord_incision);
         }
 
         // Smooth interior noise slightly (2 thermal passes) while preserving convergent uplift ridges.
@@ -362,9 +434,9 @@ impl GeneratedPlanet {
                     nbrs.iter().map(|nb| prev[nb.get() as usize]).sum::<f32>()
                         / (nbrs.len().max(1) as f32);
                 let alpha = if is_convergent_boundary[idx] {
-                    0.10
+                    0.08
                 } else {
-                    0.28
+                    0.22
                 };
                 raw_elev[idx] = prev[idx] * (1.0 - alpha) + mean_nbr * alpha;
             }
@@ -388,6 +460,24 @@ impl GeneratedPlanet {
         let sea_shift = cfg.base_sea_level_m - sea_threshold;
         for e in &mut raw_elev {
             *e += sea_shift;
+        }
+
+        // Shape submerged margins into two-tier continental shelves (-8m .. -185m) and abyssal basins
+        // while keeping exact land/ocean classification unchanged.
+        for e in &mut raw_elev {
+            if *e <= cfg.base_sea_level_m {
+                let depth = (cfg.base_sea_level_m - *e).max(0.0);
+                let mapped_depth = if depth < 950.0 {
+                    6.0 + (depth / 950.0).powf(1.45) * 176.0
+                } else if depth < 1650.0 {
+                    let t = (depth - 950.0) / 700.0;
+                    let s = t * t * (3.0 - 2.0 * t);
+                    182.0 + s * (2600.0 - 182.0)
+                } else {
+                    (depth + 950.0).clamp(2600.0, 5600.0)
+                };
+                *e = cfg.base_sea_level_m - mapped_depth;
+            }
         }
 
         let mut is_ocean = Vec::with_capacity(n);
@@ -470,10 +560,52 @@ impl GeneratedPlanet {
 
         // Accumulate basin drainage areas downstream cleanly along topological DAG.
         let mut drainage_area_km2 = topology.cell_area_km2.clone();
+        let mut strahler_order = vec![1u8; n];
+        let mut max_in_order = vec![0u8; n];
+        let mut max_in_count = vec![0u8; n];
         for &cid in &topo_sorted_land_cells {
             let idx = cid.get() as usize;
+            let ord = if max_in_count[idx] >= 2 {
+                max_in_order[idx].saturating_add(1).min(7)
+            } else {
+                max_in_order[idx].max(1)
+            };
+            strahler_order[idx] = ord;
             if let Some(ds) = river_downstream[idx] {
-                drainage_area_km2[ds.get() as usize] += drainage_area_km2[idx];
+                let ds_idx = ds.get() as usize;
+                drainage_area_km2[ds_idx] += drainage_area_km2[idx];
+                if !is_ocean[ds_idx] {
+                    if ord > max_in_order[ds_idx] {
+                        max_in_order[ds_idx] = ord;
+                        max_in_count[ds_idx] = 1;
+                    } else if ord == max_in_order[ds_idx] {
+                        max_in_count[ds_idx] = max_in_count[ds_idx].saturating_add(1);
+                    }
+                }
+            }
+        }
+        for (idx, &ocean) in is_ocean.iter().enumerate() {
+            if ocean {
+                strahler_order[idx] = 0;
+            }
+        }
+
+        // Fluvial valley incision for Strahler >= 2 trunks followed by reverse-DAG monotonicity enforcement.
+        for &cid in &topo_sorted_land_cells {
+            let idx = cid.get() as usize;
+            if strahler_order[idx] >= 2 {
+                let area_ratio = (drainage_area_km2[idx] / topology.cell_area_km2[idx].max(1.0)).max(1.0);
+                let incise = (area_ratio.ln() * 18.0).clamp(0.0, 140.0);
+                elevation_m[idx] = (elevation_m[idx] - incise).max(cfg.base_sea_level_m + 0.25);
+            }
+        }
+        for &cid in topo_sorted_land_cells.iter().rev() {
+            let idx = cid.get() as usize;
+            if let Some(ds) = river_downstream[idx] {
+                let min_elev = elevation_m[ds.get() as usize] + 0.05;
+                if elevation_m[idx] < min_elev {
+                    elevation_m[idx] = min_elev;
+                }
             }
         }
 
@@ -656,6 +788,44 @@ impl GeneratedPlanet {
             seed_subsurface_deposits(world_seed, &strata, &materials, &topology.cell_area_km2);
         let watershed_ids = compute_watershed_ids(&river_downstream, &is_ocean);
 
+        let mut aridity_index_01 = Vec::with_capacity(n);
+        let mut soil_fertility_01 = Vec::with_capacity(n);
+        for idx in 0..n {
+            if is_ocean[idx] {
+                aridity_index_01.push(1.0);
+                soil_fertility_01.push(0.0);
+                continue;
+            }
+            let temp = mean_annual_temp_c[idx].max(0.0);
+            let pet_mm = (300.0 + 25.0 * temp + 0.045 * temp * temp * temp).max(120.0);
+            let aridity = (base_precip_mm_yr[idx] / pet_mm).clamp(0.0, 1.0);
+            aridity_index_01.push(aridity);
+
+            let base_parent = match strata[idx] {
+                RockStrataClass::AlluvialPlain => 0.88_f32,
+                RockStrataClass::VolcanicArc => 0.78,
+                RockStrataClass::SedimentaryBasin => 0.72,
+                RockStrataClass::MetamorphicShield => 0.44,
+                RockStrataClass::IgneousOrogenic => 0.28,
+                RockStrataClass::OceanicBasalt => 0.15,
+            };
+            let thermal_factor = ((mean_annual_temp_c[idx] + 4.0) / 20.0).clamp(0.1, 1.0);
+            let moisture_factor = (aridity * 1.15).clamp(0.08, 1.0);
+            let drainage_bonus = if drainage_area_km2[idx] > topology.cell_area_km2[idx] * 2.5 {
+                0.10
+            } else {
+                0.0
+            };
+            let elev_penalty = ((elevation_m[idx] - cfg.base_sea_level_m - 900.0).max(0.0) / 2800.0)
+                .clamp(0.0, 0.55);
+            let fertility = (base_parent * 0.55
+                + 0.45 * thermal_factor * moisture_factor
+                + drainage_bonus
+                - elev_penalty)
+                .clamp(0.0, 1.0);
+            soil_fertility_01.push(fertility);
+        }
+
         Self {
             world_seed,
             config: cfg.clone(),
@@ -670,11 +840,14 @@ impl GeneratedPlanet {
             biome_keys,
             base_precip_mm_yr,
             mean_annual_temp_c,
+            aridity_index_01,
+            soil_fertility_01,
             prevailing_wind_uv,
             edge_slope_rad,
             river_downstream,
             watershed_ids,
             drainage_area_km2,
+            strahler_order,
             topo_sorted_land_cells,
             deposits,
             cell_deposit_ranges,
@@ -1021,6 +1194,42 @@ impl PlanetGeometryPort for GeneratedPlanet {
     fn radius_km(&self) -> f32 {
         self.topology.radius_km
     }
+
+    fn cell_mean_annual_temp_c(&self, cell: CellId) -> f32 {
+        self.mean_annual_temp_c
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(10.0)
+    }
+
+    fn cell_aridity_index_01(&self, cell: CellId) -> f32 {
+        self.aridity_index_01
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(0.5)
+    }
+
+    fn cell_soil_fertility_01(&self, cell: CellId) -> f32 {
+        self.soil_fertility_01
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(0.5)
+    }
+
+    fn cell_strahler_order(&self, cell: CellId) -> u8 {
+        self.strahler_order
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(1)
+    }
+
+    fn cell_strata_code(&self, cell: CellId) -> u8 {
+        self.strata
+            .get(cell.get() as usize)
+            .copied()
+            .map(|s| s as u8)
+            .unwrap_or(4)
+    }
 }
 
 impl SubsurfaceDepositTruthPort for GeneratedPlanet {
@@ -1060,6 +1269,8 @@ impl CanonicalSaveablePort for GeneratedPlanet {
             write_str(out, &self.biome_keys[idx]);
             write_f32_bits(out, self.base_precip_mm_yr[idx]);
             write_f32_bits(out, self.mean_annual_temp_c[idx]);
+            write_f32_bits(out, self.aridity_index_01[idx]);
+            write_f32_bits(out, self.soil_fertility_01[idx]);
             write_f32_bits(out, self.prevailing_wind_uv[idx][0]);
             write_f32_bits(out, self.prevailing_wind_uv[idx][1]);
             match self.river_downstream[idx] {
@@ -1067,6 +1278,7 @@ impl CanonicalSaveablePort for GeneratedPlanet {
                 Some(ds) => write_u32_le(out, ds.get()),
             }
             write_f32_bits(out, self.drainage_area_km2[idx]);
+            write_u8(out, self.strahler_order[idx]);
         }
         write_u32_le(out, self.edge_slope_rad.len() as u32);
         for &s in &self.edge_slope_rad {
@@ -1111,9 +1323,12 @@ impl CanonicalSaveablePort for GeneratedPlanet {
         let mut biome_keys = Vec::with_capacity(n);
         let mut base_precip_mm_yr = Vec::with_capacity(n);
         let mut mean_annual_temp_c = Vec::with_capacity(n);
+        let mut aridity_index_01 = Vec::with_capacity(n);
+        let mut soil_fertility_01 = Vec::with_capacity(n);
         let mut prevailing_wind_uv = Vec::with_capacity(n);
         let mut river_downstream = Vec::with_capacity(n);
         let mut drainage_area_km2 = Vec::with_capacity(n);
+        let mut strahler_order = Vec::with_capacity(n);
 
         for _ in 0..n {
             elevation_m.push(read_f32_bits(input)?);
@@ -1134,6 +1349,8 @@ impl CanonicalSaveablePort for GeneratedPlanet {
             biome_keys.push(read_str(input)?);
             base_precip_mm_yr.push(read_f32_bits(input)?);
             mean_annual_temp_c.push(read_f32_bits(input)?);
+            aridity_index_01.push(read_f32_bits(input)?);
+            soil_fertility_01.push(read_f32_bits(input)?);
             prevailing_wind_uv.push([read_f32_bits(input)?, read_f32_bits(input)?]);
             let ds_raw = read_u32_le(input)?;
             river_downstream.push(if ds_raw == u32::MAX {
@@ -1142,6 +1359,7 @@ impl CanonicalSaveablePort for GeneratedPlanet {
                 Some(CellId(ds_raw))
             });
             drainage_area_km2.push(read_f32_bits(input)?);
+            strahler_order.push(read_u8(input)?);
         }
 
         let edge_count = read_u32_le(input)? as usize;
@@ -1206,11 +1424,14 @@ impl CanonicalSaveablePort for GeneratedPlanet {
             biome_keys,
             base_precip_mm_yr,
             mean_annual_temp_c,
+            aridity_index_01,
+            soil_fertility_01,
             prevailing_wind_uv,
             edge_slope_rad,
             river_downstream,
             watershed_ids,
             drainage_area_km2,
+            strahler_order,
             topo_sorted_land_cells,
             deposits,
             cell_deposit_ranges,

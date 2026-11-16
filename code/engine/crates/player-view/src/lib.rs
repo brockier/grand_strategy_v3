@@ -2,7 +2,7 @@
 //! The **only** simulation crate allowed to emit IPC JSON payloads to `code/ui`.
 #![deny(clippy::disallowed_types)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use serde::{Deserialize, Serialize};
 use sim_spine::{
@@ -55,6 +55,26 @@ pub struct DepositEstimateDto {
     pub instrument_tier: u8,
     pub observed_tick: u64,
     pub provenance_label: String,
+}
+
+fn default_mean_temp_c() -> f32 {
+    12.0
+}
+
+fn default_aridity_01() -> f32 {
+    0.55
+}
+
+fn default_soil_fertility_01() -> f32 {
+    0.55
+}
+
+fn default_strata_code() -> u8 {
+    4
+}
+
+fn default_strahler_order() -> u8 {
+    1
 }
 
 /// Knowledge state of a planetary cell inside `DiegeticSnapshot` across 4 epistemic tiers (`ENG-EPI-002`).
@@ -112,6 +132,20 @@ pub enum KnownCellDto {
         watershed_id: u32,
         #[serde(default, rename = "regionLabel")]
         region_label: String,
+        #[serde(default = "default_mean_temp_c", rename = "meanAnnualTempC")]
+        mean_annual_temp_c: f32,
+        #[serde(default, rename = "annualPrecipMm")]
+        annual_precip_mm: f32,
+        #[serde(default = "default_aridity_01", rename = "aridityIndex01")]
+        aridity_index_01: f32,
+        #[serde(default = "default_soil_fertility_01", rename = "soilFertility01")]
+        soil_fertility_01: f32,
+        #[serde(default = "default_strata_code", rename = "rockStrataCode")]
+        rock_strata_code: u8,
+        #[serde(default, rename = "drainageAreaKm2")]
+        drainage_area_km2: f32,
+        #[serde(default = "default_strahler_order", rename = "strahlerOrder")]
+        strahler_order: u8,
     },
     Surveyed {
         #[serde(rename = "cellId")]
@@ -140,6 +174,20 @@ pub enum KnownCellDto {
         watershed_id: u32,
         #[serde(default, rename = "regionLabel")]
         region_label: String,
+        #[serde(default = "default_mean_temp_c", rename = "meanAnnualTempC")]
+        mean_annual_temp_c: f32,
+        #[serde(default, rename = "annualPrecipMm")]
+        annual_precip_mm: f32,
+        #[serde(default = "default_aridity_01", rename = "aridityIndex01")]
+        aridity_index_01: f32,
+        #[serde(default = "default_soil_fertility_01", rename = "soilFertility01")]
+        soil_fertility_01: f32,
+        #[serde(default = "default_strata_code", rename = "rockStrataCode")]
+        rock_strata_code: u8,
+        #[serde(default, rename = "drainageAreaKm2")]
+        drainage_area_km2: f32,
+        #[serde(default = "default_strahler_order", rename = "strahlerOrder")]
+        strahler_order: u8,
     },
 }
 
@@ -1360,6 +1408,13 @@ impl PlayerKnowledgeArchive {
                 deposit_estimates,
                 watershed_id,
                 region_label,
+                mean_annual_temp_c: planet.cell_mean_annual_temp_c(cid),
+                annual_precip_mm: planet.cell_base_precip_mm_yr(cid),
+                aridity_index_01: planet.cell_aridity_index_01(cid),
+                soil_fertility_01: planet.cell_soil_fertility_01(cid),
+                rock_strata_code: planet.cell_strata_code(cid),
+                drainage_area_km2: planet.cell_drainage_area_km2(cid),
+                strahler_order: planet.cell_strahler_order(cid),
             },
         );
     }
@@ -1399,6 +1454,13 @@ impl PlayerKnowledgeArchive {
                 deposit_estimates: Vec::new(),
                 watershed_id,
                 region_label,
+                mean_annual_temp_c: planet.cell_mean_annual_temp_c(cid),
+                annual_precip_mm: planet.cell_base_precip_mm_yr(cid),
+                aridity_index_01: planet.cell_aridity_index_01(cid),
+                soil_fertility_01: planet.cell_soil_fertility_01(cid),
+                rock_strata_code: planet.cell_strata_code(cid),
+                drainage_area_km2: planet.cell_drainage_area_km2(cid),
+                strahler_order: planet.cell_strahler_order(cid),
             },
         );
     }
@@ -1498,13 +1560,24 @@ impl PlayerKnowledgeArchive {
         let sight_radius = ledger.hq_sight_radius_cells();
 
         let mut live_cells = BTreeSet::new();
-        let mut frontier = vec![(hq_cell, 0u8)];
         live_cells.insert(hq_cell.get());
-        while let Some((cid, dist)) = frontier.pop() {
-            if dist < sight_radius {
-                for &nbr in planet.cell_neighbors(cid) {
-                    if live_cells.insert(nbr.get()) {
-                        frontier.push((nbr, dist + 1));
+        if sight_radius >= 1 {
+            let direct_ring_max_km = planet
+                .cell_neighbors(hq_cell)
+                .iter()
+                .map(|&nb| planet.great_circle_km(hq_cell, nb))
+                .fold(0.0_f32, f32::max);
+            let max_radius_km = direct_ring_max_km * (f32::from(sight_radius) + 0.12);
+            let mut frontier = VecDeque::new();
+            frontier.push_back((hq_cell, 0u8));
+            while let Some((cid, dist)) = frontier.pop_front() {
+                if dist < sight_radius {
+                    for &nbr in planet.cell_neighbors(cid) {
+                        if (dist == 0 || planet.great_circle_km(hq_cell, nbr) <= max_radius_km)
+                            && live_cells.insert(nbr.get())
+                        {
+                            frontier.push_back((nbr, dist + 1));
+                        }
                     }
                 }
             }
@@ -1530,6 +1603,13 @@ impl PlayerKnowledgeArchive {
                     deposit_estimates,
                     watershed_id,
                     region_label,
+                    mean_annual_temp_c,
+                    annual_precip_mm,
+                    aridity_index_01,
+                    soil_fertility_01,
+                    rock_strata_code,
+                    drainage_area_km2,
+                    strahler_order,
                     ..
                 } => {
                     let age = tick.get().saturating_sub(observed_tick);
@@ -1551,6 +1631,13 @@ impl PlayerKnowledgeArchive {
                                 deposit_estimates,
                                 watershed_id,
                                 region_label,
+                                mean_annual_temp_c,
+                                annual_precip_mm,
+                                aridity_index_01,
+                                soil_fertility_01,
+                                rock_strata_code,
+                                drainage_area_km2,
+                                strahler_order,
                             },
                         );
                     } else if let Some(KnownCellDto::Surveyed {
@@ -1573,6 +1660,13 @@ impl PlayerKnowledgeArchive {
                     deposit_estimates,
                     watershed_id,
                     region_label,
+                    mean_annual_temp_c,
+                    annual_precip_mm,
+                    aridity_index_01,
+                    soil_fertility_01,
+                    rock_strata_code,
+                    drainage_area_km2,
+                    strahler_order,
                     ..
                 } => {
                     let age = tick.get().saturating_sub(observed_tick);
@@ -1593,6 +1687,13 @@ impl PlayerKnowledgeArchive {
                             deposit_estimates,
                             watershed_id,
                             region_label,
+                            mean_annual_temp_c,
+                            annual_precip_mm,
+                            aridity_index_01,
+                            soil_fertility_01,
+                            rock_strata_code,
+                            drainage_area_km2,
+                            strahler_order,
                         },
                     );
                 }
@@ -1601,6 +1702,23 @@ impl PlayerKnowledgeArchive {
         }
 
         for &cid_u32 in &live_cells {
+            if let Some(KnownCellDto::Surveyed {
+                observed_tick,
+                is_live_hq_sight,
+                confidence_01,
+                provenance_label,
+                ..
+            }) = self.surveyed_cells.get_mut(&cid_u32)
+            {
+                *observed_tick = tick.get();
+                *is_live_hq_sight = true;
+                *confidence_01 = 1.0;
+                if provenance_label != "Direct Observation (HQ)" {
+                    provenance_label.clear();
+                    provenance_label.push_str("Direct Observation (HQ)");
+                }
+                continue;
+            }
             let prev_estimates = self
                 .surveyed_cells
                 .get(&cid_u32)
@@ -1634,6 +1752,13 @@ impl PlayerKnowledgeArchive {
                     deposit_estimates: prev_estimates,
                     watershed_id,
                     region_label,
+                    mean_annual_temp_c: planet.cell_mean_annual_temp_c(cid),
+                    annual_precip_mm: planet.cell_base_precip_mm_yr(cid),
+                    aridity_index_01: planet.cell_aridity_index_01(cid),
+                    soil_fertility_01: planet.cell_soil_fertility_01(cid),
+                    rock_strata_code: planet.cell_strata_code(cid),
+                    drainage_area_km2: planet.cell_drainage_area_km2(cid),
+                    strahler_order: planet.cell_strahler_order(cid),
                 },
             );
         }
@@ -2636,6 +2761,13 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     deposit_estimates,
                     watershed_id,
                     region_label,
+                    mean_annual_temp_c,
+                    annual_precip_mm,
+                    aridity_index_01,
+                    soil_fertility_01,
+                    rock_strata_code,
+                    drainage_area_km2,
+                    strahler_order,
                 } => {
                     write_u8(out, 1);
                     write_u32_le(out, *cell_id);
@@ -2657,6 +2789,13 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     write_deposit_estimates(out, deposit_estimates);
                     write_u32_le(out, *watershed_id);
                     write_str(out, region_label);
+                    write_f32_bits(out, *mean_annual_temp_c);
+                    write_f32_bits(out, *annual_precip_mm);
+                    write_f32_bits(out, *aridity_index_01);
+                    write_f32_bits(out, *soil_fertility_01);
+                    write_u8(out, *rock_strata_code);
+                    write_f32_bits(out, *drainage_area_km2);
+                    write_u8(out, *strahler_order);
                 }
                 KnownCellDto::Rumored {
                     cell_id,
@@ -2694,6 +2833,13 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     deposit_estimates,
                     watershed_id,
                     region_label,
+                    mean_annual_temp_c,
+                    annual_precip_mm,
+                    aridity_index_01,
+                    soil_fertility_01,
+                    rock_strata_code,
+                    drainage_area_km2,
+                    strahler_order,
                 } => {
                     write_u8(out, 3);
                     write_u32_le(out, *cell_id);
@@ -2715,6 +2861,13 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     write_deposit_estimates(out, deposit_estimates);
                     write_u32_le(out, *watershed_id);
                     write_str(out, region_label);
+                    write_f32_bits(out, *mean_annual_temp_c);
+                    write_f32_bits(out, *annual_precip_mm);
+                    write_f32_bits(out, *aridity_index_01);
+                    write_f32_bits(out, *soil_fertility_01);
+                    write_u8(out, *rock_strata_code);
+                    write_f32_bits(out, *drainage_area_km2);
+                    write_u8(out, *strahler_order);
                 }
             }
         }
@@ -2849,6 +3002,13 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     deposit_estimates: read_deposit_estimates(input)?,
                     watershed_id: read_u32_le(input)?,
                     region_label: read_str(input)?,
+                    mean_annual_temp_c: read_f32_bits(input)?,
+                    annual_precip_mm: read_f32_bits(input)?,
+                    aridity_index_01: read_f32_bits(input)?,
+                    soil_fertility_01: read_f32_bits(input)?,
+                    rock_strata_code: read_u8(input)?,
+                    drainage_area_km2: read_f32_bits(input)?,
+                    strahler_order: read_u8(input)?,
                 },
                 2 => KnownCellDto::Rumored {
                     cell_id: read_u32_le(input)?,
@@ -2879,6 +3039,13 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     deposit_estimates: read_deposit_estimates(input)?,
                     watershed_id: read_u32_le(input)?,
                     region_label: read_str(input)?,
+                    mean_annual_temp_c: read_f32_bits(input)?,
+                    annual_precip_mm: read_f32_bits(input)?,
+                    aridity_index_01: read_f32_bits(input)?,
+                    soil_fertility_01: read_f32_bits(input)?,
+                    rock_strata_code: read_u8(input)?,
+                    drainage_area_km2: read_f32_bits(input)?,
+                    strahler_order: read_u8(input)?,
                 },
                 other => return Err(format!("invalid KnownCellDto tag {other}")),
             };

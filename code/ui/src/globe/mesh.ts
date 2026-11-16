@@ -54,11 +54,17 @@ export function buildGoldbergGlobeGeometry(
   const cellIds: number[] = [];
   const cornerTriplets: number[] = [];
   const barycentrics: number[] = [];
+  const triCenters: number[] = [];
+  const skirtMasks: number[] = [];
   const indices: number[] = [];
 
   for (const [i0, i1, i2] of topology.triangles) {
     const baseVertex = positions.length / 3;
     const triIds: readonly [number, number, number] = [i0, i1, i2];
+    const p0 = topology.cells[i0].centerUnit;
+    const p1 = topology.cells[i1].centerUnit;
+    const p2 = topology.cells[i2].centerUnit;
+    const center = norm3(add3(p0, add3(p1, p2)));
     const triBary: readonly [Vec3, Vec3, Vec3] = [
       [1, 0, 0],
       [0, 1, 0],
@@ -73,6 +79,8 @@ export function buildGoldbergGlobeGeometry(
       cellIds.push(cid);
       cornerTriplets.push(i0, i1, i2);
       barycentrics.push(triBary[v][0], triBary[v][1], triBary[v][2]);
+      triCenters.push(center[0], center[1], center[2]);
+      skirtMasks.push(0);
     }
     indices.push(baseVertex, baseVertex + 1, baseVertex + 2);
   }
@@ -83,6 +91,8 @@ export function buildGoldbergGlobeGeometry(
   geometry.setAttribute("aCellId", new THREE.Float32BufferAttribute(cellIds, 1));
   geometry.setAttribute("aCornerCells", new THREE.Float32BufferAttribute(cornerTriplets, 3));
   geometry.setAttribute("aBarycentric", new THREE.Float32BufferAttribute(barycentrics, 3));
+  geometry.setAttribute("aTriCenter", new THREE.Float32BufferAttribute(triCenters, 3));
+  geometry.setAttribute("aSkirtMask", new THREE.Float32BufferAttribute(skirtMasks, 1));
   geometry.setIndex(indices);
   geometry.computeBoundingSphere();
 

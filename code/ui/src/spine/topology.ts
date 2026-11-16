@@ -301,3 +301,99 @@ export function generateGoldbergTopology(subdivision: number): GoldbergTopologyD
     triangles,
   };
 }
+
+export const EQUAL_AREA_SCALE = 0.72;
+export const MERCATOR_SCALE = 1.35 / Math.PI;
+const MERCATOR_MAX_LAT = 1.4835298641951802; // 85 degrees in radians
+
+function projectionTangentBasis(focusUnit: Vec3): {
+  readonly east: Vec3;
+  readonly north: Vec3;
+  readonly center: Vec3;
+} {
+  const center = norm3(focusUnit);
+  const upRef: Vec3 = Math.abs(center[1]) < 0.99 ? [0, 1, 0] : [0, 0, -1];
+  const east = norm3(cross3(upRef, center));
+  const north = norm3(cross3(center, east));
+  return { east, north, center };
+}
+
+function wrapPi(angle: number): number {
+  return angle - Math.PI * 2 * Math.round(angle / (Math.PI * 2));
+}
+
+/**
+ * Projects a unit sphere vector onto a 2D map plane in Oblique Lambert Azimuthal Equal-Area
+ * (matching ESA's ETRS89-LAEA continental perspective) or centered cylindrical Mercator (`UI-GLB-007`).
+ */
+export function projectUnitToFlat2D(
+  unit: Vec3,
+  mode: "equal_area" | "mercator",
+  focusUnit: Vec3,
+): { readonly x: number; readonly y: number; readonly valid: boolean } {
+  const u = norm3(unit);
+  if (mode === "equal_area") {
+    const { east, north, center } = projectionTangentBasis(focusUnit);
+    const tx = dot3(u, east);
+    const ty = dot3(u, north);
+    const tz = dot3(u, center);
+    if (1 + tz <= 1e-5) {
+      return { x: EQUAL_AREA_SCALE * 2, y: 0, valid: false };
+    }
+    const k = Math.sqrt(2 / (1 + tz));
+    return {
+      x: EQUAL_AREA_SCALE * k * tx,
+      y: EQUAL_AREA_SCALE * k * ty,
+      valid: true,
+    };
+  }
+
+  const focusNorm = norm3(focusUnit);
+  const lon0 = Math.atan2(focusNorm[0], focusNorm[2]);
+  const lon = Math.atan2(u[0], u[2]);
+  const dLon = wrapPi(lon - lon0);
+  const rawLat = Math.asin(Math.max(-1, Math.min(1, u[1])));
+  const clampedLat = Math.max(-MERCATOR_MAX_LAT, Math.min(MERCATOR_MAX_LAT, rawLat));
+  const y = MERCATOR_SCALE * Math.log(Math.tan(Math.PI * 0.25 + clampedLat * 0.5));
+  return {
+    x: MERCATOR_SCALE * dLon,
+    y,
+    valid: Math.abs(rawLat) <= MERCATOR_MAX_LAT + 1e-4,
+  };
+}
+
+/**
+ * Inverse analytical unprojection from 2D Equal-Area or Mercator plane back onto the unit sphere (`UI-GLB-007`).
+ */
+export function unprojectFlat2DToUnit(
+  x: number,
+  y: number,
+  mode: "equal_area" | "mercator",
+  focusUnit: Vec3,
+): Vec3 | null {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  if (mode === "equal_area") {
+    const ux = x / EQUAL_AREA_SCALE;
+    const uy = y / EQUAL_AREA_SCALE;
+    const rhoSq = ux * ux + uy * uy;
+    if (rhoSq > 4.0001) return null;
+    const tz = 1 - 0.5 * rhoSq;
+    const kInv = Math.sqrt(Math.max(0, 1 - 0.25 * rhoSq));
+    const tx = ux * kInv;
+    const ty = uy * kInv;
+    const { east, north, center } = projectionTangentBasis(focusUnit);
+    return norm3(
+      add3(scale3(east, tx), add3(scale3(north, ty), scale3(center, tz))),
+    );
+  }
+
+  const maxX = MERCATOR_SCALE * Math.PI + 1e-4;
+  const maxY = MERCATOR_SCALE * Math.log(Math.tan(Math.PI * 0.25 + MERCATOR_MAX_LAT * 0.5)) + 0.05;
+  if (Math.abs(x) > maxX || Math.abs(y) > maxY) return null;
+  const focusNorm = norm3(focusUnit);
+  const lon0 = Math.atan2(focusNorm[0], focusNorm[2]);
+  const lon = lon0 + x / MERCATOR_SCALE;
+  const lat = Math.atan(Math.sinh(y / MERCATOR_SCALE));
+  const cosLat = Math.cos(lat);
+  return norm3([cosLat * Math.sin(lon), Math.sin(lat), cosLat * Math.cos(lon)]);
+}

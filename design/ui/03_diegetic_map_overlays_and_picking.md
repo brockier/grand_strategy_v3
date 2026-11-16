@@ -3,7 +3,7 @@
 **Module ID:** `UI-MAP-03`  
 **Code Location:** `code/ui/src/overlays/`  
 **Milestone & Design Depth:** `M2–M7: Full Detailed Design`  
-**Satisfies Requirements:** `UI-MAP-001`, `UI-MAP-002`, `UI-MAP-003`, `UI-MAP-004`, `UI-MAP-005.1`, `UI-MAP-006.1`..`006.2`, `UI-MAP-007.1`..`007.2` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
+**Satisfies Requirements:** `UI-MAP-001`, `UI-MAP-002`, `UI-MAP-003`, `UI-MAP-004`, `UI-MAP-005.1`, `UI-MAP-006.1`..`006.2`, `UI-MAP-007.1`..`007.2`, `UI-MAP-008` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
 
 ---
 
@@ -59,12 +59,13 @@ Strictly filters by `ExplorationTier >= Surveyed` inside active report/sight win
 - Overlays snow/ice textures from `snow_depth_m` and `ice_thickness_m`.
 - Renders localized GPU particle rain streaks/snowflakes and animated wind streamlines.
 
-### 3.4 Occlusion-Aware Continuous Spherical Picking (`UI-MAP-005.1`)
+### 3.4 Occlusion-Aware Continuous 3D/2D Picking (`UI-MAP-005.1`, `UI-GLB-007`)
 1. Canvas `pointermove` and `pointerdown` handlers check `event.target === globeCanvas` and query whether any floating window, modal `<dialog>`, or HUD element covers `(clientX, clientY)`. If covered, picking aborts immediately (`UI-WIN-005` alignment).
-2. Unoccluded rays intersect the sphere, resolve exact continuous `unitXyz`, `(latDeg, lonDeg)`, nearest terrain sample ID (`cellId`), or elevated settlement/convoy/formation/spline hits, and publish hover/select events onto `UiIntentBus`.
+2. In 3D `globe` mode, unoccluded rays intersect the sphere; in 2D `equal_area` or `mercator` mode, rays intersect the `z = 0` chart plane and analytically unproject `(x, y)` back to `unitXyz` via `unprojectFlat2DToUnit(...)`. Both modes resolve exact continuous `(latDeg, lonDeg)`, nearest terrain sample ID (`cellId`), settlements, curved river/road splines, and de-clustered convoy/formation markers.
 
-### 3.5 `M5` Trade & `M7` Warfare Overlay Layers (`UI-MAP-006.1`..`006.2`, `UI-MAP-007.1`..`007.2`)
-`TradeAndCongestionOverlayLayer` (`modeId = "trade"`) and `OperationalWarfareOverlayLayer` (`modeId = "warfare"`) project directional inter-settlement merchant/charter trade ribbons, congested corridor bottleneck warnings, Churchill theater arrows, Hitler phase lines + `"No Retreat"` badges, and stale courier-timestamped formation positions directly from `DiegeticSnapshot`.
+### 3.5 `M5` Trade, `M7` Warfare, Projection Toggle, Ribbons & Typography (`UI-MAP-006.1`..`006.2`, `UI-MAP-007.1`..`007.2`, `UI-MAP-008`)
+- `OverlayToolbarLayer` exposes lens buttons (`terrain` Satellite default, `parchment`, `epistemic`, `weather`, `logistics`, `trade`, `warfare`) plus 3 projection buttons (`3D Globe`, `2D Equal-Area`, `2D Mercator`) and a lightweight DOM typography overlay (`#map-feature-labels`) inside `#globe-overlay-root` (`pointer-events: none`) showing non-overlapping settlement, watershed region, and regional formation labels synced to camera zoom tier.
+- Rivers clip strictly inside the explored fog horizon (`src` and `dst` known or truncated at `t = 0.46` tapering to zero width) and draw as meandering Catmull-Rom triangle-strip ribbons instead of multi-line stick segments. Co-located settlements and military formations separate radially with lit `MeshStandardMaterial` icons and leader ticks (`semantic-zoom.ts`).
 
 ---
 

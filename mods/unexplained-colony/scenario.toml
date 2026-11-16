@@ -6,7 +6,7 @@ governance_model = "provisional_expedition_council"
 succession_rule = "council_senior_appointee"
 active_policy = "emergency_rationing"
 hq_settlement_id = "haven_landing"
-hq_sight_radius_cells = 1
+hq_sight_radius_cells = 4
 unexplored_surrounding_cells = true
 
 [[starting_settlements]]

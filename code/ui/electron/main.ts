@@ -715,10 +715,11 @@ async function startOrGetSessionState(paths: RuntimePaths): Promise<unknown> {
 
 function createMainWindow(paths: RuntimePaths): BrowserWindow {
   const headless = process.env.NG_HEADLESS_TEST === "1" || SMOKE_MODE !== null;
+  const isOzoneHeadless = process.argv.some((arg) => arg.includes("ozone-platform=headless"));
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
-    show: !headless,
+    show: !headless || isOzoneHeadless,
     backgroundColor: "#11100e",
     webPreferences: {
       preload: paths.preloadJs,
@@ -729,6 +730,9 @@ function createMainWindow(paths: RuntimePaths): BrowserWindow {
       backgroundThrottling: !headless,
     },
   });
+  if (isOzoneHeadless) {
+    win.setContentSize(1280, 800);
+  }
   void win.loadFile(paths.indexHtml);
   return win;
 }

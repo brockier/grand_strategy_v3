@@ -2,8 +2,8 @@
 
 **Module ID:** `ENG-GEO-04`  
 **Code Location:** `code/engine/crates/sim-planet/`  
-**Milestone & Design Depth:** `M1: Full Detailed Design`  
-**Satisfies Requirements:** `ENG-GEO-001.1`, `ENG-GEO-002`, `ENG-GEO-003`, `ENG-GEO-004`, `ENG-GEO-005`, `ENG-GEO-006` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
+**Milestone & Design Depth:** `M1–M7: Full Detailed Design`  
+**Satisfies Requirements:** `ENG-GEO-001.1`, `ENG-GEO-002`, `ENG-GEO-003`, `ENG-GEO-004`, `ENG-GEO-005`, `ENG-GEO-006`, `ENG-GEO-007` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
 ---
 
@@ -13,7 +13,7 @@
   - `ModRegistryPort` (`PlanetGenConfig`, physical bounds and trade-off curves for procedural materials, crops, fauna, and pathogens)
   - 64-bit `world_seed`
 - **Provided Spine Ports (Outputs):**
-  - `PlanetGeometryPort` (welded subdivided icosphere continuous field, `icosphere_triangles()`, continuous `sample_elevation_at_unit_xyz`, fast `nearest_sample_cell`, sample coordinates, elevations, edge slopes, watershed downstream links, natural watershed regions, surface geological strata)
+  - `PlanetGeometryPort` (welded subdivided icosphere continuous field, `icosphere_triangles()`, continuous `sample_elevation_at_unit_xyz`, fast `nearest_sample_cell`, sample coordinates, elevations, edge slopes, watershed downstream links, natural watershed regions, surface geological strata, `cell_mean_annual_temp_c`, `cell_aridity_index_01`, `cell_soil_fertility_01`, `cell_strahler_order`, `cell_strata_code`)
   - `SubsurfaceDepositTruthPort` (sealed ground-truth deposit veins, grade distributions, and water-table hazards readable *only* by `sim-economy` extraction and survey mechanics inside `sim-core`—never by `player-view` directly!)
   - `ProceduralMaterialCatalog` (world-generated ores, trace impurities, fluxes, fuels, crops, fauna, and pathogens)
 
@@ -21,9 +21,9 @@
 
 ## 2. Encapsulated Internal State & Data Layout
 
-### 2.1 Welded Subdivided Icosphere Continuous Field (Hex-Free Option B)
+### 2.1 Welded Subdivided Icosphere Continuous Field (Hex-Free Option B, `m = 24`)
 
-- Subdivision frequency `m` (configurable in `planet/generation.toml`; for instance `m = 8` yields `642` sample vertices and `1,280` spherical triangles; `m = 32` yields `10,242` sample vertices and `20,480` triangles without any exposed hexagonal dual faces).
+- Subdivision frequency `m` (configured in `mods/core-schemas/planet/generation.toml` as `goldberg_subdivision = 24`, yielding `5,762` sample vertices and `11,520` spherical triangles without any exposed hexagonal dual faces; `m = 8` (`642` vertices) remains valid for compact regression fixtures).
 - Stored as flat, cache-aligned Compressed Sparse Row (`CSR`) arrays plus smooth triangulation:
   - `cell_center_unit_xyz: Vec<[f32; 3]>` (unit sphere positions)
   - `cell_lat_lon_rad: Vec<[f32; 2]>`
@@ -32,6 +32,7 @@
   - `neighbor_offsets: Vec<u32>`, `neighbor_cells: Vec<CellId>` (sample graph adjacency sorted counter-clockwise)
   - `edge_endpoints: Vec<(CellId, CellId)>`, `edge_length_km: Vec<f32>`, `edge_slope_rad: Vec<f32>`
   - `watershed_id: Vec<WatershedId>` (natural hydrological drainage basins for hex-free region labels)
+  - Continuous biophysical fields: `aridity_index_01: Vec<f32>`, `soil_fertility_01: Vec<f32>`, `strahler_order: Vec<u8>`
 
 ### 2.2 Geological & Hydrological Cell Records
 
@@ -39,12 +40,15 @@
 pub struct CellTerrainData {
     pub elevation_m: f32,         // negative = ocean bathymetry, >= 0 = land
     pub plate_id: PlateId,
-    pub rock_strata: RockStrataClass, // IgneousOrogenic | MetamorphicShield | SedimentaryBasin | VolcanicArc | AlluvialPlain
+    pub rock_strata: RockStrataClass, // OceanicBasalt | IgneousOrogenic | VolcanicArc | MetamorphicShield | SedimentaryBasin | AlluvialPlain
     pub surface_soil: SoilClass,
     pub river_downstream: Option<CellId>,
     pub watershed_id: WatershedId,
     pub drainage_area_km2: f32,
+    pub strahler_order: u8,
     pub base_climate_precip_mm_yr: f32,
+    pub aridity_index_01: f32,
+    pub soil_fertility_01: f32,
 }
 
 pub struct HiddenSubsurfaceDeposit {
@@ -72,11 +76,12 @@ Each world seed rolls concrete entries within physical parameter ranges defined 
 All stages run deterministically from `ChaCha8Rng::seed_from_u64(world_seed)` using fixed IEEE-754 order without `fast-math`:
 
 1. **Welded Spherical Manifold Construction (`ENG-GEO-001.1`):** Generate subdivided unit icosahedron triangles at frequency `m` with `10 * m^2 + 2` vertices and `20 * m^2` outward CCW triangles, sort sample neighbors counter-clockwise, verify Euler characteristic `V - E + F == 2`, and expose inverse-angular / barycentric terrain interpolation `sample_elevation_at_unit_xyz(u)` alongside `O(m)` hill-climbing `nearest_sample_cell(u)`.
-2. **Tectonic Plates & Relief (`ENG-GEO-002`):** Sample `K` plate seeds via geodesic farthest-point sampling, flood-assign plates with noise-perturbed boundaries, assign continental vs. oceanic crust + Euler pole rotation vectors. Compute convergent boundary stress (`dot(relative_vel, boundary_normal)`) to raise orogenic mountain belts, rifts, and volcanic arcs, followed by multi-pass thermal/fluvial erosion smoothing passes while preserving continuous passes.
+2. **Domain-Warped Anisotropic Ridged Orogeny & Continental Shelves (`ENG-GEO-002`, `ENG-GEO-007`):** Sample `K` plate seeds via geodesic farthest-point sampling, flood-assign plates with noise-perturbed boundaries, assign continental versus oceanic crust + Euler pole rotation vectors, compute convergent boundary stress (`dot(relative_vel, boundary_normal)`), add domain-warped 5-octave ridged multifractal uplift (`(1 - |n(u + w(u))|)^2.2`) to form curved cordilleras, shape two-tier continental-shelf (`-15m .. -180m`) versus abyssal-basin bathymetry, and carve high-latitude glacial fjord/skerry troughs along cold coastal belts (`|lat| > 46 deg`).
 3. **Wind Gyres & Orographic Precipitation (`ENG-GEO-004`):** Compute latitudinal Hadley/Ferrel/Polar prevailing wind vectors rotated by Coriolis deflection; march moisture parcels downwind across cell steps, precipitating moisture up windward slopes and leaving realistic rain shadows on leeward slopes.
-4. **Priority-Flood Acyclic Watersheds (`ENG-GEO-004`):** Execute Barnes priority-flood depression resolution from ocean coast cells inward across land elevation so every land cell receives a strictly non-increasing downhill `river_downstream: Option<CellId>` pointer (guaranteeing an acyclic DAG terminating at sea or endorheic salt basins), then accumulate `drainage_area_km2`.
-5. **Strata-Correlated Subsurface Deposit Placement (`ENG-GEO-003`):** Sample ore veins conditioned on `RockStrataClass` and boundary uplift (`IgneousOrogenic` favors metallic sulfides/oxides; `SedimentaryBasin` favors coal/hydrocarbon/limestone beds) with hidden variance in grade, overburden depth, and aquifer risk.
+4. **Priority-Flood Acyclic Watersheds, Valley Incision & Strahler Order (`ENG-GEO-004`, `ENG-GEO-007`):** Execute Barnes priority-flood depression resolution from ocean coast cells inward across land elevation so every land cell receives a strictly non-increasing downhill `river_downstream: Option<CellId>` pointer (guaranteeing an acyclic DAG terminating at sea or endorheic salt basins), accumulate `drainage_area_km2`, compute hierarchical integer `strahler_order` (`1..7`), and incise fluvial valleys monotonically without breaking downhill flow.
+5. **Continuous Biophysical Indices & Strata Deposits (`ENG-GEO-003`, `ENG-GEO-007`):** Derive `aridity_index_01` from precipitation versus temperature-driven potential evapotranspiration and `soil_fertility_01` from parent `RockStrataClass`, drainage, moisture, and slope; sample subsurface deposits conditioned on geological strata.
 6. **Bounded Procedural Material Roll (`ENG-GEO-005`):** Generate world-specific materials, fluxes, fuels, crops, fauna, and pathogens using rejection-bounded physical curves so mass conservation (`output_metal <= ore_mass * purity`) and thermodynamic efficiency limits (`heat_released <= fuel_enthalpy`) can never be violated.
+7. **Circular Geodesic HQ Horizon (`ENG-EPI-002`):** `player-view::observe_hq_halo` traverses `VecDeque` breadth-first rings bounded by true geodesic `great_circle_km` radius (`hq_sight_radius_cells = 4` by default on `m = 24`) so explored horizons form natural circles rather than 6-sided graph spokes.
 
 ---
 

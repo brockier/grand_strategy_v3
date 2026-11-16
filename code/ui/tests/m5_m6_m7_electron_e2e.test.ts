@@ -22,13 +22,25 @@ afterEach(() => {
   }
 });
 
+function countChangedBytes(a: number[], b: number[]): number {
+  const len = Math.min(a.length, b.length);
+  let diff = 0;
+  for (let i = 0; i < len; i += 1) {
+    if (Math.abs(a[i] - b[i]) > 2) diff += 1;
+  }
+  return diff;
+}
+
 describe("Option B & Milestones M5-M7 Live Chromium Electron End-to-End Integration", () => {
   // @req UI-GLB-001.1
+  // @req UI-GLB-006
+  // @req UI-GLB-007
   // @req UI-MAP-005.1
   // @req UI-MAP-006.1
   // @req UI-MAP-006.2
   // @req UI-MAP-007.1
   // @req UI-MAP-007.2
+  // @req UI-MAP-008
   // @req UI-DAT-006.1
   // @req UI-DAT-006.2
   // @req UI-DAT-007.1
@@ -71,6 +83,16 @@ describe("Option B & Milestones M5-M7 Live Chromium Electron End-to-End Integrat
       actorCount: number;
       afterUnpauseTick: number;
       repausedState: boolean;
+      topologyCellCount: number;
+      shaderCompiled: boolean;
+      renderedLabelCount: number;
+      terrainSample: number[];
+      parchmentSample: number[];
+      projEqualArea: string;
+      equalAreaSample: number[];
+      projMercator: string;
+      mercatorSample: number[];
+      projRestoredGlobe: string;
       tradeLegend: string;
       warfareLegend: string;
       hasInstTablist: boolean;
@@ -104,6 +126,17 @@ describe("Option B & Milestones M5-M7 Live Chromium Electron End-to-End Integrat
     expect(result.afterUnpauseTick).toBeGreaterThan(result.initialTick);
     expect(result.repausedState).toBe(true);
     expect(result.actorCount).toBeGreaterThan(0);
+
+    expect(result.topologyCellCount).toBe(5762);
+    expect(result.shaderCompiled).toBe(true);
+    expect(result.renderedLabelCount).toBeGreaterThanOrEqual(1);
+    expect(result.terrainSample.length).toBeGreaterThanOrEqual(800);
+    expect(countChangedBytes(result.terrainSample, result.parchmentSample)).toBeGreaterThan(0);
+    expect(result.projEqualArea).toBe("equal_area");
+    expect(result.projMercator).toBe("mercator");
+    expect(result.projRestoredGlobe).toBe("globe");
+    expect(countChangedBytes(result.terrainSample, result.equalAreaSample)).toBeGreaterThan(0);
+    expect(countChangedBytes(result.equalAreaSample, result.mercatorSample)).toBeGreaterThan(0);
 
     expect(result.tradeLegend.length).toBeGreaterThan(0);
     expect(result.warfareLegend).toContain("Theaters");

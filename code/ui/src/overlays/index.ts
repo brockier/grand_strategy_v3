@@ -2,6 +2,7 @@ import {
   DiegeticSnapshot,
   DiegeticStoreAccess,
   GlobeLayerHost,
+  GlobeProjectionMode,
   GlobeRayHit,
   MapLayerPlugin,
   UiIntentBus,
@@ -319,14 +320,19 @@ export class OperationalWarfareOverlayLayer implements MapLayerPlugin {
   }
 }
 
-/** Diegetic bottom-left map overlay lens selector & legend rendered over the globe (`UI-MAP-001`..`004`). */
+/** Diegetic bottom-left map overlay lens selector, projection switcher, legend, and map labels (`UI-MAP-001`..`008`). */
 export class OverlayToolbarLayer implements MapLayerPlugin {
   readonly layerId = "overlay_mode_switcher";
   readonly displayName = "Map Lens Selector";
+  private hostRef: GlobeLayerHost | null = null;
   private rootEl: HTMLDivElement | null = null;
+  private labelLayerEl: HTMLDivElement | null = null;
   private legendEl: HTMLDivElement | null = null;
   private activeModeId = "terrain";
+  private activeProjectionMode: GlobeProjectionMode = "globe";
   private latestSnapshot: DiegeticSnapshot | null = null;
+  private lastAltitudeNorm = 0.62;
+  private labelEls = new Map<string, HTMLDivElement>();
   private unsubs: Array<() => void> = [];
 
   public supportsMode(): boolean {
@@ -335,8 +341,17 @@ export class OverlayToolbarLayer implements MapLayerPlugin {
 
   public mount(host: GlobeLayerHost, store: DiegeticStoreAccess, bus: UiIntentBus): void {
     this.dispose();
+    this.hostRef = host;
+    this.activeProjectionMode = host.getProjectionMode?.() ?? "globe";
     const canvas = host.getCanvasElement();
     const overlayRoot = document.getElementById(host.overlayRootId) ?? canvas.parentElement ?? document.body;
+
+    const labelLayer = document.createElement("div");
+    labelLayer.id = "map-feature-labels";
+    labelLayer.className = "ng-map-label-layer";
+    labelLayer.setAttribute("aria-hidden", "true");
+    overlayRoot.appendChild(labelLayer);
+    this.labelLayerEl = labelLayer;
 
     const bar = document.createElement("div");
     bar.id = "map-overlay-toolbar";
@@ -347,6 +362,7 @@ export class OverlayToolbarLayer implements MapLayerPlugin {
 
     const modes = [
       { id: "terrain", label: "Terrain" },
+      { id: "parchment", label: "Parchment" },
       { id: "epistemic", label: "Recon & Delay" },
       { id: "weather", label: "Weather" },
       { id: "logistics", label: "Logistics" },
@@ -379,6 +395,42 @@ export class OverlayToolbarLayer implements MapLayerPlugin {
       bar.appendChild(btn);
     }
 
+    const projections: readonly { readonly id: GlobeProjectionMode; readonly label: string }[] = [
+      { id: "globe", label: "3D Globe" },
+      { id: "equal_area", label: "2D Equal-Area" },
+      { id: "mercator", label: "2D Mercator" },
+    ];
+    const projGroup = document.createElement("span");
+    projGroup.className = "ng-projection-group";
+    projGroup.setAttribute("role", "group");
+    projGroup.setAttribute("aria-label", "Map Projection Mode");
+
+    const projButtons = new Map<GlobeProjectionMode, HTMLButtonElement>();
+    const syncProjButtons = () => {
+      for (const [pid, btn] of projButtons) {
+        btn.setAttribute("aria-pressed", pid === this.activeProjectionMode ? "true" : "false");
+        btn.classList.toggle("is-active", pid === this.activeProjectionMode);
+      }
+    };
+
+    for (const proj of projections) {
+      const pbtn = document.createElement("button");
+      pbtn.type = "button";
+      pbtn.className = "ng-hud-btn ng-projection-btn";
+      pbtn.dataset.projectionMode = proj.id;
+      pbtn.textContent = proj.label;
+      pbtn.addEventListener("click", () => {
+        this.activeProjectionMode = proj.id;
+        syncProjButtons();
+        bus.emit({ kind: "SwitchGlobeProjection", projection: proj.id });
+        bus.emit({ kind: "PlayUiFoley", cueId: "clock_step" });
+        this.refreshLabels();
+      });
+      projButtons.set(proj.id, pbtn);
+      projGroup.appendChild(pbtn);
+    }
+    bar.appendChild(projGroup);
+
     const legend = document.createElement("div");
     legend.id = "map-overlay-legend-summary";
     legend.className = "ng-hud-stat";
@@ -388,6 +440,7 @@ export class OverlayToolbarLayer implements MapLayerPlugin {
     this.rootEl = bar;
     this.legendEl = legend;
     syncButtons();
+    syncProjButtons();
 
     this.unsubs.push(
       bus.subscribe((intent) => {
@@ -395,6 +448,14 @@ export class OverlayToolbarLayer implements MapLayerPlugin {
           this.activeModeId = intent.modeId;
           syncButtons();
           this.refreshLegend();
+          this.refreshLabels();
+        } else if (intent.kind === "SwitchGlobeProjection") {
+          this.activeProjectionMode = intent.projection;
+          syncProjButtons();
+          this.refreshLabels();
+        } else if (intent.kind === "UpdateCameraTelemetry") {
+          this.lastAltitudeNorm = intent.telemetry.altitudeNorm;
+          this.refreshLabels();
         }
       }),
     );
@@ -402,6 +463,61 @@ export class OverlayToolbarLayer implements MapLayerPlugin {
     const snap = store.getSnapshot();
     if (snap) {
       this.onSnapshotUpdate(snap);
+    }
+  }
+
+  private refreshLabels(): void {
+    if (!this.labelLayerEl || !this.hostRef?.getMapLabelAnchors || !this.hostRef.projectUnitToScreen) {
+      return;
+    }
+    const anchors = this.hostRef.getMapLabelAnchors();
+    const activeIds = new Set<string>();
+    const showFormationSubs = this.lastAltitudeNorm < 0.45;
+
+    for (const anchor of anchors) {
+      if (anchor.kind === "formation" && this.lastAltitudeNorm >= 0.72) {
+        continue;
+      }
+      const screen = this.hostRef.projectUnitToScreen(anchor.unit);
+      if (!screen.visible) continue;
+
+      activeIds.add(anchor.id);
+      let el = this.labelEls.get(anchor.id);
+      if (!el) {
+        el = document.createElement("div");
+        el.className = `ng-map-label ng-map-label-${anchor.kind}`;
+        el.dataset.labelKind = anchor.kind;
+        el.dataset.entityId = String(anchor.entityId);
+        const titleSpan = document.createElement("span");
+        titleSpan.className = "ng-map-label-title";
+        const subSpan = document.createElement("span");
+        subSpan.className = "ng-map-label-sub";
+        el.appendChild(titleSpan);
+        el.appendChild(subSpan);
+        this.labelLayerEl.appendChild(el);
+        this.labelEls.set(anchor.id, el);
+      }
+
+      const titleSpan = el.children[0] as HTMLElement;
+      const subSpan = el.children[1] as HTMLElement;
+      if (titleSpan.textContent !== anchor.text) {
+        titleSpan.textContent = anchor.text;
+      }
+      const subText =
+        anchor.kind === "settlement" || showFormationSubs ? anchor.subtitle : "";
+      if (subSpan.textContent !== subText) {
+        subSpan.textContent = subText;
+      }
+      subSpan.hidden = subText.length === 0;
+      el.classList.toggle("is-primary", anchor.isPrimary);
+      el.hidden = false;
+      el.style.transform = `translate3d(${Math.round(screen.xPx)}px, ${Math.round(screen.yPx)}px, 0)`;
+    }
+
+    for (const [id, el] of this.labelEls) {
+      if (!activeIds.has(id)) {
+        el.hidden = true;
+      }
     }
   }
 
@@ -423,6 +539,9 @@ export class OverlayToolbarLayer implements MapLayerPlugin {
     } else if (this.activeModeId === "epistemic") {
       this.legendEl.textContent =
         `Live ${summary.liveSightCount} · Surveyed ${summary.surveyedCount} · Stale ${summary.staleCount} · Rumored ${summary.rumoredCount}`;
+    } else if (this.activeModeId === "parchment") {
+      this.legendEl.textContent =
+        `Chart View · Surveyed ${summary.surveyedCount} · Unexplored ${summary.unexploredCount}`;
     } else {
       this.legendEl.textContent =
         `Surveyed ${summary.surveyedCount} · Unexplored ${summary.unexploredCount}`;
@@ -432,9 +551,13 @@ export class OverlayToolbarLayer implements MapLayerPlugin {
   public onSnapshotUpdate(snapshot: DiegeticSnapshot): void {
     this.latestSnapshot = snapshot;
     this.refreshLegend();
+    this.refreshLabels();
   }
 
-  public onFrameRender(_cameraAltitudeNorm: number, _elapsedSec: number): void {}
+  public onFrameRender(cameraAltitudeNorm: number, _elapsedSec: number): void {
+    this.lastAltitudeNorm = cameraAltitudeNorm;
+    this.refreshLabels();
+  }
 
   public dispose(): void {
     while (this.unsubs.length > 0) {
@@ -442,7 +565,11 @@ export class OverlayToolbarLayer implements MapLayerPlugin {
     }
     this.rootEl?.remove();
     this.rootEl = null;
+    this.labelLayerEl?.remove();
+    this.labelLayerEl = null;
+    this.labelEls.clear();
     this.legendEl = null;
+    this.hostRef = null;
   }
 }
 

@@ -371,6 +371,7 @@ impl WeatherEngine {
         let solar_scale_f32 = self.solar_flux_scale as f32;
 
         // 1. Double-buffered upwind advection into reusable scratch arrays (zero heap allocations).
+        let advect_q = (0.22 * ((self.cell_count as f32) / 642.0).sqrt()).clamp(0.22, 0.56);
         for idx in 0..self.cell_count {
             let start = self.upwind_offsets[idx] as usize;
             let end = self.upwind_offsets[idx + 1] as usize;
@@ -384,7 +385,8 @@ impl WeatherEngine {
                     q_in += self.vapor_kg_m2[nb] * w;
                 }
                 self.scratch_temp_c[idx] = self.air_temp_c[idx] * 0.86 + t_in * 0.14;
-                self.scratch_vapor_kg_m2[idx] = self.vapor_kg_m2[idx] * 0.78 + q_in * 0.22;
+                self.scratch_vapor_kg_m2[idx] =
+                    self.vapor_kg_m2[idx] * (1.0 - advect_q) + q_in * advect_q;
             } else {
                 self.scratch_temp_c[idx] = self.air_temp_c[idx];
                 self.scratch_vapor_kg_m2[idx] = self.vapor_kg_m2[idx];
@@ -416,8 +418,7 @@ impl WeatherEngine {
             self.wind_u_mps[idx] = self.base_wind_u[idx] * (1.0 + 0.18 * front_wave);
             self.wind_v_mps[idx] = self.base_wind_v[idx] + front_wave * 2.2;
 
-            let sat_q = (4.8 + (t_now + 22.0).max(0.0) * 0.65)
-                * (0.60 + 0.40 * self.annual_precip_norm[idx]);
+            let sat_q = 4.8 + (t_now + 22.0).max(0.0) * 0.65;
 
             if self.is_ocean[idx] {
                 let target_q = sat_q * 0.94;
@@ -429,10 +430,12 @@ impl WeatherEngine {
                 self.cloud_01[idx] = (self.vapor_kg_m2[idx] / sat_q.max(1.0)).clamp(0.15, 0.98);
                 self.visibility_01[idx] = (1.0 - rain * 0.03 - self.cloud_01[idx] * 0.12).clamp(0.25, 1.0);
             } else {
-                let trigger = sat_q * (0.82 - 0.10 * front_wave);
+                let wet_bias = (self.annual_precip_norm[idx] - 1.0).clamp(-0.75, 1.35);
+                let trigger =
+                    sat_q * (0.92 - 0.08 * wet_bias - 0.16 * front_wave).clamp(0.68, 1.05);
                 let excess = (self.vapor_kg_m2[idx] - trigger).max(0.0);
-                let rain_mm = (excess * 0.38 * self.annual_precip_norm[idx]).clamp(0.0, 28.0);
-                self.vapor_kg_m2[idx] = (self.vapor_kg_m2[idx] - rain_mm * 0.30).clamp(0.8, 52.0);
+                let rain_mm = (excess * 0.18 * self.annual_precip_norm[idx]).clamp(0.0, 22.0);
+                self.vapor_kg_m2[idx] = (self.vapor_kg_m2[idx] - rain_mm * 0.45).clamp(0.8, 52.0);
                 self.precip_mm_hr[idx] = rain_mm;
                 self.cloud_01[idx] = (self.vapor_kg_m2[idx] / sat_q.max(1.0)).clamp(0.05, 0.98);
 
@@ -465,6 +468,14 @@ impl WeatherEngine {
                 let evap_surf = (pot_evap_m3 * 0.22).min(self.surface_water_m3[idx]);
                 self.surface_water_m3[idx] -= evap_surf;
                 self.cumulative_evap_m3 += evap_soil + evap_surf;
+
+                // Recycle actual evapotranspiration into column vapor without pushing above fair-weather condensation ceiling.
+                let evap_kg_m2 =
+                    (((evap_soil + evap_surf) / self.area_m2[idx].max(1.0)) * 1000.0) as f32;
+                let evap_cap = sat_q * 0.74;
+                let vapor_with_evap =
+                    self.vapor_kg_m2[idx] + evap_kg_m2.min((evap_cap - self.vapor_kg_m2[idx]).max(0.0));
+                self.vapor_kg_m2[idx] = vapor_with_evap.clamp(0.8, 52.0);
             }
         }
 

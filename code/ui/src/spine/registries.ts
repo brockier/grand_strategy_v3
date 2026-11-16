@@ -1,6 +1,8 @@
 import {
   AudioMixerSettings,
   DiegeticSnapshot,
+  GlobeMapLabelAnchor,
+  GlobeProjectionMode,
   GlobeRayHit,
   UserPreferencesDto,
 } from "./contracts";
@@ -12,6 +14,14 @@ export interface GlobeLayerHost {
   getCanvasElement(): HTMLCanvasElement;
   pickGlobeAtNdc(ndcX: number, ndcY: number): GlobeRayHit | null;
   isPointOccludedByChrome(clientX: number, clientY: number): boolean;
+  projectUnitToScreen?(unit: readonly [number, number, number]): {
+    readonly xPx: number;
+    readonly yPx: number;
+    readonly visible: boolean;
+  };
+  getMapLabelAnchors?(): readonly GlobeMapLabelAnchor[];
+  getProjectionMode?(): GlobeProjectionMode;
+  setProjectionMode?(mode: GlobeProjectionMode): void;
 }
 
 export interface MapLayerPlugin {

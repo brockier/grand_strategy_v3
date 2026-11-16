@@ -222,25 +222,27 @@ impl ScenarioWorld {
         command.sync_character_locations(pop.all_characters(), &settlement_cells);
 
         let mut archive = PlayerKnowledgeArchive::new();
+        let grid_scale = (((planet.cell_count() as f32) / 642.0).sqrt().round() as u8).max(1);
         match archetype {
             ScenarioArchetypeKind::EmergentDawn => {
                 economy.scale_all_stockpiles_for_archetype(0.35);
-                economy.set_hq_sight_radius_cells(1);
+                economy.set_hq_sight_radius_cells(grid_scale);
             }
             ScenarioArchetypeKind::ExpeditionColony => {
                 // Single coastal landing perimeter with surrounding wilderness unexplored (`ENG-SCN-002`).
             }
             ScenarioArchetypeKind::GovernorSuccessor => {
-                economy.set_hq_sight_radius_cells(2);
+                let regional_radius = grid_scale.saturating_mul(2).max(2);
+                economy.set_hq_sight_radius_cells(regional_radius);
                 let hq = economy.hq_cell();
-                // Pre-seed regional road infrastructure & stale surveys across radius 3 (`ENG-SCN-001`).
+                // Pre-seed regional road infrastructure & stale surveys across expanded perimeter (`ENG-SCN-001`).
                 let metalled = registry.infra_id_by_key("metalled_road");
                 let mut ring = BTreeMap::new();
                 ring.insert(hq, 0u8);
-                let mut frontier = vec![hq];
-                while let Some(cur) = frontier.pop() {
+                let mut frontier = std::collections::VecDeque::from([hq]);
+                while let Some(cur) = frontier.pop_front() {
                     let dist = ring[&cur];
-                    if dist >= 3 {
+                    if dist >= regional_radius.saturating_add(1) {
                         continue;
                     }
                     for &nb in planet.cell_neighbors(cur) {
@@ -253,7 +255,7 @@ impl ScenarioWorld {
                         }
                         if let std::collections::btree_map::Entry::Vacant(e) = ring.entry(nb) {
                             e.insert(dist + 1);
-                            frontier.push(nb);
+                            frontier.push_back(nb);
                         }
                     }
                 }
@@ -2109,23 +2111,82 @@ fn select_temperate_coastal_landing(planet: &GeneratedPlanet) -> CellId {
         if planet.is_ocean_cell(cid) {
             continue;
         }
-        let is_coastal = planet
-            .cell_neighbors(cid)
-            .iter()
-            .any(|&nb| planet.is_ocean_cell(nb));
-        let temp = planet.cell_mean_temp_c(cid);
+        let nbrs = planet.cell_neighbors(cid);
+        let is_coastal = nbrs.iter().any(|&nb| planet.is_ocean_cell(nb));
+        let [lat, lon] = planet.cell_lat_lon_rad(cid);
+        let abs_lat_deg = lat.abs().to_degrees();
         let elev = planet.cell_elevation_m(cid);
         let drain = planet.cell_drainage_area_km2(cid);
+        let aridity = planet.cell_aridity_index_01(cid);
+        let fert = planet.cell_soil_fertility_01(cid);
+        let precip = planet.cell_base_precip_mm_yr(cid);
+
+        // Determine if at least one adjacent ocean cell lies upwind under prevailing winds.
+        let pos = planet.cell_unit_xyz(cid);
+        let pole = if pos[1].abs() < 0.99 {
+            [0.0_f64, 1.0, 0.0]
+        } else {
+            [1.0_f64, 0.0, 0.0]
+        };
+        let px = f64::from(pos[0]);
+        let py = f64::from(pos[1]);
+        let pz = f64::from(pos[2]);
+        let ex = pole[1] * pz - pole[2] * py;
+        let ey = pole[2] * px - pole[0] * pz;
+        let ez = pole[0] * py - pole[1] * px;
+        let elen = (ex * ex + ey * ey + ez * ez).sqrt().max(1e-12);
+        let east = [ex / elen, ey / elen, ez / elen];
+        let north = [
+            py * east[2] - pz * east[1],
+            pz * east[0] - px * east[2],
+            px * east[1] - py * east[0],
+        ];
+        let [wu, wv] = planet.prevailing_wind_uv[raw as usize];
+        let wx = east[0] * f64::from(wu) + north[0] * f64::from(wv);
+        let wy = east[1] * f64::from(wu) + north[1] * f64::from(wv);
+        let wz = east[2] * f64::from(wu) + north[2] * f64::from(wv);
+        let is_windward_coast = nbrs.iter().any(|&nb| {
+            if !planet.is_ocean_cell(nb) {
+                return false;
+            }
+            let np = planet.cell_unit_xyz(nb);
+            let align = (px - f64::from(np[0])) * wx
+                + (py - f64::from(np[1])) * wy
+                + (pz - f64::from(np[2])) * wz;
+            align > 0.05
+        });
 
         let mut score = 0.0_f64;
         if is_coastal {
-            score += 500.0;
+            score += 600.0;
         }
-        score += (35.0 - f64::from((temp - 14.0).abs())) * 10.0;
-        if elev <= 650.0 {
-            score += 120.0;
+        if is_windward_coast {
+            score += 220.0;
         }
-        score += f64::from(drain.log10().max(0.0)) * 25.0;
+        score += f64::from((42.0 - (abs_lat_deg - 26.0).abs()).max(0.0)) * 16.0;
+        if (15.0..=260.0).contains(&elev) {
+            score += 160.0;
+        } else if (4.0..=550.0).contains(&elev) {
+            score += 60.0;
+        } else {
+            score -= 250.0;
+        }
+        if (12_000.0..=240_000.0).contains(&drain) {
+            score += 140.0;
+        } else if (2_000.0..12_000.0).contains(&drain) {
+            score += 85.0;
+        } else if drain > 500_000.0 {
+            score -= 260.0;
+        }
+        if (850.0..=1900.0).contains(&precip) {
+            score += 130.0;
+        }
+        if (0.45..=1.15).contains(&aridity) {
+            score += 90.0;
+        }
+        score += f64::from(fert) * 80.0;
+        // Prefer longitude near Greenwich meridian so daily ticks (tick % 24 == 0) fall in daytime warmth.
+        score += f64::from(lon.cos()) * 20.0;
 
         if score > best_score {
             best_score = score;

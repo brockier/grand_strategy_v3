@@ -112,7 +112,7 @@ impl KnowledgeEvolutionPlugin {
             for pidx in 0..registry.process_count() {
                 let pid = ProcessId(pidx as u16);
                 if let Some(pdef) = registry.process_def(pid)
-                    && (pdef.workforce_hours_required >= 28.0 || pdef.tool_wear_intensity >= 0.0005)
+                    && (pdef.workforce_hours_required >= 18.0 || pdef.tool_wear_intensity > 1.10)
                 {
                     let comp = &components[adv_comp_idx % components.len()];
                     let req_level = if comp.difficulty >= 0.45 { 0.40 } else { 0.28 };

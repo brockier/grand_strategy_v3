@@ -1,7 +1,7 @@
 [planet_generation]
 id = "default_terrestrial_planet"
-goldberg_subdivision = 3
-tectonic_plate_count = 12
+goldberg_subdivision = 24
+tectonic_plate_count = 14
 land_fraction_target = 0.34
 axial_tilt_deg = 23.4
 solar_constant_w_m2 = 1361.0

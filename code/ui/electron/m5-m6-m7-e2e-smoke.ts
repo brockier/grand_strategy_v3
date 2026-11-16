@@ -33,13 +33,68 @@ export async function runM5M6M7E2ESmoke(
     // 1. Live serve-stdio clock progression when unpaused, then clean re-pause.
     const pauseBtn = document.getElementById("hud-pause-btn");
     pauseBtn.click();
-    await wait(520);
+    for (let i = 0; i < 60; i += 1) {
+      await wait(40);
+      const cur = rt.store.getSnapshot()?.clockAndNotifications;
+      if (cur && !cur.paused && cur.tick > initialTick) break;
+    }
     const snapRunning = rt.store.getSnapshot();
     const afterUnpauseTick = snapRunning?.clockAndNotifications?.tick ?? -1;
     pauseBtn.click();
-    await wait(120);
+    for (let i = 0; i < 40; i += 1) {
+      await wait(40);
+      if (rt.store.getSnapshot()?.clockAndNotifications?.paused) break;
+    }
     const snapRepaused = rt.store.getSnapshot();
     const repausedState = Boolean(snapRepaused?.clockAndNotifications?.paused);
+
+    // 1b. Photorealistic vs Parchment lens, Equal-Area & Mercator projection toggles, and DOM labels.
+    const strideBytes = (s) => {
+      const out = [];
+      if (!s) return out;
+      for (let i = 0; i < s.rgba.length; i += 32) {
+        out.push(s.rgba[i], s.rgba[i + 1], s.rgba[i + 2]);
+      }
+      return out;
+    };
+    const hqCid = snap0?.hqPresence?.cellId ?? 0;
+    const hqGeom = rt.globe.topology.cells.find((c) => c.cellId === hqCid) ?? rt.globe.topology.cells[0];
+    rt.globe.camera.flyToUnitVector(hqGeom.centerUnit, 0.28, 0, true);
+    rt.globe.stepRender(16);
+    await wait(40);
+    const topologyCellCount = snap0?.globeTopology?.cellCount ?? 0;
+    const shaderCompiled = Boolean(window.__ngBootStatus?.shaderCompiled);
+    const renderedLabelCount = document.querySelectorAll("#map-feature-labels .ng-map-label:not([hidden])").length;
+
+    rt.globe.camera.flyToUnitVector(hqGeom.centerUnit, 0.45, 0, true);
+    rt.globe.stepRender(16);
+    const terrainSample = strideBytes(rt.globe.captureFrameSample(96));
+
+    document.querySelector('[data-overlay-mode="parchment"]')?.click();
+    await wait(40);
+    rt.globe.stepRender(16);
+    const parchmentSample = strideBytes(rt.globe.captureFrameSample(96));
+
+    document.querySelector('[data-overlay-mode="terrain"]')?.click();
+    await wait(40);
+    rt.globe.stepRender(16);
+
+    document.querySelector('[data-projection-mode="equal_area"]')?.click();
+    await wait(40);
+    rt.globe.stepRender(16);
+    const projEqualArea = rt.globe.status.projectionMode;
+    const equalAreaSample = strideBytes(rt.globe.captureFrameSample(96));
+
+    document.querySelector('[data-projection-mode="mercator"]')?.click();
+    await wait(40);
+    rt.globe.stepRender(16);
+    const projMercator = rt.globe.status.projectionMode;
+    const mercatorSample = strideBytes(rt.globe.captureFrameSample(96));
+
+    document.querySelector('[data-projection-mode="globe"]')?.click();
+    await wait(40);
+    rt.globe.stepRender(16);
+    const projRestoredGlobe = rt.globe.status.projectionMode;
 
     // 2. Switch map overlays to Trade and Warfare modes & verify legend telemetry.
     const tradeBtn = document.querySelector('[data-overlay-mode="trade"]');
@@ -166,6 +221,16 @@ export async function runM5M6M7E2ESmoke(
       actorCount,
       afterUnpauseTick,
       repausedState,
+      topologyCellCount,
+      shaderCompiled,
+      renderedLabelCount,
+      terrainSample,
+      parchmentSample,
+      projEqualArea,
+      equalAreaSample,
+      projMercator,
+      mercatorSample,
+      projRestoredGlobe,
       tradeLegend,
       warfareLegend,
       hasInstTablist: Boolean(instTablist),

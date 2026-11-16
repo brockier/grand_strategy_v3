@@ -160,8 +160,8 @@ async function bootstrapShell(): Promise<void> {
       writePreferences: bridge.writeUserPreferences,
     },
     {
-      viewportWidth: window.innerWidth || 1280,
-      viewportHeight: window.innerHeight || 800,
+      viewportWidth: window.innerWidth >= 64 ? window.innerWidth : 1280,
+      viewportHeight: window.innerHeight >= 64 ? window.innerHeight : 800,
       initialPresets: initialPrefs.namedLayoutPresets,
       onPersist(activeLayoutJson, presets) {
         const writePrefs = bridge.writeUserPreferences;
@@ -205,8 +205,8 @@ async function bootstrapShell(): Promise<void> {
   }
 
   window.addEventListener("resize", () => {
-    const w = window.innerWidth || 1280;
-    const h = window.innerHeight || 800;
+    const w = window.innerWidth >= 64 ? window.innerWidth : 1280;
+    const h = window.innerHeight >= 64 ? window.innerHeight : 800;
     globe.resize(w, h);
     windowManager.handleViewportResize(w, h);
   });

@@ -140,23 +140,23 @@ Every requirement block carries one of four normative lifecycle statuses:
 - **Requirement:** The camera controller SHALL provide smooth quaternion-based orbital drag rotation, pitch/tilt adjustment, true-north compass orientation reset, animated smooth fly-to centering on any cell or hyperlinked entity coordinate, and continuous logarithmic altitude zoom.
 - **Acceptance Criteria:** Playwright input automation driving mouse drags, wheel zoom, north-reset shortcut, and hyperlink fly-to commands moves the camera smoothly through expected spherical coordinates without gimbal lock at the poles.
 
-### UI-GLB-003: Physical 3D Terrain Mode at Low & Medium Camera Altitude
+### UI-GLB-003: Photorealistic Biophysical Satellite Terrain & Water Optics Across All Altitudes
 - **ID:** `UI-GLB-003`
 - **Status:** `Active`
 - **Milestone:** `M2`
 - **Verification Layer:** `Globe-WebGPU`
 - **Lineage:** `Origin`
-- **Requirement:** At low and medium camera altitudes, globe shaders SHALL render extruded elevation relief, ocean bathymetry and waves, carved river splines, terrain biome PBR textures, settlement markers, and road/canal infrastructure geometry for surveyed regions.
-- **Acceptance Criteria:** Visual golden-image checks at low altitude confirm visible shadow relief across mountain chains, distinct river channels, and accurate placement of settlement and road spline geometry.
+- **Requirement:** Globe shaders SHALL default to photorealistic continuous biophysical satellite reflectance (synthesized smoothly across barycentric triangle interiors from temperature, aridity, fertility, slope, and elevation without nearest-Voronoi hexagon borders), sub-cell fractal coastlines, shallow-to-abyssal water optics with coastal river sediment plumes, sunlit micro-relief normal shading, and soft cloud-bank feathering against a dark twilight unexplored globe.
+- **Acceptance Criteria:** Visual checks at low and medium altitudes confirm distinct continuous vegetation, rock strata, snowpack, shallow continental shelves, coastal estuaries, and crisp pixel differences across unexplored cloud horizons without hex/pentagon seams.
 
-### UI-GLB-004: Continuous Camera-Altitude Cross-Fade to Hand-Drawn Parchment Map
+### UI-GLB-004: Orbital Atmospheric Altitude Transition & Selectable Antique Parchment Lens
 - **ID:** `UI-GLB-004`
 - **Status:** `Active`
 - **Milestone:** `M2`
 - **Verification Layer:** `Skin-Snapshot`
 - **Lineage:** `Origin`
-- **Requirement:** As camera altitude increases toward planetary scale, custom shaders SHALL smoothly cross-fade physical 3D relief into a stylized hand-drawn cartographic parchment map displaying inked topographic contours, hatched shading, sea-chart compass lines, and paper grain textures.
-- **Acceptance Criteria:** Golden-image captures sampled at low (`1.0x`), transition (`0.5` blend), and high orbital (`0.0` relief blend) altitudes verify smooth visual interpolation without jarring pop-in cuts.
+- **Requirement:** As camera altitude increases toward planetary scale, shaders SHALL smoothly transition orbital Rayleigh atmospheric limb scattering and relief attenuation (`cartographicBlend` `0.0 -> 1.0`), while an explicit selectable `parchment` map lens SHALL render an inked antique cartographic chart with contours, slope cross-hatching, compass rhumb lines, and paper grain at any zoom altitude.
+- **Acceptance Criteria:** Golden-image captures sampled at low (`1.0x`), mid (`0.5`), and orbital (`0.0` relief blend) altitudes plus `parchment` lens selection verify monotonic `cartographicBlend` progression (`0 -> 1`) and distinct rendered shader buffers.
 
 ### UI-GLB-005: Smooth Asynchronous Frame Rate Under High-Speed Simulation
 - **ID:** `UI-GLB-005`
@@ -166,6 +166,24 @@ Every requirement block carries one of four normative lifecycle statuses:
 - **Lineage:** `Origin`
 - **Requirement:** Globe rendering and window interaction loops SHALL run asynchronously from Rust tick stepping, maintaining responsive 60 FPS input and camera motion even when the simulation clock runs at multi-day-per-second acceleration.
 - **Acceptance Criteria:** Automated performance tests running continuous high-speed tick ingestion verify renderer frame times stay under 16.7 milliseconds at 95th percentile during active pan/zoom maneuvers.
+
+### UI-GLB-006: Multi-Tier Frustum Patch LOD & Semantic Zoom Down to 3D Settlement Clusters
+- **ID:** `UI-GLB-006`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Globe-WebGPU`
+- **Lineage:** `Origin`
+- **Requirement:** The globe renderer SHALL manage frustum-culled spherical patch LOD subdivisions (`LOD 0..3`, increasing triangle detail near camera focus as `altitudeNorm` decreases) paired with 4 semantic zoom tiers (`orbital`, `continental`, `regional`, `settlement`), progressive camera optical zoom magnification, zoom-adaptive micro-terrain relief, and procedural 3D settlement and garrison clusters at settlement scale.
+- **Acceptance Criteria:** Automated LOD and Electron WebGL2 tests verify monotonic triangle-count increases (`lodSettlement > lodOrbital`), procedural 3D settlement cluster generation at `altitudeNorm <= 0.15`, and distinct rendered frame samples between orbital, regional, and settlement zoom tiers.
+
+### UI-GLB-007: Seamless 3D Globe & 2D Equal-Area / Mercator Projection Toggle With Picking Parity
+- **ID:** `UI-GLB-007`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Globe-WebGPU`
+- **Lineage:** `Origin`
+- **Requirement:** The map viewport SHALL support seamless GPU vertex morphing and analytical camera/picking parity between the primary 3D spherical `globe`, 2D `equal_area` (Lambert Azimuthal Equal-Area centered on focus coordinates), and 2D `mercator` projections via explicit HUD/toolbar controls.
+- **Acceptance Criteria:** Mathematical round-trip tests and live Electron E2E captures verify accurate `projectUnitToFlat2D` / `unprojectFlat2DToUnit` round-trips, distinct WebGL2 pixel output per projection mode, and accurate `pickGlobeAtNdc` resolution in both 3D and 2D modes.
 
 ---
 
@@ -278,6 +296,15 @@ Every requirement block carries one of four normative lifecycle statuses:
 - **Lineage:** `Parent: UI-MAP-007`
 - **Requirement:** Operational formation markers rendered on the globe SHALL position each unit strictly at its last-reported coordinate stamped with courier observation age (`reportedTick`), visually distinguishing fresh HQ sightings from stale distant reports.
 - **Acceptance Criteria:** Snapshot tests verify stale distant formations expose delayed `reportedTick` metadata and zero access to unarrived engine coordinates.
+
+### UI-MAP-008: Fog-Clipped Meandering Hydrology Ribbons, Radially De-Clustered Icons & Diegetic Typography
+- **ID:** `UI-MAP-008`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Unit-Vitest`
+- **Lineage:** `Origin`
+- **Requirement:** Map features SHALL render rivers as curved meandering triangle-strip ribbons scaled by `strahlerOrder` and `floodStage01` (clipped strictly inside the explored fog horizon so rivers never overshoot into `unexplored` space), render roads along matching terrain-hugging curves, radially de-cluster co-located settlements, convoys, and military formations with leader ticks and lit 3D materials, and project zoom-tiered settlement, formation, and watershed labels without obscuring pointer picking.
+- **Acceptance Criteria:** Geometry and DOM tests assert zero river vertices in unexplored cells, curved triangle-strip river meshes (`drawTriangles`), non-zero radial separation between settlements and co-located formations, and pointer-transparent DOM label elements synced to visible features.
 
 ---
 

@@ -6,6 +6,7 @@ import {
   generateGoldbergTopology,
   GlobeLayerHost,
   GlobePalette,
+  GlobeProjectionMode,
   GlobeRayHit,
   GoldbergTopologyData,
   greatCircleRadians,
@@ -14,18 +15,29 @@ import {
   scale3,
   sub3,
   UiIntentBus,
+  unprojectFlat2DToUnit,
   Vec3,
 } from "../spine";
 import { GlobeOrbitalCamera } from "./camera";
-import { FeatureOverlayRenderSummary, GlobeFeatureOverlayGroup } from "./features";
+import { FeatureOverlayRenderSummary, GlobeFeatureOverlayGroup, MapLabelAnchor } from "./features";
+import { GlobePatchLodManager } from "./lod-patches";
 import { buildGoldbergGlobeGeometry, GoldbergMeshBuild, unitToLatLonDegrees, verifyGoldbergManifold } from "./mesh";
+import { classifySemanticZoomTier, SemanticZoomTier } from "./semantic-zoom";
 import { createGlobeShaderController, GlobeShaderController } from "./shaders";
 
 export { buildGoldbergGlobeGeometry, unitToLatLonDegrees, verifyGoldbergManifold } from "./mesh";
 export type { ManifoldVerificationReport } from "./mesh";
 export { GlobeOrbitalCamera } from "./camera";
 export { createGlobeShaderController } from "./shaders";
-export type { FeatureOverlayRenderSummary } from "./features";
+export { GlobeFeatureOverlayGroup } from "./features";
+export type { FeatureOverlayRenderSummary, MapLabelAnchor } from "./features";
+export { GlobePatchLodManager } from "./lod-patches";
+export {
+  classifySemanticZoomTier,
+  computeDeclusteredEntityOffsets,
+  SettlementDetailClusterGroup,
+} from "./semantic-zoom";
+export type { SemanticZoomTier } from "./semantic-zoom";
 
 export interface FramePixelSample {
   readonly width: number;
@@ -44,6 +56,9 @@ export interface GlobeViewportStatus {
   readonly activeDataTexIndex: number;
   readonly cartographicBlend: number;
   readonly activeOverlayMode: string;
+  readonly projectionMode: GlobeProjectionMode;
+  readonly semanticZoomTier: SemanticZoomTier;
+  readonly patchLodCounts: readonly [number, number, number, number];
   readonly featureSummary: FeatureOverlayRenderSummary;
 }
 
@@ -61,6 +76,7 @@ export interface GlobeViewportController {
   setSkinPalette(palette: GlobePalette): void;
   setHoveredCell(cellId: number | null): void;
   setSelectedCell(cellId: number | null): void;
+  getMapLabelAnchors(): readonly MapLabelAnchor[];
   stepRender(dtMs?: number): void;
   captureFrameSample(sampleGridSize?: number): FramePixelSample | null;
   resize(width: number, height: number): void;
@@ -78,8 +94,8 @@ function pointToSphericalSegmentDist(p: Vec3, a: Vec3, b: Vec3): number {
 }
 
 /**
- * Initializes the spherical Goldberg planetary renderer (`UI-GLB-001`..`UI-GLB-005`),
- * probing WebGPU while compiling and rendering the WebGL2 GLSL3 shader pipeline.
+ * Initializes the photorealistic spherical & 2D-projected Goldberg planetary renderer
+ * (`UI-GLB-001`..`UI-GLB-007`) with `LOD 0..3` patch refinement and WebGL2 GLSL3 shading.
  */
 export async function initializeGlobeViewport(
   canvas: HTMLCanvasElement,
@@ -113,6 +129,7 @@ export async function initializeGlobeViewport(
   );
   const shaderCtrl: GlobeShaderController = createGlobeShaderController(options.initialPalette);
   const features = new GlobeFeatureOverlayGroup(options.initialPalette);
+  const patchLod = new GlobePatchLodManager(topology, shaderCtrl.material);
 
   let hoveredCellId: number | null = null;
   let selectedCellId: number | null = null;
@@ -133,14 +150,10 @@ export async function initializeGlobeViewport(
 
   let renderer: THREE.WebGLRenderer | null = null;
   let scene: THREE.Scene | null = null;
-  let globeMesh: THREE.Mesh | null = null;
   let rafHandle = 0;
   let glContext: WebGL2RenderingContext | null = null;
 
-  const frameTimes: number[] = [];
-  let lastFrameTs = typeof performance !== "undefined" ? performance.now() : Date.now();
-  let lastFrameTimeMs = 0;
-
+  const sunDir = new THREE.Vector3(0.45, 0.72, 0.52).normalize();
   const gl = canvas.getContext("webgl2", {
     antialias: true,
     alpha: false,
@@ -153,19 +166,31 @@ export async function initializeGlobeViewport(
     if (backend === "noop") {
       backend = "webgl2";
     }
-    const width = Math.max(canvas.clientWidth || canvas.width || 1280, 1);
-    const height = Math.max(canvas.clientHeight || canvas.height || 720, 1);
+    const width = canvas.clientWidth >= 64 ? canvas.clientWidth : canvas.width >= 64 ? canvas.width : 1280;
+    const height = canvas.clientHeight >= 64 ? canvas.clientHeight : canvas.height >= 64 ? canvas.height : 720;
     renderer.setSize(width, height, false);
     orbitalCamera.setAspect(width, height);
 
     scene = new THREE.Scene();
-    globeMesh = new THREE.Mesh(meshBuild.geometry, shaderCtrl.material);
-    scene.add(globeMesh);
+    const hemiLight = new THREE.HemisphereLight(
+      new THREE.Color(0.86, 0.90, 0.96),
+      new THREE.Color(0.24, 0.21, 0.18),
+      1.35,
+    );
+    const dirLight = new THREE.DirectionalLight(new THREE.Color(1.0, 0.96, 0.90), 1.85);
+    dirLight.position.copy(sunDir).multiplyScalar(8);
+    scene.add(hemiLight);
+    scene.add(dirLight);
+    scene.add(patchLod.group);
     scene.add(features.group);
 
     renderer.compile(scene, orbitalCamera.camera);
     shaderCompiled = true;
   }
+
+  const frameTimes: number[] = [];
+  let lastFrameTs = typeof performance !== "undefined" ? performance.now() : Date.now();
+  let lastFrameTimeMs = 0;
 
   const raycaster = new THREE.Raycaster();
   const isPointOccluded = (clientX: number, clientY: number): boolean => {
@@ -180,6 +205,9 @@ export async function initializeGlobeViewport(
     }
     return false;
   };
+
+  const projectFeaturePoint = (unit: Vec3, lift: number): THREE.Vector3 =>
+    orbitalCamera.projectUnitPosition(unit, lift);
 
   const findNearestCellId = (unit: Vec3): number => {
     let bestId = 0;
@@ -201,22 +229,36 @@ export async function initializeGlobeViewport(
     raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), orbitalCamera.camera);
     const origin = raycaster.ray.origin;
     const dir = raycaster.ray.direction;
-    const b = origin.dot(dir);
-    const c = origin.dot(origin) - 1;
-    const disc = b * b - c;
-    if (disc < 0) return null;
-    const t = -b - Math.sqrt(disc);
-    if (t < 0) return null;
 
-    const hitPt = origin.clone().addScaledVector(dir, t).normalize();
-    const hitUnit: Vec3 = [hitPt.x, hitPt.y, hitPt.z];
+    let hitUnit: Vec3;
+    const projMode = orbitalCamera.getProjectionMode();
+    if (projMode !== "globe" && orbitalCamera.getProjectionMorph() >= 0.5) {
+      if (Math.abs(dir.z) < 1e-6) return null;
+      const tPlane = -origin.z / dir.z;
+      if (tPlane < 0) return null;
+      const px = origin.x + dir.x * tPlane;
+      const py = origin.y + dir.y * tPlane;
+      const unproj = unprojectFlat2DToUnit(px, py, projMode, orbitalCamera.getProjectionOriginUnit());
+      if (!unproj) return null;
+      hitUnit = unproj;
+    } else {
+      const b = origin.dot(dir);
+      const c = origin.dot(origin) - 1;
+      const disc = b * b - c;
+      if (disc < 0) return null;
+      const t = -b - Math.sqrt(disc);
+      if (t < 0) return null;
+      const hitPt = origin.clone().addScaledVector(dir, t).normalize();
+      hitUnit = [hitPt.x, hitPt.y, hitPt.z];
+    }
+
     const { latDeg, lonDeg } = unitToLatLonDegrees(hitUnit);
     const nearestCellId = findNearestCellId(hitUnit);
     const snap = currentSnapshot ?? store.getSnapshot();
-    const spacingRad = (2.1 / Math.sqrt(Math.max(topology.cellCount, 10) / 10));
+    const spacingRad = 2.1 / Math.sqrt(Math.max(topology.cellCount, 10) / 10);
 
     if (snap) {
-      // 1. Tracked convoys highest priority (continuous coordinate aware)
+      // 1. Tracked convoys
       for (const convoy of snap.trackedConvoys) {
         const cCell = meshBuild.cellById.get(convoy.projectedCellId);
         const cPos: Vec3 | null = convoy.currentUnitXyz
@@ -239,17 +281,16 @@ export async function initializeGlobeViewport(
         }
       }
 
-      // 2. Observed military formations (`UI-MAP-007.2`)
+      // 2. Check declustered formation anchors vs direct settlement plinth hits
+      const labelAnchors = features.getMapLabelAnchors();
       for (const formation of snap.warfare?.formations ?? []) {
-        const fPos: Vec3 = [
-          formation.currentUnitXyz[0],
-          formation.currentUnitXyz[1],
-          formation.currentUnitXyz[2],
-        ];
-        if (
-          greatCircleRadians(hitUnit, fPos) < spacingRad * 0.45 ||
-          formation.currentCellId === nearestCellId
-        ) {
+        const anchor = labelAnchors.find(
+          (a) => a.kind === "formation" && a.entityId === formation.formationId,
+        );
+        const fPos: Vec3 = anchor
+          ? anchor.unit
+          : [formation.currentUnitXyz[0], formation.currentUnitXyz[1], formation.currentUnitXyz[2]];
+        if (greatCircleRadians(hitUnit, fPos) < spacingRad * 0.35) {
           return {
             hitKind: "formation",
             cellId: formation.currentCellId,
@@ -275,6 +316,21 @@ export async function initializeGlobeViewport(
             cellId: settlement.cellId,
             settlementId: settlement.settlementId,
             label: settlement.isHq ? `${settlement.settlementName} (HQ)` : settlement.settlementName,
+            unitXyz: hitUnit,
+            latDeg,
+            lonDeg,
+          };
+        }
+      }
+
+      // Fallback formation match by cell if not co-located with a settlement
+      for (const formation of snap.warfare?.formations ?? []) {
+        if (formation.currentCellId === nearestCellId) {
+          return {
+            hitKind: "formation",
+            cellId: formation.currentCellId,
+            formationId: formation.formationId,
+            label: `${formation.label} (${formation.commanderName})`,
             unitXyz: hitUnit,
             latDeg,
             lonDeg,
@@ -381,16 +437,74 @@ export async function initializeGlobeViewport(
     };
   };
 
+  const projectUnitToScreen = (unit: readonly [number, number, number]) => {
+    const mode = orbitalCamera.getProjectionMode();
+    if (mode === "globe") {
+      const camPos = orbitalCamera.camera.position;
+      const surfaceVec = new THREE.Vector3(unit[0], unit[1], unit[2]);
+      if (surfaceVec.dot(camPos.clone().sub(surfaceVec)) <= 0.02) {
+        return { xPx: -1000, yPx: -1000, visible: false };
+      }
+    }
+    const worldPt = projectFeaturePoint([unit[0], unit[1], unit[2]], 0.022);
+    const ndc = worldPt.project(orbitalCamera.camera);
+    if (
+      !Number.isFinite(ndc.x) ||
+      !Number.isFinite(ndc.y) ||
+      ndc.z < -1 ||
+      ndc.z > 1 ||
+      ndc.x < -1.06 ||
+      ndc.x > 1.06 ||
+      ndc.y < -1.06 ||
+      ndc.y > 1.06
+    ) {
+      return { xPx: -1000, yPx: -1000, visible: false };
+    }
+    const width = canvas.clientWidth >= 64 ? canvas.clientWidth : canvas.width >= 64 ? canvas.width : 1280;
+    const height = canvas.clientHeight >= 64 ? canvas.clientHeight : canvas.height >= 64 ? canvas.height : 720;
+    return {
+      xPx: (ndc.x * 0.5 + 0.5) * width,
+      yPx: (-ndc.y * 0.5 + 0.5) * height,
+      visible: true,
+    };
+  };
+
+  let renderOnceImpl = () => {};
+
   const layerHost: GlobeLayerHost = {
     overlayRootId,
     getCanvasElement: () => canvas,
     pickGlobeAtNdc,
     isPointOccludedByChrome: isPointOccluded,
+    projectUnitToScreen,
+    getMapLabelAnchors: () => features.getMapLabelAnchors(),
+    getProjectionMode: () => orbitalCamera.getProjectionMode(),
+    setProjectionMode: (mode: GlobeProjectionMode) => {
+      orbitalCamera.setProjectionMode(mode, true);
+      if (currentSnapshot) {
+        features.rebuild(
+          currentSnapshot,
+          topology,
+          activeOverlayMode,
+          previewDestinationCellId,
+          orbitalCamera.getAltitudeNorm(),
+          projectFeaturePoint,
+          mode !== "globe",
+        );
+      }
+      renderOnceImpl();
+    },
   };
 
-  const sunDir = new THREE.Vector3(0.45, 0.72, 0.52).normalize();
-  const renderOnce = () => {
+  renderOnceImpl = () => {
+    const altNorm = orbitalCamera.getAltitudeNorm();
     const blend = orbitalCamera.getCartographicBlend();
+    const projMode = orbitalCamera.getProjectionMode();
+    const projMorph = orbitalCamera.getProjectionMorph();
+    const projOrigin = orbitalCamera.getProjectionOriginUnit();
+    const focusUnit = orbitalCamera.getFocusUnit();
+
+    patchLod.updateForCamera(focusUnit, altNorm, projMorph);
     shaderCtrl.setCartographicState(
       blend,
       sunDir,
@@ -400,12 +514,19 @@ export async function initializeGlobeViewport(
       hoveredUnitXyz,
       selectedUnitXyz,
     );
-    const focusCellId = findNearestCellId(orbitalCamera.getFocusUnit());
+    shaderCtrl.setAltitudeNorm?.(altNorm);
+    shaderCtrl.setParchmentMode?.(activeOverlayMode === "parchment");
+    shaderCtrl.setProjectionState?.(projMode, projMorph, projOrigin);
+
+    features.refreshForCamera(altNorm, projectFeaturePoint, projMode !== "globe");
+
+    const focusCellId = findNearestCellId(focusUnit);
     orbitalCamera.setFocusCellId(focusCellId);
     if (renderer && scene) {
       renderer.render(scene, orbitalCamera.camera);
     }
   };
+  const renderOnce = () => renderOnceImpl();
 
   const emitTelemetry = () => {
     bus.emit({
@@ -504,12 +625,25 @@ export async function initializeGlobeViewport(
   canvas.addEventListener("wheel", onWheel, { passive: false });
   canvas.addEventListener("contextmenu", onContextMenu);
 
+  const rebuildCurrentFeatures = () => {
+    if (!currentSnapshot) return;
+    features.rebuild(
+      currentSnapshot,
+      topology,
+      activeOverlayMode,
+      previewDestinationCellId,
+      orbitalCamera.getAltitudeNorm(),
+      projectFeaturePoint,
+      orbitalCamera.getProjectionMode() !== "globe",
+    );
+  };
+
   const unsubBus = bus.subscribe((intent) => {
     if (intent.kind === "FlyGlobeToCell") {
       const target = meshBuild.cellById.get(intent.cellId);
       if (target) {
         selectedCellId = intent.cellId;
-        orbitalCamera.flyToUnitVector(target.centerUnit, 0.2, 500, false);
+        orbitalCamera.flyToUnitVector(target.centerUnit, intent.zoomAltitude ?? 0.2, 500, false);
         renderOnce();
         emitTelemetry();
       }
@@ -524,15 +658,16 @@ export async function initializeGlobeViewport(
     } else if (intent.kind === "SwitchMapOverlayMode") {
       activeOverlayMode = intent.modeId;
       weatherOverlayActive = intent.modeId === "weather";
-      if (currentSnapshot) {
-        features.rebuild(currentSnapshot, topology, activeOverlayMode, previewDestinationCellId);
-      }
+      rebuildCurrentFeatures();
       renderOnce();
+    } else if (intent.kind === "SwitchGlobeProjection") {
+      orbitalCamera.setProjectionMode(intent.projection, true);
+      rebuildCurrentFeatures();
+      renderOnce();
+      emitTelemetry();
     } else if (intent.kind === "PreviewHqLatencyRoute") {
       previewDestinationCellId = intent.destinationCellId;
-      if (currentSnapshot) {
-        features.rebuild(currentSnapshot, topology, activeOverlayMode, previewDestinationCellId);
-      }
+      rebuildCurrentFeatures();
       renderOnce();
     } else if (intent.kind === "HoverMapFeature") {
       hoveredCellId = intent.hit?.cellId ?? null;
@@ -558,15 +693,12 @@ export async function initializeGlobeViewport(
     if (snapshot.globeTopology.subdivision !== subdivision && snapshot.globeTopology.subdivision >= 1) {
       subdivision = snapshot.globeTopology.subdivision;
       topology = generateGoldbergTopology(subdivision);
-      const nextBuild = buildGoldbergGlobeGeometry(topology);
-      if (globeMesh) {
-        meshBuild.geometry.dispose();
-        globeMesh.geometry = nextBuild.geometry;
-      }
-      meshBuild = nextBuild;
+      meshBuild.geometry.dispose();
+      meshBuild = buildGoldbergGlobeGeometry(topology);
+      patchLod.rebuildTopology(topology);
     }
     shaderCtrl.uploadSnapshot(snapshot, selectedCellId, hoveredCellId);
-    features.rebuild(snapshot, topology, activeOverlayMode, previewDestinationCellId);
+    rebuildCurrentFeatures();
     for (const layer of layers) {
       layer.onSnapshotUpdate(snapshot);
     }
@@ -609,6 +741,15 @@ export async function initializeGlobeViewport(
     get activeOverlayMode() {
       return activeOverlayMode;
     },
+    get projectionMode() {
+      return orbitalCamera.getProjectionMode();
+    },
+    get semanticZoomTier() {
+      return classifySemanticZoomTier(orbitalCamera.getAltitudeNorm());
+    },
+    get patchLodCounts() {
+      return patchLod.getLodCounts();
+    },
     get featureSummary() {
       return features.getSummary();
     },
@@ -636,6 +777,9 @@ export async function initializeGlobeViewport(
       selectedCellId = cellId;
       selectedUnitXyz = cellId !== null ? meshBuild.cellById.get(cellId)?.centerUnit ?? null : null;
       renderOnce();
+    },
+    getMapLabelAnchors() {
+      return features.getMapLabelAnchors();
     },
     stepRender,
     captureFrameSample(sampleGridSize = 32): FramePixelSample | null {
@@ -668,8 +812,8 @@ export async function initializeGlobeViewport(
     },
     resize(width: number, height: number) {
       if (!renderer) return;
-      const w = Math.max(width, 1);
-      const h = Math.max(height, 1);
+      const w = width >= 64 ? width : 1280;
+      const h = height >= 64 ? height : 720;
       orbitalCamera.setAspect(w, h);
       renderer.setSize(w, h, false);
       renderOnce();
@@ -686,6 +830,7 @@ export async function initializeGlobeViewport(
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("contextmenu", onContextMenu);
       meshBuild.geometry.dispose();
+      patchLod.dispose();
       shaderCtrl.dispose();
       features.dispose();
       renderer?.dispose();

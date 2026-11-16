@@ -423,3 +423,59 @@ fn planet_generation_and_canonical_codec_are_bit_identical_for_same_seed() {
     assert!(slice.is_empty());
     assert_eq!(restored.blake3_digest(), p1.blake3_digest());
 }
+
+// @req ENG-GEO-007
+#[test]
+fn high_res_planet_generates_continental_shelves_strahler_rivers_and_biophysical_indices() {
+    let cfg = default_planet_cfg(24);
+    let planet = GeneratedPlanet::generate(42, &cfg);
+    assert_eq!(planet.cell_count(), 5762);
+    assert_eq!(planet.icosphere_triangles().len(), 11520);
+
+    let mut ocean_cells = 0usize;
+    let mut shelf_cells = 0usize;
+    let mut abyssal_cells = 0usize;
+    let mut max_strahler = 0u8;
+
+    for raw in 0..planet.cell_count() {
+        let cid = CellId(raw);
+        let elev = planet.cell_elevation_m(cid);
+        let aridity = planet.cell_aridity_index_01(cid);
+        let fertility = planet.cell_soil_fertility_01(cid);
+        assert!(aridity.is_finite() && (0.0..=1.0).contains(&aridity));
+        assert!(fertility.is_finite() && (0.0..=1.0).contains(&fertility));
+        if planet.is_ocean_cell(cid) {
+            ocean_cells += 1;
+            if (-200.0..=0.0).contains(&elev) {
+                shelf_cells += 1;
+            } else if elev < -2000.0 {
+                abyssal_cells += 1;
+            }
+            assert_eq!(planet.cell_strahler_order(cid), 0);
+        } else {
+            let ord = planet.cell_strahler_order(cid);
+            assert!(ord >= 1);
+            max_strahler = max_strahler.max(ord);
+        }
+    }
+
+    assert!(ocean_cells > 1000);
+    assert!(
+        shelf_cells * 20 >= ocean_cells,
+        "continental shelf cells ({shelf_cells}) must represent at least 5% of ocean cells ({ocean_cells})"
+    );
+    assert!(abyssal_cells > ocean_cells / 4);
+    assert!(
+        max_strahler >= 3,
+        "m=24 planet must develop hierarchical river basins with Strahler >= 3 (got {max_strahler})"
+    );
+
+    // Verify canonical save round-trip preserves new biophysical fields cleanly at m=24.
+    let mut buf = Vec::new();
+    planet.write_canonical_state(&mut buf);
+    let mut decoded = GeneratedPlanet::generate(7, &default_planet_cfg(3));
+    let mut slice = buf.as_slice();
+    decoded.read_canonical_state(&mut slice).expect("m=24 decode");
+    assert!(slice.is_empty());
+    assert_eq!(decoded.blake3_digest(), planet.blake3_digest());
+}

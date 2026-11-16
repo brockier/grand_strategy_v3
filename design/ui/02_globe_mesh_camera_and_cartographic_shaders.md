@@ -2,63 +2,71 @@
 
 **Module ID:** `UI-GLB-02`  
 **Code Location:** `code/ui/src/globe/`  
-**Milestone & Design Depth:** `M2: Full Detailed Design`  
-**Satisfies Requirements:** `UI-GLB-001.1`, `UI-GLB-002`, `UI-GLB-003`, `UI-GLB-004`, `UI-GLB-005` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
+**Milestone & Design Depth:** `M2–M7: Full Detailed Design`  
+**Satisfies Requirements:** `UI-GLB-001.1`, `UI-GLB-002`, `UI-GLB-003`, `UI-GLB-004`, `UI-GLB-005`, `UI-GLB-006`, `UI-GLB-007` in [ui_requirements.md](file:///home/roger/Projects/ng/requirements/ui_requirements.md)  
 
 ---
 
 ## 1. Module Boundary Header
 
 - **Consumed Spine Ports (Inputs):**
-  - `DiegeticStore` (`selectGlobeTopology`, `selectKnownCells`)
-  - `UiIntentBus` (`FlyGlobeToCell`, `SwitchMapOverlayMode`)
+  - `DiegeticStore` (`selectGlobeTopology`, `selectKnownCells`, `selectKnownSettlements`)
+  - `UiIntentBus` (`FlyGlobeToCell`, `SwitchMapOverlayMode`, `SwitchGlobeProjection`)
   - `SkinShaderPalettePort` (active color ramps, paper grain, ink hatching, terrain PBR textures)
   - Registered `MapLayerPlugin` instances from `MapLayerRegistry`
 - **Provided Spine Ports (Outputs):**
-  - `GlobeLayerHost` (Three.js scene hook, shared cell elevation lookup, camera altitude norm)
+  - `GlobeLayerHost` (Three.js scene hook, shared cell elevation lookup, camera altitude norm, active projection mode, `projectUnitToScreen`)
   - Continuous `cameraAltitudeNorm` telemetry stream to `UI-AUD-09`
-  - Pointer raycast dispatch hooks consumed by `UI-MAP-03`
+  - Pointer raycast dispatch hooks consumed by `UI-MAP-03` in both 3D `globe` and 2D `equal_area` / `mercator` views
 
 ---
 
 ## 2. Encapsulated Internal State & Data Layout
 
-### 2.1 Watertight Welded Subdivided Icosphere Mesh (`UI-GLB-001.1`)
+### 2.1 Watertight Welded Subdivided Icosphere + Frustum Patch LOD (`UI-GLB-001.1`, `UI-GLB-006`)
 
-- Builds indexed `THREE.BufferGeometry` directly from `PlanetGeometryPort` topology transferred via `DiegeticStore::selectGlobeTopology()`:
-  - Welded primal subdivided icosphere with `10 * m^2 + 2` shared unit-sphere vertices and `20 * m^2` outward-wound spherical triangles (`Euler V - E + F = 2`, zero duplicated hex-fan vertices, zero visible hex/pentagon borders).
-  - Smooth vertex interpolation carries `aSampleId`, elevation relief, precipitation wetness, and epistemic horizon values across every triangle while crisp circular cartographic reticles (`dot(normalize(vSpherePos), uHoveredUnitPos)`) mark hovered, selected, and HQ loci.
-  - Spherical UV mapping avoids equirectangular polar pinching by computing triplanar tangent-space procedural coordinates from 3D sphere normals inside shaders (`UI-GLB-001.1`).
+- Builds base indexed `THREE.BufferGeometry` directly from `PlanetGeometryPort` topology transferred via `DiegeticStore::selectGlobeTopology()` (`m = 24`, `5,762` sample vertices, `11,520` outward-wound spherical triangles, Euler `V - E + F = 2`, zero hex/pentagon seams).
+- **Frustum-Culled Spherical Patch LOD (`lod-patches.ts`):** Splits the globe into 20 icosahedral sector patches cached across 4 subdivision levels (`LOD 0` = `1x`, `LOD 1` = `4x`, `LOD 2` = `16x`, `LOD 3` = `64x` triangles near focus at low altitude) with continuous `aCornerCells` + interpolated `aBarycentric` weights and skirt rim vertices to prevent inter-LOD cracks.
+- **No Voronoi Hex Boundaries:** Nearest-vertex winner selection is eliminated; every pixel interpolates elevation, climate, wetness, fertility, strata, and river plumes smoothly with sub-cell fractal coastal noise (`coastalWarp`) before testing land-vs-water (`h > 0`).
+- Smooth circular cartographic reticles (`dot(normalize(vSpherePos), uHoveredUnitPos)`) mark hovered and selected continuous coordinates across both 3D and 2D views.
 
-### 2.2 Quaternion Orbital Camera Controller (`UI-GLB-002`)
+### 2.2 Quaternion Orbital Camera + Optical Telephoto Zoom & 2D Projections (`UI-GLB-002`, `UI-GLB-007`)
 
 ```typescript
 interface GlobeCameraState {
   focusUnitNormal: THREE.Vector3; // Unit vector pointing to camera center on sphere
   northTangent: THREE.Vector3;    // Orthonormal heading vector
-  altitudeRadius: number;         // Logarithmic zoom range [1.08 .. 3.80]
+  altitudeRadius: number;         // Logarithmic zoom range [1.12 .. 3.60]
+  fovDeg: number;                 // Continuous zoom narrowing 44 deg -> 16 deg below altNorm 0.22
   pitchRad: number;               // Clamped [0.0 .. 0.85]
+  projectionMode: "globe" | "equal_area" | "mercator";
+  projectionMorph01: number;      // Smooth 0 <-> 1 transition tween
   activeFlyTween: FlyTweenState | null;
 }
 ```
 
-### 2.3 Double-Buffered GPU Upload State (`UI-GLB-005`)
+### 2.3 Dual Double-Buffered GPU Upload State (`UI-GLB-005`)
 
-Snapshot updates write updated cell floats into off-screen `Float32Array` staging textures (`DataTexture`) and swap references between frames so `requestAnimationFrame` never stalls waiting on synchronous IPC deserialization or tick bursts.
+Snapshot updates write updated cell bytes into two off-screen double-buffered `128x128` `RGBA8` staging textures:
+- `uCellDataTex`: `[elevationByte, wetnessByte, biomeCodeByte, epistemicAlphaByte]` (strictly `[0, 0, 0, 0]` on `Unexplored`).
+- `uBiophysicalTex`: `[tempByte, aridityByte, packedStrataFertilityByte, packedStrahlerPlumeByte]` (strictly `[0, 0, 0, 0]` on `Unexplored`).
 
 ---
 
 ## 3. Algorithms, Shaders & Zoom-Blend Pipeline
 
-### 3.1 Continuous Physical-to-Cartographic Altitude Cross-Fade (`UI-GLB-003`, `UI-GLB-004`)
-In the globe fragment/vertex shader (`WGSL` / `GLSL` unified via Three.js `ShaderMaterial` / TSL node material):
-1. Compute `cartographicBlend = smoothstep(altReliefMax, altMapMin, cameraAltitude)`.
-2. **Vertex Relief:** Displace vertex radial height by `mix(0.0, surveyedElevationScaled, 1.0 - cartographicBlend)` so mountains flatten smoothly into paper contours as camera zooms to orbit.
-3. **Physical Terrain Pass (`1.0 - cartographicBlend`):** Triplanar-sampled PBR biome textures (bedrock, forest, grass, desert, snow), directional sun shadow lighting, dynamic bathymetry water waves, river channel shading, and instanced settlement/road splines.
-4. **Cartographic Parchment Pass (`cartographicBlend`):**
-   - Triplanar seamless aged parchment grain texture multiplied with muted skin palette tints.
-   - Screen-space elevation contour lines via `fract(elevationMeters / contourStep)` modulated by `fwidth(elevationMeters)` so ink line thickness remains crisp at every zoom level.
-   - Slope cross-hatching driven by surface gradient magnitude and compass rhumb-line graticules drawn in subtle ink opacity.
+### 3.1 Satellite-First Biophysical PBR Shader + Optional Parchment Lens (`UI-GLB-003`, `UI-GLB-004`)
+In [shaders.ts](file:///home/roger/Projects/ng/code/ui/src/globe/shaders.ts):
+1. Compute `cartographicBlend = smoothstep(0.25, 0.75, altitudeNorm)` (`0 -> 1`).
+2. **Vertex Relief & Projection Morph:** Displace vertex radial height by smooth interpolated elevation plus zoom-scaled spherical ridged fBm micro-relief (strictly masked by `knownGate = step(0.55, kSum)` so unexplored horizon remains smooth twilight curvature), then morph cleanly between 3D sphere coordinates and 2D `EqualArea` (`Lambert Azimuthal Equal-Area`) or `Mercator` coordinates via `uProjectionMorph`.
+3. **Biophysical Satellite Surface Pass (`uParchmentMode < 0.5`, Default at All Zooms):**
+   - Continuous Whittaker reflectance from `(tempC, aridity01, fertility01, slope, elevM)` matching ESA Sentinel-2 true-color imagery: Sahara ochre sand, Mediterranean scrub, Atlantic pasture-field mosaic, dark Nordic taiga, slope-exposed bedrock strata, and aspect/temperature snowpack & glaciers.
+   - Shallow-to-abyssal water absorption with suspended teal-ochre river-mouth sediment plumes, capillary Fresnel sky reflection, and polar sea-ice floes.
+   - Screen-space derivative / spherical gradient micro-bump lighting + Rayleigh blue limb glow scaled by `cartographicBlend`.
+   - **Twilight Unmapped Globe + Cloud Feathering:** `kSum < 0.52` renders pure dark twilight unmapped planet with subtle graticules; `0.52 .. 0.86` feathers surveyed terrain softly through multi-octave cloud banks.
+4. **Selectable Antique Parchment Lens (`uParchmentMode > 0.5`):** Cross-fades to aged paper grain, crisp `fwidth` contour isolines, `1px` shoreline ink, and slope cross-hatching at any altitude.
+
+For complete patch LOD, hydrology ribbon, and 4-tier semantic zoom specifications, see [10_photorealistic_planet_and_semantic_zoom_lod.md](file:///home/roger/Projects/ng/design/ui/10_photorealistic_planet_and_semantic_zoom_lod.md).
 
 ### 3.2 Gimbal-Free Polar Navigation (`UI-GLB-002`)
 1. Mouse drag computes incremental arcball quaternion around camera right/up vectors directly on `focusUnitNormal`, eliminating Euler pole singularities.

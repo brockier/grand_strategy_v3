@@ -1,5 +1,6 @@
 import {
   CameraTelemetry,
+  GlobeProjectionMode,
   GlobeRayHit,
   SkinManifestBundle,
   ValidatedPlayerCommand,
@@ -24,6 +25,7 @@ export type UiIntent =
     }
   | { readonly kind: "CloseWindow"; readonly windowId: string }
   | { readonly kind: "SwitchMapOverlayMode"; readonly modeId: string }
+  | { readonly kind: "SwitchGlobeProjection"; readonly projection: GlobeProjectionMode }
   | { readonly kind: "PreviewHqLatencyRoute"; readonly destinationCellId: number | null }
   | { readonly kind: "SwitchActiveSkin"; readonly skinId: string }
   | { readonly kind: "SkinBundleUpdated"; readonly bundle: SkinManifestBundle }

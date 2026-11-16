@@ -45,10 +45,31 @@ lz4_flex = { version = "0.14", default-features = false, features = ["std", "saf
 opt-level = 1
 
 [profile.dev.package.sim-planet]
-opt-level = 2
+opt-level = 3
 
 [profile.dev.package.sim-weather]
-opt-level = 2
+opt-level = 3
 
 [profile.dev.package.sim-clock]
+opt-level = 3
+
+[profile.dev.package.sim-economy]
+opt-level = 2
+
+[profile.dev.package.sim-logistics]
+opt-level = 2
+
+[profile.dev.package.sim-pop]
+opt-level = 2
+
+[profile.dev.package.sim-core]
+opt-level = 2
+
+[profile.dev.package.sim-scenario]
+opt-level = 2
+
+[profile.dev.package.player-view]
+opt-level = 2
+
+[profile.dev.package.sim-plug-private-eco]
 opt-level = 2

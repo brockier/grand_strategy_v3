@@ -402,36 +402,39 @@ fn stranded_or_delayed_transit_transitions_to_overdue_status_without_instant_fai
     };
 
     let hq_cell = world.economy.hq_cell();
-    let hq_nbs = world.planet.cell_neighbors(hq_cell);
     let porter = world.logistics.default_freight_carrier();
+    let is_out_of_sight = |cid: CellId| {
+        !world.planet.is_ocean_cell(cid)
+            && !matches!(
+                world.archive.cell_knowledge(cid.get()),
+                Some(KnownCellDto::Surveyed {
+                    is_live_hq_sight: true,
+                    ..
+                })
+            )
+    };
+    let mut visited = std::collections::BTreeSet::from([hq_cell]);
+    let mut bfs = std::collections::VecDeque::from([hq_cell]);
     let mut remote_pair = None;
-    for &n1 in hq_nbs {
-        if world.planet.is_ocean_cell(n1) {
-            continue;
-        }
-        for &n2 in world.planet.cell_neighbors(n1) {
-            if n2 == hq_cell || hq_nbs.contains(&n2) || world.planet.is_ocean_cell(n2) {
-                continue;
+    'search: while let Some(cur) = bfs.pop_front() {
+        for &nb in world.planet.cell_neighbors(cur) {
+            if visited.insert(nb) && !world.planet.is_ocean_cell(nb) {
+                bfs.push_back(nb);
             }
-            for &n3 in world.planet.cell_neighbors(n2) {
-                if n3 == hq_cell || hq_nbs.contains(&n3) || world.planet.is_ocean_cell(n3) || n3 == n2 {
-                    continue;
-                }
-                if world
-                    .logistics
-                    .plan_route(n2, n3, porter, 100.0, &world.planet, &world.weather, &reg)
-                    .is_some()
-                {
-                    remote_pair = Some((n2, n3));
-                    break;
+            if is_out_of_sight(cur) && is_out_of_sight(nb) {
+                for &n2 in world.planet.cell_neighbors(nb) {
+                    if n2 != cur
+                        && is_out_of_sight(n2)
+                        && world
+                            .logistics
+                            .plan_route(cur, n2, porter, 100.0, &world.planet, &world.weather, &reg)
+                            .is_some()
+                    {
+                        remote_pair = Some((cur, n2));
+                        break 'search;
+                    }
                 }
             }
-            if remote_pair.is_some() {
-                break;
-            }
-        }
-        if remote_pair.is_some() {
-            break;
         }
     }
     let (origin_remote, dest_remote) =

@@ -35,6 +35,18 @@ export interface DepositEstimateDto {
   readonly provenanceLabel: string;
 }
 
+export type GlobeProjectionMode = "globe" | "equal_area" | "mercator";
+
+export interface GlobeMapLabelAnchor {
+  readonly id: string;
+  readonly kind: "settlement" | "formation";
+  readonly entityId: number;
+  readonly text: string;
+  readonly subtitle: string;
+  readonly unit: readonly [number, number, number];
+  readonly isPrimary: boolean;
+}
+
 export type KnownCellDto =
   | {
       readonly tier: "unexplored";
@@ -63,6 +75,13 @@ export type KnownCellDto =
       readonly riverDownstreamCellId?: number | null;
       readonly riverFlowNorm01?: number;
       readonly depositEstimates?: readonly DepositEstimateDto[];
+      readonly meanAnnualTempC?: number;
+      readonly annualPrecipMm?: number;
+      readonly aridityIndex01?: number;
+      readonly soilFertility01?: number;
+      readonly rockStrataCode?: number;
+      readonly drainageAreaKm2?: number;
+      readonly strahlerOrder?: number;
     }
   | {
       readonly tier: "surveyed";
@@ -77,6 +96,13 @@ export type KnownCellDto =
       readonly riverDownstreamCellId?: number | null;
       readonly riverFlowNorm01?: number;
       readonly depositEstimates?: readonly DepositEstimateDto[];
+      readonly meanAnnualTempC?: number;
+      readonly annualPrecipMm?: number;
+      readonly aridityIndex01?: number;
+      readonly soilFertility01?: number;
+      readonly rockStrataCode?: number;
+      readonly drainageAreaKm2?: number;
+      readonly strahlerOrder?: number;
     };
 
 export interface KnownSettlementDto {
@@ -878,7 +904,14 @@ export function isValidDiegeticSnapshot(value: unknown): value is DiegeticSnapsh
         "riverDownstreamCellId" in c ||
         "riverFlowNorm01" in c ||
         "depositEstimates" in c ||
-        "lastLiveTick" in c
+        "lastLiveTick" in c ||
+        "meanAnnualTempC" in c ||
+        "annualPrecipMm" in c ||
+        "aridityIndex01" in c ||
+        "soilFertility01" in c ||
+        "rockStrataCode" in c ||
+        "drainageAreaKm2" in c ||
+        "strahlerOrder" in c
       ) {
         return false;
       }
