@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -49,21 +49,33 @@ interface SmokePayload {
   } | null;
 }
 
-function runElectronSmoke(extraArgs: string[]): { durationMs: number; result: SmokePayload } {
+function runElectronSmoke(extraArgs: string[]): {
+  durationMs: number;
+  stderr: string;
+  result: SmokePayload;
+} {
   const start = Date.now();
-  const stdout = execFileSync(ELECTRON_BIN, [MAIN_JS, ...extraArgs], {
+  const proc = spawnSync(ELECTRON_BIN, [MAIN_JS, ...extraArgs], {
     cwd: UI_ROOT,
     env: { ...process.env, NG_HEADLESS_TEST: "1" },
     encoding: "utf8",
     timeout: 25000,
     stdio: ["ignore", "pipe", "pipe"],
   });
+  const stdout = proc.stdout ?? "";
+  const stderr = proc.stderr ?? "";
+  if (proc.status !== 0) {
+    throw new Error(
+      `Electron exited with status ${String(proc.status)}:\nSTDOUT:\n${stdout}\nSTDERR:\n${stderr}`,
+    );
+  }
   const line = stdout.split(/\r?\n/).find((l) => l.startsWith("SMOKE_RESULT:"));
   if (!line) {
-    throw new Error(`Missing SMOKE_RESULT line in Electron output:\n${stdout}`);
+    throw new Error(`Missing SMOKE_RESULT line in Electron output:\n${stdout}\nSTDERR:\n${stderr}`);
   }
   return {
     durationMs: Date.now() - start,
+    stderr,
     result: JSON.parse(line.slice("SMOKE_RESULT:".length)) as SmokePayload,
   };
 }
@@ -72,8 +84,9 @@ describe("Electron Security Sandbox, GPU Geodesic Globe & Mod Recovery", () => {
   // @req UI-SHL-001
   // @req UI-SHL-003
   it("boots Electron with contextIsolation, Chromium sandbox, Dawn WebGPU/WebGL2 shader compilation, and strict IPC validation (UI-SHL-001, UI-SHL-003)", () => {
-    const { result } = runElectronSmoke(["--smoke-mode=healthy"]);
+    const { result, stderr } = runElectronSmoke(["--smoke-mode=healthy"]);
     const status = result.initial.status;
+    expect(stderr).not.toContain("is not compatible with Vulkan");
 
     // UI-SHL-001 assertions
     expect(status.ready).toBe(true);

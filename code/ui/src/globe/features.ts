@@ -152,12 +152,18 @@ export class GlobeFeatureOverlayGroup {
       roughness: 0.28,
       metalness: 0.14,
       side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
     });
     this.roadMat = new THREE.MeshStandardMaterial({
       color: rgbToThreeColor(palette?.roadOchreRgb ?? [166, 89, 40]),
       roughness: 0.86,
       metalness: 0.04,
       side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
     });
     this.dashedRouteMat = new THREE.LineDashedMaterial({
       color: rgbToThreeColor(palette?.roadOchreRgb ?? [166, 89, 40]),

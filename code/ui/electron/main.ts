@@ -9,17 +9,6 @@ import { runM2E2ESmokePhase } from "./m2-e2e-smoke";
 import { runM3M4E2ESmokePhase } from "./m3-m4-e2e-smoke";
 import { runM5M6M7E2ESmoke } from "./m5-m6-m7-e2e-smoke";
 
-// Enable Chromium Dawn WebGPU with Vulkan + WebGL2 fallback across Linux X11, Wayland & Windows.
-app.commandLine.appendSwitch("enable-unsafe-webgpu");
-app.commandLine.appendSwitch("enable-features", "Vulkan");
-app.commandLine.appendSwitch("enable-webgl");
-app.commandLine.appendSwitch("ignore-gpu-blocklist");
-if (process.env.NG_SOFTWARE_GL === "1") {
-  app.commandLine.appendSwitch("use-gl", "angle");
-  app.commandLine.appendSwitch("use-angle", "swiftshader-webgl");
-  app.commandLine.appendSwitch("enable-unsafe-swiftshader");
-}
-
 function getArgValue(prefix: string): string | null {
   for (const arg of process.argv) {
     if (arg.startsWith(prefix)) {
@@ -27,6 +16,29 @@ function getArgValue(prefix: string): string | null {
     }
   }
   return null;
+}
+
+const explicitOzone = getArgValue("--ozone-platform=");
+const isLinuxWayland =
+  process.platform === "linux" &&
+  Boolean(process.env.WAYLAND_DISPLAY || process.env.XDG_SESSION_TYPE === "wayland");
+
+// Enable Chromium Dawn WebGPU with Vulkan + WebGL2 fallback across Linux X11, Wayland & Windows.
+app.commandLine.appendSwitch("enable-unsafe-webgpu");
+app.commandLine.appendSwitch("enable-webgl");
+app.commandLine.appendSwitch("ignore-gpu-blocklist");
+if (isLinuxWayland && !explicitOzone && Boolean(process.env.DISPLAY)) {
+  app.commandLine.appendSwitch("ozone-platform", "x11");
+  app.commandLine.appendSwitch("enable-features", "Vulkan");
+} else if ((isLinuxWayland && !explicitOzone && !process.env.DISPLAY) || explicitOzone === "wayland") {
+  // Native Wayland Ozone rejects Vulkan on shared GPU surfaces; leave Vulkan disabled on pure Wayland.
+} else {
+  app.commandLine.appendSwitch("enable-features", "Vulkan");
+}
+if (process.env.NG_SOFTWARE_GL === "1") {
+  app.commandLine.appendSwitch("use-gl", "angle");
+  app.commandLine.appendSwitch("use-angle", "swiftshader-webgl");
+  app.commandLine.appendSwitch("enable-unsafe-swiftshader");
 }
 
 const SMOKE_MODE = getArgValue("--smoke-mode=");

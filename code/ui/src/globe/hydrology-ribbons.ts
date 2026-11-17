@@ -581,7 +581,7 @@ export function buildHydrologyRibbonMesh(
         const prevU = spanUnits[Math.max(0, k - 1)];
         const nextU = spanUnits[Math.min(spanUnits.length - 1, k + 1)];
         const s = surfaceSampler.sample(u, cell.cellId, dstId, altitudeNorm);
-        const lift = (flatMode ? s.vertexReliefHeight * 0.65 : s.vertexReliefHeight) + (flatMode ? 0.004 : 0.0035);
+        const lift = (flatMode ? s.vertexReliefHeight * 0.65 : s.vertexReliefHeight) + (flatMode ? 0.0015 : 0.0008);
         const guardedHw = safeDryHalfWidth(
           surfaceSampler,
           u,
@@ -750,7 +750,7 @@ export function buildRoadRibbonMesh(
     const roadMul = road.infraKey.includes("metalled") || road.infraKey.includes("rail") ? 1.35 : 1.0;
     for (const pt of points) {
       const s = surfaceSampler.sample(pt, road.fromCellId, road.toCellId, altitudeNorm);
-      const lift = (flatMode ? s.vertexReliefHeight * 0.65 : s.vertexReliefHeight) + (flatMode ? 0.005 : 0.0042);
+      const lift = (flatMode ? s.vertexReliefHeight * 0.65 : s.vertexReliefHeight) + (flatMode ? 0.002 : 0.0012);
       projectedPts.push(projectPoint(pt, lift));
       halfWidths.push(hw * roadMul * flatScale);
       upNormals.push(
