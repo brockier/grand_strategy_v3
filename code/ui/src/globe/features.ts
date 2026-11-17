@@ -4,6 +4,7 @@ import {
   GlobePalette,
   GoldbergCellGeometry,
   GoldbergTopologyData,
+  greatCircleRadians,
   norm3,
   RgbTuple,
   slerpUnitVec3,
@@ -12,6 +13,8 @@ import {
 import {
   buildHydrologyRibbonMesh,
   buildRoadRibbonMesh,
+  createShaderTerrainSurfaceSampler,
+  ShaderTerrainSurfaceSampler,
   SurfacePointProjector,
 } from "./hydrology-ribbons";
 import {
@@ -60,19 +63,23 @@ export interface FeatureOverlayRenderSummary {
   readonly noRetreatCount: number;
 }
 
-function appendProjectedArcSegments(
+function appendGroundedArcSegments(
   target: THREE.Vector3[],
   a: Vec3,
   b: Vec3,
   segments: number,
-  lift: number,
+  clearance: number,
+  arcLoft: number,
   projectPoint: SurfacePointProjector,
+  groundAt: (u: Vec3) => number,
 ): void {
   const count = Math.max(2, segments);
   const pts: THREE.Vector3[] = [];
   for (let i = 0; i <= count; i += 1) {
     const t = i / count;
-    pts.push(projectPoint(slerpUnitVec3(a, b, t), lift));
+    const u = slerpUnitVec3(a, b, t);
+    const lift = groundAt(u) + clearance + Math.sin(Math.PI * t) * arcLoft;
+    pts.push(projectPoint(u, lift));
   }
   for (let i = 0; i + 1 < pts.length; i += 1) {
     if (pts[i].distanceTo(pts[i + 1]) <= 0.72) {
@@ -115,6 +122,8 @@ export class GlobeFeatureOverlayGroup {
   private labelAnchors: MapLabelAnchor[] = [];
   private lastSnapshot: DiegeticSnapshot | null = null;
   private lastTopology: GoldbergTopologyData | null = null;
+  private lastSampler: ShaderTerrainSurfaceSampler | null = null;
+  private lastFocusUnit: Vec3 | null = null;
   private lastModeId = "terrain";
   private lastPreviewDest: number | null = null;
   private lastAltitudeNorm = 0.62;
@@ -326,12 +335,21 @@ export class GlobeFeatureOverlayGroup {
     altitudeNorm: number,
     projectPoint: SurfacePointProjector,
     flatMode: boolean,
+    focusUnit?: Vec3,
+    externalSampler?: ShaderTerrainSurfaceSampler,
   ): void {
+    this.detailClusters.updateForCameraFrame(altitudeNorm);
     const nextTier = classifySemanticZoomTier(altitudeNorm);
+    const focusMovedFar = Boolean(
+      (nextTier === "settlement" || nextTier === "regional") &&
+        focusUnit &&
+        (!this.lastFocusUnit || greatCircleRadians(focusUnit, this.lastFocusUnit) > 0.18),
+    );
     const zoomStepChanged =
       nextTier !== this.lastSemanticTier ||
-      Math.abs(altitudeNorm - this.lastAltitudeNorm) > 0.08 ||
-      flatMode !== this.lastFlatMode;
+      Math.abs(altitudeNorm - this.lastAltitudeNorm) > 0.16 ||
+      flatMode !== this.lastFlatMode ||
+      focusMovedFar;
     if (!zoomStepChanged || !this.lastSnapshot || !this.lastTopology) {
       return;
     }
@@ -343,6 +361,8 @@ export class GlobeFeatureOverlayGroup {
       altitudeNorm,
       projectPoint,
       flatMode,
+      focusUnit ?? this.lastFocusUnit ?? undefined,
+      externalSampler ?? this.lastSampler ?? undefined,
     );
   }
 
@@ -365,6 +385,8 @@ export class GlobeFeatureOverlayGroup {
     altitudeNorm = 0.62,
     projectPoint: SurfacePointProjector = defaultSphereProjector,
     flatMode = false,
+    focusUnit?: Vec3,
+    externalSampler?: ShaderTerrainSurfaceSampler,
   ): void {
     this.clearFeatureMeshes();
     this.lastSnapshot = snapshot;
@@ -374,7 +396,15 @@ export class GlobeFeatureOverlayGroup {
     this.lastAltitudeNorm = altitudeNorm;
     this.lastSemanticTier = classifySemanticZoomTier(altitudeNorm);
     this.lastFlatMode = flatMode;
+    this.lastFocusUnit = focusUnit ?? null;
     this.labelAnchors = [];
+
+    const surfaceSampler = externalSampler ?? createShaderTerrainSurfaceSampler(snapshot, topology);
+    this.lastSampler = surfaceSampler;
+
+    const flatReliefScale = flatMode ? 0.65 : 1.0;
+    const terrainHeightAt = (u: Vec3, hintA = 0, hintB = hintA): number =>
+      surfaceSampler.sample(u, hintA, hintB, altitudeNorm).vertexReliefHeight * flatReliefScale;
 
     const cellMap = new Map<number, GoldbergCellGeometry>();
     for (const c of topology.cells) cellMap.set(c.cellId, c);
@@ -401,6 +431,7 @@ export class GlobeFeatureOverlayGroup {
       this.riverMat,
       projectPoint,
       flatMode,
+      surfaceSampler,
     );
     if (riverBuild.mesh) {
       this.group.add(riverBuild.mesh);
@@ -415,6 +446,7 @@ export class GlobeFeatureOverlayGroup {
       this.roadMat,
       projectPoint,
       flatMode,
+      surfaceSampler,
     );
     if (roadMesh) {
       this.group.add(roadMesh);
@@ -425,7 +457,16 @@ export class GlobeFeatureOverlayGroup {
       const src = cellMap.get(road.fromCellId);
       const dst = cellMap.get(road.toCellId);
       if (!src || !dst) continue;
-      appendProjectedArcSegments(washedRoadSegs, src.centerUnit, dst.centerUnit, 8, 0.009, projectPoint);
+      appendGroundedArcSegments(
+        washedRoadSegs,
+        src.centerUnit,
+        dst.centerUnit,
+        8,
+        0.0022,
+        0.001,
+        projectPoint,
+        (u) => terrainHeightAt(u, road.fromCellId, road.toCellId),
+      );
     }
     if (washedRoadSegs.length > 0) {
       const geom = new THREE.BufferGeometry().setFromPoints(washedRoadSegs);
@@ -438,27 +479,36 @@ export class GlobeFeatureOverlayGroup {
     const declustered = computeDeclusteredEntityOffsets(snapshot, cellMap, altitudeNorm);
     const leaderSegs: THREE.Vector3[] = [];
 
-    // 3. Lit stepped civic settlement monuments + map label anchors.
+    // 3. Lit stepped civic settlement monuments (compact central beacon in settlement tier) + map label anchors.
+    const plazaMonumentScale = this.lastSemanticTier === "settlement" ? 0.34 : 1.0;
     for (const settlement of snapshot.knownSettlements ?? []) {
       const cell = cellMap.get(settlement.cellId);
       if (!cell) continue;
       const up = surfaceNormalFor(cell.centerUnit);
       const quat = new THREE.Quaternion().setFromUnitVectors(yUp, up);
+      const gLift = terrainHeightAt(cell.centerUnit, cell.cellId);
 
       const plinth = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.011 * markerScale, 0.014 * markerScale, 0.008 * markerScale, 8),
+        new THREE.CylinderGeometry(
+          0.011 * markerScale * plazaMonumentScale,
+          0.014 * markerScale * plazaMonumentScale,
+          0.008 * markerScale * plazaMonumentScale,
+          8,
+        ),
         this.settlementMat,
       );
-      plinth.position.copy(projectPoint(cell.centerUnit, 0.013));
+      plinth.position.copy(
+        projectPoint(cell.centerUnit, gLift + (this.lastSemanticTier === "settlement" ? 0.0085 : 0.0055)),
+      );
       plinth.quaternion.copy(quat);
       this.group.add(plinth);
 
-      if (settlement.isHq) {
+      if (settlement.isHq && this.lastSemanticTier !== "settlement") {
         const spire = new THREE.Mesh(
           new THREE.ConeGeometry(0.007 * markerScale, 0.011 * markerScale, 6),
           this.hqRingMat,
         );
-        spire.position.copy(projectPoint(cell.centerUnit, 0.013 + 0.008 * markerScale));
+        spire.position.copy(projectPoint(cell.centerUnit, gLift + 0.006 + 0.008 * markerScale));
         spire.quaternion.copy(quat);
         this.group.add(spire);
       }
@@ -480,9 +530,10 @@ export class GlobeFeatureOverlayGroup {
     // 4. Live HQ beacon ring, communication latency contours (`UI-MAP-001`), and relocation preview arc (`UI-HUD-005`).
     const hqCell = cellMap.get(snapshot.hqPresence.cellId);
     if (hqCell) {
+      const hqLift = terrainHeightAt(hqCell.centerUnit, hqCell.cellId);
       const ringGeom = new THREE.RingGeometry(0.020 * markerScale, 0.028 * markerScale, 28);
       const ring = new THREE.Mesh(ringGeom, this.hqRingMat);
-      ring.position.copy(projectPoint(hqCell.centerUnit, 0.016));
+      ring.position.copy(projectPoint(hqCell.centerUnit, hqLift + 0.0045));
       ring.quaternion.setFromUnitVectors(zUp, surfaceNormalFor(hqCell.centerUnit));
       this.group.add(ring);
     }
@@ -497,7 +548,7 @@ export class GlobeFeatureOverlayGroup {
         const inner = (0.012 + Math.min(0.025, sample.estimatedCourierHours * 0.0005)) * markerScale;
         const ringGeom = new THREE.RingGeometry(inner, inner + 0.005 * markerScale, 16);
         const ring = new THREE.Mesh(ringGeom, this.contourRingMat);
-        ring.position.copy(projectPoint(cell.centerUnit, 0.014));
+        ring.position.copy(projectPoint(cell.centerUnit, terrainHeightAt(cell.centerUnit, cell.cellId) + 0.0038));
         ring.quaternion.setFromUnitVectors(zUp, surfaceNormalFor(cell.centerUnit));
         this.group.add(ring);
       }
@@ -510,7 +561,16 @@ export class GlobeFeatureOverlayGroup {
       const dstCell = cellMap.get(activePreviewTarget);
       if (dstCell) {
         const previewSegs: THREE.Vector3[] = [];
-        appendProjectedArcSegments(previewSegs, hqCell.centerUnit, dstCell.centerUnit, 14, 0.024, projectPoint);
+        appendGroundedArcSegments(
+          previewSegs,
+          hqCell.centerUnit,
+          dstCell.centerUnit,
+          14,
+          0.005,
+          0.014,
+          projectPoint,
+          (u) => terrainHeightAt(u, hqCell.cellId, dstCell.cellId),
+        );
         if (previewSegs.length > 0) {
           const arcGeom = new THREE.BufferGeometry().setFromPoints(previewSegs);
           const arcLine = new THREE.LineSegments(arcGeom, this.previewRouteMat);
@@ -520,7 +580,9 @@ export class GlobeFeatureOverlayGroup {
 
         const targetRingGeom = new THREE.RingGeometry(0.018 * markerScale, 0.026 * markerScale, 20);
         const targetRing = new THREE.Mesh(targetRingGeom, this.hqRingMat);
-        targetRing.position.copy(projectPoint(dstCell.centerUnit, 0.018));
+        targetRing.position.copy(
+          projectPoint(dstCell.centerUnit, terrainHeightAt(dstCell.centerUnit, dstCell.cellId) + 0.005),
+        );
         targetRing.quaternion.setFromUnitVectors(zUp, surfaceNormalFor(dstCell.centerUnit));
         this.group.add(targetRing);
       }
@@ -544,11 +606,20 @@ export class GlobeFeatureOverlayGroup {
       const dec = declustered.convoys.get(convoy.convoyId);
       const convoyUnit = dec?.displayUnit ?? rawUnit;
       if (dec?.offsetApplied) {
-        appendProjectedArcSegments(leaderSegs, dec.anchorUnit, convoyUnit, 2, 0.015, projectPoint);
+        appendGroundedArcSegments(
+          leaderSegs,
+          dec.anchorUnit,
+          convoyUnit,
+          2,
+          0.004,
+          0,
+          projectPoint,
+          (u) => terrainHeightAt(u, convoy.projectedCellId),
+        );
       }
 
       const statusLower = convoy.status.toLowerCase();
-      const pos = projectPoint(convoyUnit, 0.019);
+      const pos = projectPoint(convoyUnit, terrainHeightAt(convoyUnit, convoy.projectedCellId) + 0.0075);
       const up = surfaceNormalFor(convoyUnit);
       const quat = new THREE.Quaternion().setFromUnitVectors(yUp, up);
 
@@ -595,7 +666,16 @@ export class GlobeFeatureOverlayGroup {
         for (let i = 0; i + 1 < waypoints.length; i += 1) {
           const wpA: Vec3 = [waypoints[i][0], waypoints[i][1], waypoints[i][2]];
           const wpB: Vec3 = [waypoints[i + 1][0], waypoints[i + 1][1], waypoints[i + 1][2]];
-          appendProjectedArcSegments(dashedRouteSegs, wpA, wpB, 4, 0.015, projectPoint);
+          appendGroundedArcSegments(
+            dashedRouteSegs,
+            wpA,
+            wpB,
+            4,
+            0.004,
+            0.002,
+            projectPoint,
+            (u) => terrainHeightAt(u, convoy.projectedCellId),
+          );
         }
       } else {
         const route = convoy.routeCells ?? [];
@@ -603,7 +683,16 @@ export class GlobeFeatureOverlayGroup {
           const src = cellMap.get(route[i]);
           const dst = cellMap.get(route[i + 1]);
           if (!src || !dst) continue;
-          appendProjectedArcSegments(dashedRouteSegs, src.centerUnit, dst.centerUnit, 6, 0.015, projectPoint);
+          appendGroundedArcSegments(
+            dashedRouteSegs,
+            src.centerUnit,
+            dst.centerUnit,
+            6,
+            0.004,
+            0.002,
+            projectPoint,
+            (u) => terrainHeightAt(u, route[i], route[i + 1]),
+          );
         }
       }
     }
@@ -632,6 +721,7 @@ export class GlobeFeatureOverlayGroup {
       const windSpeed = Math.hypot(u, v);
       const flood = w.floodStage01 ?? 0;
       const snow = w.snowDepthM ?? 0;
+      const wLift = terrainHeightAt(cell.centerUnit, w.cellId);
 
       if (windSpeed > 0.4) {
         windVectorCount += 1;
@@ -647,8 +737,8 @@ export class GlobeFeatureOverlayGroup {
             cell.centerUnit[1] + dirVec.y * len,
             cell.centerUnit[2] + dirVec.z * len,
           ]);
-          const p0 = projectPoint(cell.centerUnit, 0.019);
-          const p1 = projectPoint(tipUnit, 0.019);
+          const p0 = projectPoint(cell.centerUnit, wLift + 0.009);
+          const p1 = projectPoint(tipUnit, terrainHeightAt(tipUnit, w.cellId) + 0.009);
           if (p0.distanceTo(p1) <= 0.5) {
             windSegs.push(p0, p1);
           }
@@ -660,7 +750,7 @@ export class GlobeFeatureOverlayGroup {
         if (showWeatherDetails) {
           const floodGeom = new THREE.RingGeometry(0.013 * markerScale, 0.020 * markerScale, 16);
           const floodRing = new THREE.Mesh(floodGeom, this.floodRingMat);
-          floodRing.position.copy(projectPoint(cell.centerUnit, 0.015));
+          floodRing.position.copy(projectPoint(cell.centerUnit, wLift + 0.0045));
           floodRing.quaternion.setFromUnitVectors(zUp, surfaceNormalFor(cell.centerUnit));
           this.group.add(floodRing);
         }
@@ -669,7 +759,7 @@ export class GlobeFeatureOverlayGroup {
       if (snow > 0.05 && showWeatherDetails) {
         const snowGeom = new THREE.SphereGeometry(0.008 * markerScale, 8, 6);
         const snowMesh = new THREE.Mesh(snowGeom, this.snowMarkerMat);
-        snowMesh.position.copy(projectPoint(cell.centerUnit, 0.016));
+        snowMesh.position.copy(projectPoint(cell.centerUnit, wLift + 0.006));
         this.group.add(snowMesh);
       }
     }
@@ -696,7 +786,16 @@ export class GlobeFeatureOverlayGroup {
           : destCell?.centerUnit ?? null;
         if (srcUnit && dstUnit) {
           tradeRibbonCount += 1;
-          appendProjectedArcSegments(tradeSegs, srcUnit, dstUnit, 12, 0.019, projectPoint);
+          appendGroundedArcSegments(
+            tradeSegs,
+            srcUnit,
+            dstUnit,
+            12,
+            0.0045,
+            0.008,
+            projectPoint,
+            (u) => terrainHeightAt(u, convoy.originCellId ?? convoy.projectedCellId, convoy.destinationCellId ?? convoy.projectedCellId),
+          );
         }
       }
       const settlementCellById = new Map<number, GoldbergCellGeometry>();
@@ -714,7 +813,16 @@ export class GlobeFeatureOverlayGroup {
           const cellB = settlementCellById.get(b.settlementId);
           if (!cellA || !cellB) continue;
           tradeRibbonCount += 1;
-          appendProjectedArcSegments(tradeSegs, cellA.centerUnit, cellB.centerUnit, 10, 0.019, projectPoint);
+          appendGroundedArcSegments(
+            tradeSegs,
+            cellA.centerUnit,
+            cellB.centerUnit,
+            10,
+            0.0045,
+            0.006,
+            projectPoint,
+            (u) => terrainHeightAt(u, cellA.cellId, cellB.cellId),
+          );
         }
       }
       if (tradeSegs.length > 0) {
@@ -729,7 +837,16 @@ export class GlobeFeatureOverlayGroup {
         const dst = cellMap.get(edge.toCellId);
         if (!src || !dst) continue;
         congestedCorridorCount += 1;
-        appendProjectedArcSegments(congestedSegs, src.centerUnit, dst.centerUnit, 8, 0.021, projectPoint);
+        appendGroundedArcSegments(
+          congestedSegs,
+          src.centerUnit,
+          dst.centerUnit,
+          8,
+          0.0055,
+          0.002,
+          projectPoint,
+          (u) => terrainHeightAt(u, edge.fromCellId, edge.toCellId),
+        );
       }
       if (congestedSegs.length > 0) {
         const geom = new THREE.BufferGeometry().setFromPoints(congestedSegs);
@@ -753,7 +870,16 @@ export class GlobeFeatureOverlayGroup {
           formation.currentUnitXyz[2],
         ];
         if (dec?.offsetApplied) {
-          appendProjectedArcSegments(leaderSegs, dec.anchorUnit, fUnit, 2, 0.015, projectPoint);
+          appendGroundedArcSegments(
+            leaderSegs,
+            dec.anchorUnit,
+            fUnit,
+            2,
+            0.004,
+            0,
+            projectPoint,
+            (u) => terrainHeightAt(u, formation.currentCellId),
+          );
         }
 
         const ageTicks = Math.max(0, currentTick - formation.observedTick);
@@ -761,12 +887,13 @@ export class GlobeFeatureOverlayGroup {
         const up = surfaceNormalFor(fUnit);
         const quat = new THREE.Quaternion().setFromUnitVectors(yUp, up);
         const fMat = isFresh ? this.formationFreshMat : this.formationStaleMat;
+        const fLift = terrainHeightAt(fUnit, formation.currentCellId);
 
         const baseBlock = new THREE.Mesh(
           new THREE.BoxGeometry(0.014 * markerScale, 0.005 * markerScale, 0.009 * markerScale),
           fMat,
         );
-        baseBlock.position.copy(projectPoint(fUnit, 0.019));
+        baseBlock.position.copy(projectPoint(fUnit, fLift + 0.0065));
         baseBlock.quaternion.copy(quat);
         this.group.add(baseBlock);
 
@@ -774,7 +901,7 @@ export class GlobeFeatureOverlayGroup {
           new THREE.ConeGeometry(0.006 * markerScale, 0.011 * markerScale, 4),
           fMat,
         );
-        banner.position.copy(projectPoint(fUnit, 0.019 + 0.007 * markerScale));
+        banner.position.copy(projectPoint(fUnit, fLift + 0.0065 + 0.007 * markerScale));
         banner.quaternion.copy(quat);
         this.group.add(banner);
 
@@ -795,13 +922,22 @@ export class GlobeFeatureOverlayGroup {
               formation.targetUnitXyz[1],
               formation.targetUnitXyz[2],
             ];
-            appendProjectedArcSegments(phaseSegs, fUnit, targetUnit, 10, 0.022, projectPoint);
+            appendGroundedArcSegments(
+              phaseSegs,
+              fUnit,
+              targetUnit,
+              10,
+              0.005,
+              0.006,
+              projectPoint,
+              (u) => terrainHeightAt(u, formation.currentCellId, formation.targetCellId),
+            );
           }
           if (formation.noRetreatOrder) {
             noRetreatCount += 1;
             const nrRingGeom = new THREE.RingGeometry(0.018 * markerScale, 0.024 * markerScale, 16);
             const nrRing = new THREE.Mesh(nrRingGeom, this.noRetreatRingMat);
-            nrRing.position.copy(projectPoint(fUnit, 0.021));
+            nrRing.position.copy(projectPoint(fUnit, fLift + 0.006));
             nrRing.quaternion.setFromUnitVectors(zUp, up);
             this.group.add(nrRing);
           }
@@ -828,7 +964,16 @@ export class GlobeFeatureOverlayGroup {
           if (!srcUnit || !dstCell) continue;
           theaterVectorCount += 1;
           const theaterSegs: THREE.Vector3[] = [];
-          appendProjectedArcSegments(theaterSegs, srcUnit, dstCell.centerUnit, 12, 0.024, projectPoint);
+          appendGroundedArcSegments(
+            theaterSegs,
+            srcUnit,
+            dstCell.centerUnit,
+            12,
+            0.0055,
+            0.012,
+            projectPoint,
+            (u) => terrainHeightAt(u, theaterFormation?.currentCellId ?? hqCell?.cellId ?? 0, dstCell.cellId),
+          );
           if (theaterSegs.length > 0) {
             const geom = new THREE.BufferGeometry().setFromPoints(theaterSegs);
             const line = new THREE.LineSegments(geom, this.theaterVectorMat);
@@ -844,7 +989,7 @@ export class GlobeFeatureOverlayGroup {
       this.group.add(new THREE.LineSegments(geom, this.leaderTickMat));
     }
 
-    // 9. Procedural Tier-2/Tier-3 3D settlement architecture & military tent encampments (`UI-GLB-006`).
+    // 9. Procedural Tier-2/Tier-3 3D settlement architecture, military camps & instanced forests (`UI-GLB-006`).
     const settlementClusterCount = this.detailClusters.rebuild(
       snapshot,
       topology,
@@ -853,6 +998,8 @@ export class GlobeFeatureOverlayGroup {
       altitudeNorm,
       projectPoint,
       flatMode,
+      surfaceSampler,
+      focusUnit,
     );
 
     this.lastSummary = {

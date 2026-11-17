@@ -7,9 +7,9 @@ import {
   Vec3,
 } from "../spine";
 
-export type LodLevel = 0 | 1 | 2 | 3;
+export type LodLevel = 0 | 1 | 2 | 3 | 4;
 
-const SUBDIV_PER_LOD: readonly [number, number, number, number] = [1, 2, 4, 8];
+const SUBDIV_PER_LOD: readonly [number, number, number, number, number] = [1, 2, 4, 8, 16];
 
 interface PatchDescriptor {
   readonly sectorId: number;
@@ -293,7 +293,7 @@ function buildPatchGeometry(
 }
 
 /**
- * Spatial spherical sector patch manager selecting `LOD 0..3` subdivision tiers dynamically
+ * Spatial spherical sector patch manager selecting `LOD 0..4` subdivision tiers dynamically
  * around `focusUnit` while horizon-culling back-hemisphere patches (`UI-GLB-006`).
  */
 export class GlobePatchLodManager {
@@ -331,14 +331,27 @@ export class GlobePatchLodManager {
     // Allow generous back-hemisphere margin for grazing limb twilight & atmospheric glow.
     const cullCosLimit = -0.35 - altitudeNorm * 0.15;
 
-    for (const p of this.patches) {
+    const patchMetrics = this.patches.map((p) => {
       const dotFocus =
         p.descriptor.centerUnit[0] * f[0] +
         p.descriptor.centerUnit[1] * f[1] +
         p.descriptor.centerUnit[2] * f[2];
       const ang = Math.acos(Math.max(-1, Math.min(1, dotFocus)));
       const rimAng = Math.max(0, ang - p.descriptor.angularRadiusRad);
+      return { patch: p, ang, rimAng };
+    });
 
+    const lod4Allowed = new Set<number>();
+    if ((flatVisible && altitudeNorm < 0.14) || (!flatVisible && altitudeNorm < 0.16)) {
+      const ranked = [...patchMetrics]
+        .filter((m) => m.rimAng < 0.14)
+        .sort((a, b) => a.ang - b.ang || a.patch.descriptor.sectorId - b.patch.descriptor.sectorId);
+      for (let i = 0; i < Math.min(2, ranked.length); i += 1) {
+        lod4Allowed.add(ranked[i].patch.descriptor.sectorId);
+      }
+    }
+
+    for (const { patch: p, rimAng } of patchMetrics) {
       if (!flatVisible && Math.cos(rimAng) < cullCosLimit) {
         p.mesh.visible = false;
         continue;
@@ -347,20 +360,27 @@ export class GlobePatchLodManager {
 
       let targetLod: LodLevel = 0;
       if (flatVisible) {
-        if (altitudeNorm < 0.18 && rimAng < 0.28) targetLod = 3;
-        else if (altitudeNorm < 0.36 && rimAng < 0.55) targetLod = 2;
-        else if (altitudeNorm < 0.70) targetLod = 1;
+        if (altitudeNorm < 0.14 && lod4Allowed.has(p.descriptor.sectorId)) targetLod = 4;
+        else if (altitudeNorm < 0.22 && rimAng < 0.36) targetLod = 3;
+        else if (altitudeNorm < 0.40 && rimAng < 0.58) targetLod = 2;
+        else if (altitudeNorm < 0.72) targetLod = 1;
         else targetLod = 0;
       } else if (altitudeNorm < 0.16) {
-        if (rimAng < 0.24) targetLod = 3;
+        if (lod4Allowed.has(p.descriptor.sectorId)) targetLod = 4;
+        else if (rimAng < 0.36) targetLod = 3;
+        else if (rimAng < 0.64) targetLod = 2;
+        else if (rimAng < 0.98) targetLod = 1;
+        else targetLod = 0;
+      } else if (altitudeNorm < 0.28) {
+        if (rimAng < 0.26) targetLod = 3;
         else if (rimAng < 0.56) targetLod = 2;
         else if (rimAng < 0.95) targetLod = 1;
         else targetLod = 0;
-      } else if (altitudeNorm < 0.34) {
-        if (rimAng < 0.42) targetLod = 2;
+      } else if (altitudeNorm < 0.42) {
+        if (rimAng < 0.44) targetLod = 2;
         else if (rimAng < 0.92) targetLod = 1;
         else targetLod = 0;
-      } else if (altitudeNorm < 0.65 && rimAng < 0.85) {
+      } else if (altitudeNorm < 0.68 && rimAng < 0.85) {
         targetLod = 1;
       }
 
@@ -376,8 +396,8 @@ export class GlobePatchLodManager {
     }
   }
 
-  getLodCounts(): readonly [number, number, number, number] {
-    const counts: [number, number, number, number] = [0, 0, 0, 0];
+  getLodCounts(): readonly [number, number, number, number, number] {
+    const counts: [number, number, number, number, number] = [0, 0, 0, 0, 0];
     for (const p of this.patches) {
       if (!p.mesh.visible) continue;
       counts[p.currentLod] += 1;
@@ -398,7 +418,7 @@ export class GlobePatchLodManager {
   private disposeGeometries(): void {
     for (const p of this.patches) {
       this.group.remove(p.mesh);
-      for (const lod of [0, 1, 2, 3] as const) {
+      for (const lod of [0, 1, 2, 3, 4] as const) {
         p.geomCache[lod]?.dispose();
       }
     }

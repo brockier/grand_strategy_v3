@@ -142,11 +142,12 @@ export interface ShaderTerrainSurfaceSampler {
     hintCellB: number,
     altitudeNorm: number,
   ): ShaderTerrainSample;
+  nearestCellId(unit: Vec3, startCellHint?: number): number;
 }
 
 /**
- * Evaluates the globe shader's exact interpolated coastline elevation and displacement field on the CPU
- * so river ribbons terminate cleanly at the land/sea shoreline (`UI-GLB-006`, `UI-MAP-008`).
+ * Evaluates the globe shader's exact interpolated coastline elevation and 3D land relief field on the CPU
+ * so river ribbons terminate cleanly at the land/sea shoreline and 3D buildings/trees stay grounded (`UI-GLB-006`, `UI-MAP-008`).
  */
 export function createShaderTerrainSurfaceSampler(
   snapshot: DiegeticSnapshot,
@@ -154,8 +155,10 @@ export function createShaderTerrainSurfaceSampler(
 ): ShaderTerrainSurfaceSampler {
   const nCells = topology.cellCount;
   const knownMask = new Uint8Array(nCells);
+  const bioValidMask = new Uint8Array(nCells);
   const elevNorm = new Float32Array(nCells);
   const isLand = new Uint8Array(nCells);
+  const strahlerOrder = new Float32Array(nCells);
 
   for (const cell of snapshot.knownCells) {
     if (cell.cellId < 0 || cell.cellId >= nCells || cell.tier === "unexplored") continue;
@@ -164,6 +167,13 @@ export function createShaderTerrainSurfaceSampler(
     const norm = elevByte / 255;
     elevNorm[cell.cellId] = norm;
     isLand[cell.cellId] = norm >= 0.499 ? 1 : 0;
+    if (cell.tier === "stale" || cell.tier === "surveyed") {
+      bioValidMask[cell.cellId] = 1;
+      strahlerOrder[cell.cellId] = Math.max(
+        0,
+        Math.min(7, cell.strahlerOrder ?? ((cell.riverFlowNorm01 ?? 0) > 0.45 ? 2 : 1)),
+      );
+    }
   }
 
   const trianglesByCell: number[][] = Array.from({ length: nCells }, () => []);
@@ -173,6 +183,30 @@ export function createShaderTerrainSurfaceSampler(
     trianglesByCell[i1]?.push(t);
     trianglesByCell[i2]?.push(t);
   }
+
+  const nearestCellId = (unit: Vec3, startCellHint = 0): number => {
+    const u = norm3(unit);
+    let cur = startCellHint >= 0 && startCellHint < nCells ? startCellHint : 0;
+    const startCenter = topology.cells[cur].centerUnit;
+    let bestDot =
+      startCenter[0] * u[0] + startCenter[1] * u[1] + startCenter[2] * u[2];
+    for (let iter = 0; iter < nCells; iter += 1) {
+      let improved = false;
+      const nbrs = topology.cells[cur].neighbors;
+      for (let i = 0; i < nbrs.length; i += 1) {
+        const nid = nbrs[i];
+        const nc = topology.cells[nid].centerUnit;
+        const d = nc[0] * u[0] + nc[1] * u[1] + nc[2] * u[2];
+        if (d > bestDot + 1e-12) {
+          bestDot = d;
+          cur = nid;
+          improved = true;
+        }
+      }
+      if (!improved) break;
+    }
+    return cur;
+  };
 
   const evalTriBary = (
     unitS: Vec3,
@@ -228,10 +262,10 @@ export function createShaderTerrainSurfaceSampler(
     considerCell(hintB);
 
     if (bestMin < -1e-4) {
-      for (const cid of [hintA, hintB]) {
-        const geom = topology.cells[cid];
-        if (!geom) continue;
-        for (const nbr of geom.neighbors) {
+      const greedyCid = nearestCellId(unitS, hintA >= 0 && hintA < nCells ? hintA : 0);
+      considerCell(greedyCid);
+      if (bestMin < -1e-4) {
+        for (const nbr of topology.cells[greedyCid]?.neighbors ?? []) {
           considerCell(nbr);
         }
       }
@@ -255,7 +289,9 @@ export function createShaderTerrainSurfaceSampler(
   };
 
   return {
+    nearestCellId,
     sample(unit: Vec3, hintCellA: number, hintCellB: number, altitudeNorm: number): ShaderTerrainSample {
+      void altitudeNorm;
       const unitS = norm3(unit);
       const { triIdx, b0, b1, b2 } = findEnclosingTri(unitS, hintCellA, hintCellB);
       const [i0, i1, i2] = topology.triangles[triIdx];
@@ -286,6 +322,18 @@ export function createShaderTerrainSurfaceSampler(
       const coastTransition = smoothstep(0.05, 0.32, landFrac) * smoothstep(0.05, 0.32, 1.0 - landFrac);
       const coastBand = (1.0 - smoothstep(40.0, 520.0, Math.abs(baseElevM))) * coastTransition;
 
+      const b0Mask = bioValidMask[i0] * w0;
+      const b1Mask = bioValidMask[i1] * w1;
+      const b2Mask = bioValidMask[i2] * w2;
+      const bSum = b0Mask + b1Mask + b2Mask;
+      let strahler = 1.0;
+      if (bSum >= 0.01) {
+        strahler =
+          strahlerOrder[i0] * (b0Mask / bSum) +
+          strahlerOrder[i1] * (b1Mask / bSum) +
+          strahlerOrder[i2] * (b2Mask / bSum);
+      }
+
       const ux = unitS[0];
       const uy = unitS[1];
       const uz = unitS[2];
@@ -304,19 +352,29 @@ export function createShaderTerrainSurfaceSampler(
         420.0;
 
       const effectiveElevM = baseElevM + (coastMacro + coastDetail - fjordCuts) * coastBand + microRidgeM;
-
-      const vk0 = knownMask[i0] * b0;
-      const vk1 = knownMask[i1] * b1;
-      const vk2 = knownMask[i2] * b2;
-      const vkSum = vk0 + vk1 + vk2;
-      const vElevNorm = vkSum > 0.01 ? (elevNorm[i0] * vk0 + elevNorm[i1] * vk1 + elevNorm[i2] * vk2) / vkSum : 0.5;
-      const landH = Math.max(0.0, vElevNorm - 0.5) * 2.0;
-      const ridgeA = 1.0 - Math.abs(vnoise3(ux * 11.5, uy * 11.5, uz * 11.5) * 2.0 - 1.0);
-      const ridgeB = 1.0 - Math.abs(vnoise3(ux * 23.0 + 4.1, uy * 23.0 - 2.7, uz * 23.0 + 1.9) * 2.0 - 1.0);
-      const ridgeMicro = (ridgeA * 0.65 + ridgeB * 0.35) * smoothstep(0.06, 0.55, landH);
-      const zoomDetailBoost = 1.0 + smoothstep(0.55, 0.0, altitudeNorm) * 0.45;
-      const vertexReliefHeight =
-        (landH * 0.036 + ridgeMicro * 0.012) * zoomDetailBoost * smoothstep(0.45, 0.85, clamp(vkSum, 0.0, 1.0));
+      const posElev = Math.max(0.0, effectiveElevM);
+      const landMask = smoothstep(0.0, 6.0, posElev);
+      const coastalBluff = smoothstep(0.0, 65.0, posElev) * 0.0052;
+      const hypsoBase = Math.pow(clamp(posElev / 4200.0, 0.0, 1.0), 0.65) * 0.060;
+      const rollingHills =
+        (fbm4(ux * 34.0 + 3.1, uy * 34.0 - 1.7, uz * 34.0 + 5.3) - 0.42) *
+        0.0054 *
+        smoothstep(2.0, 35.0, posElev);
+      const valleyCut =
+        0.0036 *
+        smoothstep(1.25, 3.8, strahler) *
+        smoothstep(8.0, 85.0, posElev) *
+        (1.0 - smoothstep(450.0, 1800.0, posElev));
+      const alpineCrags =
+        ridgedFbm3(ux * 26.0 - 2.4, uy * 26.0 + 5.1, uz * 26.0 + 1.7) *
+        0.019 *
+        smoothstep(180.0, 1700.0, posElev);
+      const rawLandRelief =
+        Math.max(
+          0.0003 * landMask,
+          coastalBluff + hypsoBase + rollingHills + alpineCrags - valleyCut,
+        ) * landMask;
+      const vertexReliefHeight = rawLandRelief * smoothstep(0.42, 0.82, kSum);
 
       return { isExplored: true, effectiveElevM, vertexReliefHeight };
     },
@@ -383,20 +441,21 @@ function buildMeanderingSpine(
   return { points, widthsNorm };
 }
 
-function bisectShorelinePoint(
+export function bisectShorelineUnit(
   sampler: ShaderTerrainSurfaceSampler,
   landPt: Vec3,
   otherPt: Vec3,
   hintA: number,
   hintB: number,
   altitudeNorm: number,
+  thresholdElevM = SHORELINE_STOP_ELEV_M,
 ): Vec3 {
   let lo = landPt;
   let hi = otherPt;
   for (let iter = 0; iter < 10; iter += 1) {
     const mid = slerpUnitVec3(lo, hi, 0.5);
     const s = sampler.sample(mid, hintA, hintB, altitudeNorm);
-    if (s.isExplored && s.effectiveElevM >= SHORELINE_STOP_ELEV_M) {
+    if (s.isExplored && s.effectiveElevM >= thresholdElevM) {
       lo = mid;
     } else {
       hi = mid;
@@ -504,13 +563,14 @@ export function buildHydrologyRibbonMesh(
   material: THREE.Material,
   projectPoint: SurfacePointProjector,
   flatMode: boolean,
+  existingSampler?: ShaderTerrainSurfaceSampler,
 ): RiverRibbonBuildResult {
   const knownById = new Map<number, KnownCellDto>();
   for (const c of snapshot.knownCells) {
     knownById.set(c.cellId, c);
   }
 
-  const surfaceSampler = createShaderTerrainSurfaceSampler(snapshot, topology);
+  const surfaceSampler = existingSampler ?? createShaderTerrainSurfaceSampler(snapshot, topology);
 
   const positions: number[] = [];
   const normals: number[] = [];
@@ -631,7 +691,7 @@ export function buildHydrologyRibbonMesh(
         pushDryPoint(curUnit, widthsNorm[i], curSurf.effectiveElevM, false);
       } else if (prevDry && !curDry) {
         if (curSurf.isExplored && prevUnit) {
-          const shorePt = bisectShorelinePoint(
+          const shorePt = bisectShorelineUnit(
             surfaceSampler,
             prevUnit,
             curUnit,
@@ -648,7 +708,7 @@ export function buildHydrologyRibbonMesh(
         }
       } else if (!prevDry && curDry) {
         if (prevSurf.isExplored && prevUnit) {
-          const entryPt = bisectShorelinePoint(
+          const entryPt = bisectShorelineUnit(
             surfaceSampler,
             curUnit,
             prevUnit,
@@ -703,13 +763,14 @@ export function buildRoadRibbonMesh(
   material: THREE.Material,
   projectPoint: SurfacePointProjector,
   flatMode: boolean,
+  existingSampler?: ShaderTerrainSurfaceSampler,
 ): THREE.Mesh | null {
   const knownById = new Map<number, KnownCellDto>();
   for (const c of snapshot.knownCells) {
     knownById.set(c.cellId, c);
   }
 
-  const surfaceSampler = createShaderTerrainSurfaceSampler(snapshot, topology);
+  const surfaceSampler = existingSampler ?? createShaderTerrainSurfaceSampler(snapshot, topology);
 
   const positions: number[] = [];
   const normals: number[] = [];

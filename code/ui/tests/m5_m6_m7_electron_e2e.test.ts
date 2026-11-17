@@ -93,6 +93,9 @@ describe("Option B & Milestones M5-M7 Live Chromium Electron End-to-End Integrat
       projMercator: string;
       mercatorSample: number[];
       projRestoredGlobe: string;
+      closePitchRad: number;
+      closeLod4Count: number;
+      close3dSample: number[];
       tradeLegend: string;
       warfareLegend: string;
       hasInstTablist: boolean;
@@ -140,6 +143,10 @@ describe("Option B & Milestones M5-M7 Live Chromium Electron End-to-End Integrat
     expect(result.projRestoredGlobe).toBe("globe");
     expect(countChangedBytes(result.terrainSample, result.equalAreaSample)).toBeGreaterThan(0);
     expect(countChangedBytes(result.equalAreaSample, result.mercatorSample)).toBeGreaterThan(0);
+    expect(result.closePitchRad).toBeGreaterThan(0.65);
+    expect(result.closeLod4Count).toBeGreaterThan(0);
+    expect(result.close3dSample.length).toBeGreaterThanOrEqual(800);
+    expect(countChangedBytes(result.terrainSample, result.close3dSample)).toBeGreaterThan(0);
 
     expect(result.tradeLegend.length).toBeGreaterThan(0);
     expect(result.warfareLegend).toContain("Theaters");
@@ -178,5 +185,5 @@ describe("Option B & Milestones M5-M7 Live Chromium Electron End-to-End Integrat
     expect(result.dialogMatchesModalAfterAck).toBe(false);
     expect(result.dialogReturnValueAfterAck).toBe("");
     expect(result.postAckPending).toBeNull();
-  });
+  }, 45000);
 });

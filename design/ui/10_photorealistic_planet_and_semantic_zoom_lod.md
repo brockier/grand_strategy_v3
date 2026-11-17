@@ -26,33 +26,35 @@
 
 ### 2.1 `lod-patches.ts` — Frustum-Culled Spherical Patch Quadtree LOD
 - Groups base icosahedral triangles (`20 * m^2`, `11,520` at `m = 24`) into the 20 base icosahedron sector patches.
-- Precomputes or caches subdivided `BufferGeometry` buffers at 4 resolution tiers while preserving `aCornerCells` (`vec3`) and linearly interpolated `aBarycentric` weights across every child vertex:
-  - `LOD 0` (`1x` triangles per base face): orbital view (`altitudeNorm >= 0.65`) or back-hemisphere sectors
-  - `LOD 1` (`4x` triangles per base face): sectors within `48 deg` of camera focus at `altitudeNorm < 0.65`
-  - `LOD 2` (`16x` triangles per base face): focus sectors within `24 deg` at `altitudeNorm < 0.35`
-  - `LOD 3` (`64x` triangles per base face): immediate camera focus sectors within `11 deg` at `altitudeNorm < 0.16`, adding small inward-angled patch boundary skirts to conceal T-junction seams
-- Both vertex shader displacement and pixel bump micro-relief scale cleanly across subdivided vertices so zooming in continuously sharpens fjords, ridges, valleys, and cultivated micro-patchwork.
+- Precomputes or caches subdivided `BufferGeometry` buffers at 5 resolution tiers while preserving `aCornerCells` (`vec3`) and linearly interpolated `aBarycentric` weights across every child vertex:
+  - `LOD 0` (`1x` triangles per base face): orbital view (`altitudeNorm >= 0.68`) or back-hemisphere sectors
+  - `LOD 1` (`4x` triangles per base face): sectors within `0.85..0.98 rad` of camera focus below `altitudeNorm < 0.68`
+  - `LOD 2` (`16x` triangles per base face): focus sectors within `0.44..0.62 rad` below `altitudeNorm < 0.42`
+  - `LOD 3` (`64x` triangles per base face): regional sectors within `0.26..0.34 rad` below `altitudeNorm < 0.28`
+  - `LOD 4` (`256x` triangles per base face): immediate close-up focus sectors within `0.14 rad` below `altitudeNorm < 0.16`, adding inward-angled patch boundary skirts (`0.0065`) to conceal T-junction seams
+- Unified 3D vertex relief, world-space normal hillshading, and procedural surface micro-detail scale seamlessly across subdivided vertices so zooming in continuously sharpens coastal cliffs, rolling lowland hills, carved river valleys, alpine ridges, and cultivated fields.
 
 ### 2.2 `shaders.ts` — Satellite Biophysical PBR & Parchment Dual-Pass Shader
-- Samples double-buffered `uCellDataTex` (`[elev, wetness, biomeCode, alpha]`) and `uBiophysicalTex` (`[temp, aridity, strataFertility, strahlerPlume]`), interpolating across barycentric weights `w0, w1, w2` with zero nearest-neighbor Voronoi boundaries.
+- Samples double-buffered `uCellDataTex` (`[elev, wetness, biomeCode, alpha]`) and `uBiophysicalTex` (`[temp, aridity, strataFertility, strahlerPlume]`) in both `VERTEX_SHADER` and `FRAGMENT_SHADER`, interpolating across barycentric weights `w0, w1, w2` with zero nearest-neighbor Voronoi boundaries.
+- **Full-Spectrum Diorama 3D Land Relief:** `VERTEX_SHADER` combines coastal bluffs, concave hypsometric elevation (`pow(posElev / 4200, 0.65)`), multi-octave rolling lowland hills, incised `strahler` river valleys, and ridged alpine crags across every explored land vertex while keeping unexplored vertices and oceans at `0.0` relief.
 - **Sub-Cell Fractal Coastline (`coastalWarp`):** Adds multi-octave domain-warped fBm gated by `coastTransition` (`smoothstep(0.05, 0.32, landFrac) * smoothstep(0.05, 0.32, 1.0 - landFrac)`) and latitude (`|lat|` boosts fjord dissection) so coastal fractal displacement applies strictly across mixed land/ocean triangles before sea-level thresholding (`h > 0`), keeping pure-land cells and cell centers dry while eliminating hexagonal shoreline chords.
-- **Dark Twilight Unmapped Globe + Cloud Feathering:** `kSum < 0.52` renders pure dark twilight spherical space/globe (strict zero leakage of unexplored cells); `0.52 <= kSum < 0.86` feathers surveyed terrain smoothly through multi-octave cloud fBm.
-- **Biophysical Reflectance Synthesis:** Blends dry sand/erg, Mediterranean scrub, temperate lowland meadows & field-patch micro-grain, boreal spruce taiga, slope-exposed bedrock (`limestone`, `granite`, `basalt`), temperature-driven alpine snowpack, shallow-shelf turquoise -> deep abyssal navy ocean absorption, coastal river sediment plumes, capillary water glint, polar pack ice, Rayleigh horizon glow, and optional `Parchment` chart lens (`uParchmentMode`).
+- **Dark Twilight Unmapped Globe + Cloud Feathering:** `kSum < 0.35` renders pure dark twilight spherical space/globe (strict zero leakage of unexplored cells); feathered boundary band blends surveyed terrain smoothly through multi-octave cloud fBm.
+- **Biophysical Reflectance & Close-Up Micro-Detail Synthesis:** Blends dry sand/erg, Mediterranean scrub, temperate lowland meadows & field-patch micro-grain (with close-zoom plowed furrows and hedgerow edges), forest canopy crown ambient occlusion, boreal spruce taiga, slope-exposed fractured rock & scree (`limestone`, `granite`, `basalt`), temperature-driven alpine snowpack, shallow-shelf turquoise -> deep abyssal navy ocean absorption, coastal river sediment plumes, surf breaker foam, capillary water glint, polar pack ice, Rayleigh horizon glow, world-space tangent sunlight shading across `0 deg -> 45 deg` camera pitch, and optional `Parchment` chart lens (`uParchmentMode`).
 - **3D <-> 2D Projection Morph (`uProjectionMode`, `uProjectionMorph`):** Smoothly transitions vertex coordinates between unit-sphere `Globe`, focus-centered `EqualArea` (`Lambert Azimuthal Equal-Area`), and focus-meridian-centered `Mercator` while culling wrapped antimeridian triangles (`vSeamCull`).
 
 ### 2.3 `hydrology-ribbons.ts` — Fog-Clipped Meandering Triangle-Strip Ribbons
 - Never emits river segments into `unexplored` space: when `src` is known (`surveyed` or `stale`) and `dst` is `unexplored`, clips the geodesic path at `t = 0.42` inside explored territory and tapers ribbon width cleanly to `0`.
-- Terminates rivers strictly at the land/sea interface: evaluates the deterministic shader `effectiveElevM` function along each spline and bisects land-to-sea crossings to stop at `effectiveElevM = +2.0m` with a tapered mouth cap so zero river geometry enters ocean pixels (`effectiveElevM < 0`).
+- Terminates rivers strictly at the land/sea interface: evaluates the deterministic shader `effectiveElevM` function along each spline using greedy spherical neighbor-graph lookup (`nearestCellId`) and bisects land-to-sea crossings to stop at `effectiveElevM = +2.0m` with a tapered mouth cap so zero river geometry enters ocean pixels (`effectiveElevM < 0`). `vertexReliefHeight` matches `VERTEX_SHADER` identically and stays invariant across `altitudeNorm` so rivers, roads, buildings, and trees never drift vertically relative to terrain.
 - Generates smooth spherical Catmull-Rom ribbons displaced laterally in local tangent space by deterministic multi-harmonic meanders (`sin(pi * t)` envelope weighted by inverse slope so flat plains meander more than steep gorges).
 - Width scales continuously with `strahlerOrder` and `floodStage01`, gently swelling just inland before tapering cleanly into the shoreline mouth cap, eliminating all 3-line parallel flood artifacts and ocean-crossing river extensions.
 
-### 2.4 `semantic-zoom.ts` — 4-Tier Semantic Zoom, De-Clustered Icons & 3D Settlements
-| Tier | `altitudeNorm` Range | Terrain / Hydrology | Entities, Formations & Architecture |
+### 2.4 `semantic-zoom.ts` — 4-Tier Semantic Zoom, Oblique 3D Structures & Instanced Forests
+| Tier | `altitudeNorm` Range | Terrain / Camera Pitch / Hydrology | Entities, Formations, Forests & Architecture |
 | :--- | :--- | :--- | :--- |
-| `orbital` (`0`) | `0.70 .. 1.00` | `LOD 0..1` globe + Rayleigh limb + `strahler >= 4` rivers | HQ ring, major settlement medallions, theater arcs |
-| `continental` (`1`) | `0.40 .. 0.70` | `LOD 1..2` + `strahler >= 3` rivers + trunk roads | Watershed region titles, settlement nameplates, grouped formations |
-| `regional` (`2`) | `0.15 .. 0.40` | `LOD 2..3` + `strahler >= 2` tributaries + all roads | Radially offset lit 3D formation standards & convoy sprites with leader ticks |
-| `settlement` (`3`) | `0.00 .. 0.15` | `LOD 3` sub-km relief + `strahler >= 1` streams + field mosaic | Procedural 3D settlement cluster (HQ keep, facility workshops/warehouses, coastal pier, terraced crop fields, regimental camp tents) |
+| `orbital` (`0`) | `0.70 .. 1.00` | `LOD 0..1` globe, `0 deg` nadir view, Rayleigh limb, `strahler >= 4` rivers | HQ ring, major settlement medallions, theater arcs |
+| `continental` (`1`) | `0.40 .. 0.70` | `LOD 1..2`, `0 deg` -> early pitch onset below `0.45`, `strahler >= 3` rivers, trunk roads | Watershed region titles, settlement nameplates, grouped formations |
+| `regional` (`2`) | `0.15 .. 0.40` | `LOD 2..3`, smooth oblique transition toward `45 deg`, `strahler >= 2` tributaries, all roads | Radially offset terrain-grounded 3D formation standards & convoy sprites, regional civic keeps, `InstancedMesh` woodland crowns |
+| `settlement` (`3`) | `0.00 .. 0.15` | `LOD 3..4` (`256x`) relief, `45 deg` oblique terrain flyover, `strahler >= 1` streams, furrow/hedgerow/surf micro-detail | Grounded sloped-foundation settlements (walled HQ citadel, civic hall, street-aligned gabled houses, chimneyed smelters, waterwheel mills, storehouse barns), shoreline-bisected stone quays & piers, hedged crop terraces, parapet tent camps, and dense `InstancedMesh` conifer & broadleaf forests |
 
 ---
 

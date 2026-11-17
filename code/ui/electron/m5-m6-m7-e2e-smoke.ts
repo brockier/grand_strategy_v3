@@ -96,6 +96,18 @@ export async function runM5M6M7E2ESmoke(
     rt.globe.stepRender(16);
     const projRestoredGlobe = rt.globe.status.projectionMode;
 
+    // 1c. Close 3D oblique flyover zoom: LOD 4 refinement, ~45 deg auto-pitch & grounded structures.
+    rt.globe.camera.flyToUnitVector(hqGeom.centerUnit, 0.08, 0, true);
+    rt.globe.stepRender(16);
+    await wait(40);
+    const closePitchRad = rt.globe.camera.getTelemetry().pitchRad;
+    const closeLod4Count = rt.globe.status.patchLodCounts[4];
+    const close3dSample = strideBytes(rt.globe.captureFrameSample(96));
+
+    // Restore orbital/continental altitude so background RAF renders stay lightweight during UI tests.
+    rt.globe.camera.flyToUnitVector(hqGeom.centerUnit, 0.45, 0, true);
+    rt.globe.stepRender(16);
+
     // 2. Switch map overlays to Trade and Warfare modes & verify legend telemetry.
     const tradeBtn = document.querySelector('[data-overlay-mode="trade"]');
     tradeBtn?.click();
@@ -242,6 +254,9 @@ export async function runM5M6M7E2ESmoke(
       projMercator,
       mercatorSample,
       projRestoredGlobe,
+      closePitchRad,
+      closeLod4Count,
+      close3dSample,
       tradeLegend,
       warfareLegend,
       hasInstTablist: Boolean(instTablist),

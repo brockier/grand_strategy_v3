@@ -182,6 +182,7 @@ in vec3 aTriCenter;
 in float aSkirtMask;
 
 uniform sampler2D uCellDataTex;
+uniform sampler2D uBiophysicalTex;
 uniform float uTexSize;
 uniform float uCartographicBlend;
 uniform float uCameraAltitudeNorm;
@@ -190,13 +191,16 @@ uniform float uProjectionMorph;
 uniform vec3 uFocusUnit;
 
 out vec3 vSpherePos;
-out vec3 vWorldNormal;
+out vec3 vWorldPos;
+out vec3 vViewNormal;
+out vec3 vWorldSurfNormal;
 out vec3 vBarycentric;
 flat out vec3 vCornerCells;
 out float vCellId;
 out vec4 vCellData;
 out vec2 vFlatCoord;
 out float vSeamDiscard;
+out float vReliefHeight;
 
 const float PI = 3.141592653589793;
 const float EQUAL_AREA_SCALE = 0.72;
@@ -208,6 +212,13 @@ vec4 sampleCellData(float cid) {
   float u = (mod(idx, uTexSize) + 0.5) / uTexSize;
   float v = (floor(idx / uTexSize) + 0.5) / uTexSize;
   return texture(uCellDataTex, vec2(u, v));
+}
+
+vec4 sampleBiophysicalData(float cid) {
+  float idx = floor(cid + 0.5);
+  float u = (mod(idx, uTexSize) + 0.5) / uTexSize;
+  float v = (floor(idx / uTexSize) + 0.5) / uTexSize;
+  return texture(uBiophysicalTex, vec2(u, v));
 }
 
 float hash31(vec3 p) {
@@ -233,6 +244,77 @@ float vnoise3(vec3 p) {
   float nx01 = mix(n001, n101, f.x);
   float nx11 = mix(n011, n111, f.x);
   return mix(mix(nx00, nx10, f.y), mix(nx01, nx11, f.y), f.z);
+}
+
+float fbm4(vec3 p) {
+  float sum = 0.0;
+  float amp = 0.5;
+  vec3 shift = vec3(13.7, -7.3, 21.1);
+  for (int i = 0; i < 4; i++) {
+    sum += amp * vnoise3(p);
+    p = p * 2.07 + shift;
+    amp *= 0.5;
+  }
+  return sum;
+}
+
+float ridgedFbm3(vec3 p) {
+  float sum = 0.0;
+  float amp = 0.55;
+  float norm = 0.0;
+  for (int i = 0; i < 3; i++) {
+    float r = 1.0 - abs(vnoise3(p) * 2.0 - 1.0);
+    sum += (r * r) * amp;
+    norm += amp;
+    p = p * 2.12 + vec3(7.1, 3.9, -11.3);
+    amp *= 0.52;
+  }
+  return sum / max(norm, 0.001);
+}
+
+float decodeElevMeters(float elevNorm) {
+  if (elevNorm < 0.5) {
+    return (elevNorm / 0.5 - 1.0) * 5000.0;
+  }
+  return ((elevNorm - 0.5) / 0.5) * 5000.0;
+}
+
+float evalProceduralRelief(
+  vec3 unitP,
+  float baseElevM,
+  float coastBand,
+  float strahler,
+  float kSum
+) {
+  vec3 warpVec = vec3(
+    fbm4(unitP * 9.0 + vec3(1.2, 4.7, -2.3)),
+    fbm4(unitP * 9.0 + vec3(-3.8, 0.6, 5.1)),
+    fbm4(unitP * 9.0 + vec3(2.9, -4.1, 1.4))
+  ) - 0.5;
+  float absLat = abs(asin(clamp(unitP.y, -1.0, 1.0)));
+  float coastMacro = (fbm4(unitP * 16.0 + warpVec * 1.45) - 0.48) * 320.0;
+  float coastDetail = (fbm4(unitP * 44.0 + warpVec * 2.1) - 0.50) * 145.0;
+  float fjordMask = smoothstep(0.68, 1.15, absLat);
+  float fjordCuts = (ridgedFbm3(unitP * 34.0 + warpVec * 1.8) - 0.46) * 290.0 * fjordMask;
+  float microRidgeM = (ridgedFbm3(unitP * 28.0 + warpVec * 0.8) - 0.35)
+    * smoothstep(80.0, 1400.0, max(0.0, baseElevM)) * 420.0;
+
+  float effectiveElevM = baseElevM + (coastMacro + coastDetail - fjordCuts) * coastBand + microRidgeM;
+  float posElev = max(0.0, effectiveElevM);
+  float landMask = smoothstep(0.0, 6.0, posElev);
+  float coastalBluff = smoothstep(0.0, 65.0, posElev) * 0.0052;
+  float hypsoBase = pow(clamp(posElev / 4200.0, 0.0, 1.0), 0.65) * 0.060;
+  float rollingHills = (fbm4(unitP * 34.0 + vec3(3.1, -1.7, 5.3)) - 0.42)
+    * 0.0054 * smoothstep(2.0, 35.0, posElev);
+  float valleyCut = 0.0036
+    * smoothstep(1.25, 3.8, strahler)
+    * smoothstep(8.0, 85.0, posElev)
+    * (1.0 - smoothstep(450.0, 1800.0, posElev));
+  float alpineCrags = ridgedFbm3(unitP * 26.0 + vec3(-2.4, 5.1, 1.7))
+    * 0.019 * smoothstep(180.0, 1700.0, posElev);
+
+  float rawLandRelief = max(0.0003 * landMask, coastalBluff + hypsoBase + rollingHills + alpineCrags - valleyCut) * landMask;
+  return rawLandRelief * smoothstep(0.42, 0.82, kSum);
 }
 
 vec2 projectUnitFlat(vec3 u, vec3 focusNorm, out float validOut) {
@@ -271,31 +353,61 @@ void main() {
   vec4 d2 = sampleCellData(aCornerCells.z);
   vec4 cSelf = sampleCellData(aCellId);
 
-  float k0 = step(0.08, d0.a) * aBarycentric.x;
-  float k1 = step(0.08, d1.a) * aBarycentric.y;
-  float k2 = step(0.08, d2.a) * aBarycentric.z;
-  float kSum = k0 + k1 + k2;
-  float exploredRatio = clamp(kSum, 0.0, 1.0);
+  vec3 sb = smoothstep(0.0, 1.0, clamp(aBarycentric, 0.0, 1.0));
+  sb /= max(sb.x + sb.y + sb.z, 0.0001);
 
-  float elevNorm = 0.5;
-  if (kSum > 0.01) {
-    elevNorm = (d0.r * k0 + d1.r * k1 + d2.r * k2) / kSum;
-  }
-  float landH = max(0.0, elevNorm - 0.5) * 2.0;
+  float k0 = step(0.08, d0.a) * sb.x;
+  float k1 = step(0.08, d1.a) * sb.y;
+  float k2 = step(0.08, d2.a) * sb.z;
+  float kSum = k0 + k1 + k2;
 
   vec3 unitP = normalize(position);
-  float ridgeA = 1.0 - abs(vnoise3(unitP * 11.5) * 2.0 - 1.0);
-  float ridgeB = 1.0 - abs(vnoise3(unitP * 23.0 + vec3(4.1, -2.7, 1.9)) * 2.0 - 1.0);
-  float ridgeMicro = (ridgeA * 0.65 + ridgeB * 0.35) * smoothstep(0.06, 0.55, landH);
+  float reliefHeight = 0.0;
+  float baseElevM = -5000.0;
+  float coastBand = 0.0;
+  float strahler = 1.0;
+
+  if (kSum >= 0.35) {
+    float w0 = k0 / kSum;
+    float w1 = k1 / kSum;
+    float w2 = k2 / kSum;
+    float elevNorm = d0.r * w0 + d1.r * w1 + d2.r * w2;
+    baseElevM = decodeElevMeters(elevNorm);
+
+    float isLand0 = step(0.499, d0.r);
+    float isLand1 = step(0.499, d1.r);
+    float isLand2 = step(0.499, d2.r);
+    float landFrac = isLand0 * w0 + isLand1 * w1 + isLand2 * w2;
+    float coastTransition = smoothstep(0.05, 0.32, landFrac) * smoothstep(0.05, 0.32, 1.0 - landFrac);
+    coastBand = (1.0 - smoothstep(40.0, 520.0, abs(baseElevM))) * coastTransition;
+
+    vec4 bio0 = sampleBiophysicalData(aCornerCells.x);
+    vec4 bio1 = sampleBiophysicalData(aCornerCells.y);
+    vec4 bio2 = sampleBiophysicalData(aCornerCells.z);
+    float b0Mask = step(0.24, d0.a) * w0;
+    float b1Mask = step(0.24, d1.a) * w1;
+    float b2Mask = step(0.24, d2.a) * w2;
+    float bSum = b0Mask + b1Mask + b2Mask;
+    if (bSum >= 0.01) {
+      float bw0 = b0Mask / bSum;
+      float bw1 = b1Mask / bSum;
+      float bw2 = b2Mask / bSum;
+      float fa0 = floor(bio0.a * 255.0 + 0.5);
+      float fa1 = floor(bio1.a * 255.0 + 0.5);
+      float fa2 = floor(bio2.a * 255.0 + 0.5);
+      strahler = floor(fa0 / 32.0) * bw0 + floor(fa1 / 32.0) * bw1 + floor(fa2 / 32.0) * bw2;
+    }
+
+    reliefHeight = evalProceduralRelief(unitP, baseElevM, coastBand, strahler, kSum);
+  }
 
   // Strict epistemic barrier: Unexplored vertices remain smoothly spherical and never lift.
-  float zoomDetailBoost = 1.0 + smoothstep(0.55, 0.0, uCameraAltitudeNorm) * 0.45;
-  float reliefHeight = (landH * 0.036 + ridgeMicro * 0.012) * zoomDetailBoost * smoothstep(0.45, 0.85, exploredRatio);
-  float skirtDrop = aSkirtMask * 0.0045;
-
+  float skirtDrop = aSkirtMask * 0.0065;
   vec3 displacedSphere = unitP * (1.0 + reliefHeight - skirtDrop);
+  vec3 sphereSurfNormal = unitP;
 
   vec3 flatPos = displacedSphere;
+  vec3 flatSurfNormal = vec3(0.0, 0.0, 1.0);
   float flatValid = 1.0;
   vec2 flatXY = vec2(0.0);
   float seamDiscard = 0.0;
@@ -315,17 +427,21 @@ void main() {
     flatPos = vec3(flatXY.x, flatXY.y, reliefHeight * 0.65 - skirtDrop);
   }
 
-  vec3 worldPos = mix(displacedSphere, flatPos, clamp(uProjectionMorph, 0.0, 1.0));
-  vec3 outNormal = normalize(mix(unitP, vec3(0.0, 0.0, 1.0), clamp(uProjectionMorph, 0.0, 1.0)));
+  float morph = clamp(uProjectionMorph, 0.0, 1.0);
+  vec3 worldPos = mix(displacedSphere, flatPos, morph);
+  vec3 outNormal = normalize(mix(sphereSurfNormal, flatSurfNormal, morph));
 
   vSpherePos = unitP;
-  vWorldNormal = normalize(normalMatrix * outNormal);
+  vWorldPos = worldPos;
+  vViewNormal = normalize(normalMatrix * outNormal);
+  vWorldSurfNormal = outNormal;
   vBarycentric = aBarycentric;
   vCornerCells = aCornerCells;
   vCellId = aCellId;
   vCellData = cSelf;
   vFlatCoord = flatXY;
   vSeamDiscard = seamDiscard;
+  vReliefHeight = reliefHeight;
 
   gl_Position = projectionMatrix * modelViewMatrix * vec4(worldPos, 1.0);
 }
@@ -366,13 +482,16 @@ uniform vec3 uCompassRoseRgb;
 uniform vec3 uUnexploredVellumRgb;
 
 in vec3 vSpherePos;
-in vec3 vWorldNormal;
+in vec3 vWorldPos;
+in vec3 vViewNormal;
+in vec3 vWorldSurfNormal;
 in vec3 vBarycentric;
 flat in vec3 vCornerCells;
 in float vCellId;
 in vec4 vCellData;
 in vec2 vFlatCoord;
 in float vSeamDiscard;
+in float vReliefHeight;
 
 out vec4 fragColor;
 
@@ -443,19 +562,20 @@ float ridgedFbm3(vec3 p) {
   return sum / max(norm, 0.001);
 }
 
-float fieldParcelPattern(vec3 p) {
-  vec3 q = p * 82.0;
+vec3 fieldParcelPattern(vec3 p) {
+  vec3 q = p * 86.0;
   vec3 cellId = floor(q);
   vec3 loc = fract(q);
   float angleHash = hash31(cellId) * 6.28318;
   float ca = cos(angleHash);
   float sa = sin(angleHash);
   vec2 rot = vec2(loc.x * ca - loc.z * sa, loc.x * sa + loc.z * ca);
-  vec2 tile = fract(rot * 2.4 + vec2(hash31(cellId + 3.0), hash31(cellId + 7.0)));
-  float edgeMask = smoothstep(0.0, 0.09, tile.x) * smoothstep(0.0, 0.09, tile.y)
-    * smoothstep(0.0, 0.09, 1.0 - tile.x) * smoothstep(0.0, 0.09, 1.0 - tile.y);
-  float parcelTone = hash31(cellId + floor(rot * 2.4).x * 11.0 + floor(rot * 2.4).y * 23.0);
-  return mix(0.35, 0.65 + 0.35 * parcelTone, edgeMask);
+  vec2 tile = fract(rot * 2.6 + vec2(hash31(cellId + 3.0), hash31(cellId + 7.0)));
+  float edgeMask = smoothstep(0.0, 0.085, tile.x) * smoothstep(0.0, 0.085, tile.y)
+    * smoothstep(0.0, 0.085, 1.0 - tile.x) * smoothstep(0.0, 0.085, 1.0 - tile.y);
+  float parcelTone = hash31(cellId + floor(rot * 2.6).x * 11.0 + floor(rot * 2.6).y * 23.0);
+  float furrow = 0.5 + 0.5 * sin(rot.y * 125.0 + parcelTone * 6.28);
+  return vec3(mix(0.32, 0.65 + 0.35 * parcelTone, edgeMask), 1.0 - edgeMask, furrow);
 }
 
 vec3 sampleTriplanar(sampler2D tex, vec3 p, float scale) {
@@ -493,7 +613,8 @@ void main() {
 
   vec3 unitS = normalize(vSpherePos);
   vec3 sunDir = normalize(uSunDir);
-  vec3 viewDir = normalize(vWorldNormal);
+  vec3 viewNorm = normalize(vViewNormal);
+  vec3 worldNorm = normalize(vWorldSurfNormal);
   float grat = graticuleMask(unitS);
 
   vec3 grainTex = sampleTriplanar(uParchmentGrainTex, unitS, 5.5);
@@ -521,7 +642,7 @@ void main() {
   bool hasSelectVec = length(uSelectedUnitXyz) > 0.5;
   float hoverAng = hasHoverVec ? acos(clamp(dot(unitS, normalize(uHoveredUnitXyz)), -1.0, 1.0)) : 9.0;
   float selectAng = hasSelectVec ? acos(clamp(dot(unitS, normalize(uSelectedUnitXyz)), -1.0, 1.0)) : 9.0;
-  float reticleScale = mix(1.0, 0.38, smoothstep(0.45, 0.02, uCameraAltitudeNorm));
+  float reticleScale = mix(1.0, 0.34, smoothstep(0.45, 0.02, uCameraAltitudeNorm));
   float hoverRing = hasHoverVec
     ? (1.0 - smoothstep(0.004 * reticleScale, 0.010 * reticleScale, abs(hoverAng - 0.018 * reticleScale))) * step(hoverAng, 0.04 * reticleScale)
     : step(abs(cid - uHoveredCellId), 0.25);
@@ -529,7 +650,7 @@ void main() {
     ? (1.0 - smoothstep(0.005 * reticleScale, 0.012 * reticleScale, abs(selectAng - 0.024 * reticleScale))) * step(selectAng, 0.05 * reticleScale)
     : step(abs(cid - uSelectedCellId), 0.25);
 
-  float fresnelRim = pow(1.0 - clamp(abs(dot(normalize(vWorldNormal), vec3(0.0, 0.0, 1.0))), 0.0, 1.0), 3.2);
+  float fresnelRim = pow(1.0 - clamp(abs(dot(viewNorm, vec3(0.0, 0.0, 1.0))), 0.0, 1.0), 3.2);
   float sunLimb = clamp(dot(unitS, sunDir) * 0.55 + 0.45, 0.15, 1.0);
   vec3 twilightBase = mix(
     vec3(0.038, 0.050, 0.072),
@@ -631,19 +752,55 @@ void main() {
   float effectiveElevM = baseElevM + (coastMacro + coastDetail - fjordCuts) * coastBand + microRidgeM;
   bool isOceanPixel = effectiveElevM < 0.0;
 
-  // Screen-space elevation derivative drives physically crisp mountain hillshading & exposed rock.
+  // World-space surface basis and screen-space elevation derivative projected into world tangent space
+  // so 3D mountain & hillside lighting remains locked to geography at all pitch angles (0..45 deg).
+  vec3 sphereRef = abs(unitS.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(0.0, 0.0, -1.0);
+  vec3 sEast = normalize(cross(sphereRef, unitS));
+  vec3 sNorth = normalize(cross(unitS, sEast));
+  vec3 eastT = normalize(mix(sEast, vec3(1.0, 0.0, 0.0), uProjectionMorph));
+  vec3 northT = normalize(mix(sNorth, vec3(0.0, 1.0, 0.0), uProjectionMorph));
+
+  float closeDetail01 = smoothstep(0.38, 0.03, uCameraAltitudeNorm);
   float quadValid = smoothstep(0.42, 0.70, kSum);
   float dxE = dFdx(effectiveElevM) * quadValid;
   float dyE = dFdy(effectiveElevM) * quadValid;
-  float slopeGrad = clamp(length(vec2(dxE, dyE)) / max(18.0, 90.0 * max(0.15, uCameraAltitudeNorm)), 0.0, 1.0);
-  vec3 gradBump = normalize(vec3(
-    clamp(-dxE * 0.008, -0.55, 0.55),
-    clamp(-dyE * 0.008, -0.55, 0.55),
-    1.0
-  ));
-  vec3 geomNorm = normalize(vWorldNormal);
-  float rawNdl = clamp(dot(geomNorm, sunDir), 0.0, 1.0);
-  float reliefNdl = clamp(dot(normalize(geomNorm + gradBump * 0.28), sunDir), 0.0, 1.0);
+  float dxR = dFdx(vReliefHeight) * quadValid;
+  float dyR = dFdy(vReliefHeight) * quadValid;
+  vec3 dpdx = dFdx(vWorldPos);
+  vec3 dpdy = dFdy(vWorldPos);
+  float a11 = dot(dpdx, eastT);
+  float a12 = dot(dpdx, northT);
+  float a21 = dot(dpdy, eastT);
+  float a22 = dot(dpdy, northT);
+  float det = a11 * a22 - a12 * a21;
+  float slopeE = 0.0;
+  float slopeN = 0.0;
+  float slopeGrad = 0.0;
+  if (abs(det) > 1e-10) {
+    float dEdE = (a22 * dxE - a21 * dyE) / det;
+    float dEdN = (-a12 * dxE + a11 * dyE) / det;
+    float dRdE = (a22 * dxR - a21 * dyR) / det;
+    float dRdN = (-a12 * dxR + a11 * dyR) / det;
+    slopeGrad = clamp(length(vec2(dEdE, dEdN)) / 36000.0, 0.0, 1.0);
+    slopeE = clamp((dEdE * 0.000028 + dRdE * 0.85) * quadValid, -0.62, 0.62);
+    slopeN = clamp((dEdN * 0.000028 + dRdN * 0.85) * quadValid, -0.62, 0.62);
+  }
+
+  // Close-zoom world-space micro-bump from rock scree, hills, and woodland canopies.
+  float microEps = 0.0006;
+  float hillMicro0 = vnoise3(unitS * 210.0) * 0.55 + ridgedFbm3(unitS * 140.0) * 0.45;
+  float hillMicroE = vnoise3(normalize(unitS + eastT * microEps) * 210.0) * 0.55
+    + ridgedFbm3(normalize(unitS + eastT * microEps) * 140.0) * 0.45;
+  float hillMicroN = vnoise3(normalize(unitS + northT * microEps) * 210.0) * 0.55
+    + ridgedFbm3(normalize(unitS + northT * microEps) * 140.0) * 0.45;
+  float microBumpE = clamp((hillMicroE - hillMicro0) * (0.28 + 0.52 * closeDetail01) / microEps * 0.00045, -0.35, 0.35);
+  float microBumpN = clamp((hillMicroN - hillMicro0) * (0.28 + 0.52 * closeDetail01) / microEps * 0.00045, -0.35, 0.35);
+
+  vec3 reliefWorldNorm = normalize(
+    worldNorm - eastT * (slopeE * 0.72 + microBumpE) - northT * (slopeN * 0.72 + microBumpN)
+  );
+  float rawNdl = clamp(dot(worldNorm, sunDir), 0.0, 1.0);
+  float reliefNdl = clamp(dot(reliefWorldNorm, sunDir), 0.0, 1.0);
 
   vec3 satRgb;
   if (isOceanPixel) {
@@ -662,15 +819,22 @@ void main() {
     vec3 siltCol = vec3(0.165, 0.265, 0.235);
     waterRgb = mix(waterRgb, siltCol, mouthMask * 0.52);
 
+    // Close-zoom shoreline surf-foam breakers in shallow littoral waters (0..14m).
+    float surfBand = (1.0 - smoothstep(0.5, 14.0, depthM)) * smoothstep(0.04, 0.25, landFrac);
+    float breakerLine = smoothstep(0.42, 0.78, sin(depthM * 1.15 + vnoise3(unitS * 260.0) * 5.2));
+    waterRgb = mix(waterRgb, vec3(0.76, 0.84, 0.88), surfBand * breakerLine * closeDetail01 * 0.65);
+
     // Polar & sub-freezing seasonal pack ice with fractured lead pattern.
     float iceLead = smoothstep(0.42, 0.62, fbm4(unitS * 38.0 + vec3(5.0, -2.0, 3.0)));
     float seaIceMask = smoothstep(-5.5, -13.5, tempC) * (0.45 + 0.55 * iceLead);
     waterRgb = mix(waterRgb, vec3(0.82, 0.87, 0.92), seaIceMask);
 
-    // Wave micro-glint specular reflection.
-    float waveRipple = vnoise3(unitS * 120.0) - 0.5;
-    vec3 waterNorm = normalize(geomNorm + vec3(waveRipple * 0.04, -waveRipple * 0.04, 0.0));
-    vec3 halfVec = normalize(sunDir + normalize(vec3(0.0, 0.0, 1.0)));
+    // Wave micro-glint specular reflection in world tangent frame.
+    float waveFreq = mix(120.0, 380.0, closeDetail01);
+    float waveRipple = vnoise3(unitS * waveFreq) - 0.5;
+    vec3 waterNorm = normalize(worldNorm + eastT * (waveRipple * 0.08) - northT * (waveRipple * 0.08));
+    vec3 viewVec = normalize(mix(vec3(0.0, 0.0, 1.0), worldNorm, 0.45));
+    vec3 halfVec = normalize(sunDir + viewVec);
     float spec = pow(clamp(dot(waterNorm, halfVec), 0.0, 1.0), 42.0) * (1.0 - seaIceMask) * 0.34;
     satRgb = waterRgb * (0.48 + 0.58 * rawNdl) + vec3(0.85, 0.88, 0.90) * spec;
   } else {
@@ -678,24 +842,31 @@ void main() {
     float moist = clamp((aridity - 0.15) / 1.15, 0.0, 1.0);
     float microVar = fbm4(unitS * 52.0);
     float canopyDetail = fbm4(unitS * 115.0 + vec3(-3.1, 6.4, 2.2));
+    float crownNoise = vnoise3(unitS * 360.0) * 0.6 + vnoise3(unitS * 720.0) * 0.4;
+    float crownAo = mix(1.0, 0.72 + 0.52 * crownNoise, closeDetail01);
 
-    // ESA Sentinel-2 Europe biophysical palette:
+    // ESA Sentinel-2 Europe biophysical palette with close-zoom forest crown variation:
     vec3 ergSand = mix(vec3(0.66, 0.54, 0.36), vec3(0.74, 0.63, 0.44), microVar);
     vec3 medScrub = mix(vec3(0.24, 0.29, 0.16), vec3(0.42, 0.38, 0.22), microVar);
     vec3 tempPasture = mix(vec3(0.18, 0.31, 0.13), vec3(0.27, 0.38, 0.17), canopyDetail);
-    vec3 tempForest = mix(vec3(0.085, 0.185, 0.080), vec3(0.135, 0.245, 0.110), canopyDetail);
-    vec3 borealTaiga = mix(vec3(0.062, 0.130, 0.075), vec3(0.095, 0.175, 0.105), canopyDetail);
+    vec3 tempForest = mix(vec3(0.085, 0.185, 0.080), vec3(0.135, 0.245, 0.110), canopyDetail) * crownAo;
+    vec3 borealTaiga = mix(vec3(0.062, 0.130, 0.075), vec3(0.095, 0.175, 0.105), canopyDetail) * crownAo;
     vec3 tundraHeath = mix(vec3(0.22, 0.24, 0.18), vec3(0.32, 0.31, 0.25), microVar);
 
-    // Zoom-revealed cultivated field patchwork in fertile warm/temperate plains (UI-GLB-006).
+    // Zoom-revealed cultivated field patchwork with plowed furrows & dark hedgerows (UI-GLB-006).
     float zoomAgMask = smoothstep(0.42, 0.04, uCameraAltitudeNorm)
       * smoothstep(0.45, 0.72, fertility)
       * smoothstep(0.35, 0.10, slopeGrad)
       * smoothstep(4.0, 10.0, tempC);
-    float parcelFactor = fieldParcelPattern(unitS);
+    vec3 parcelInfo = fieldParcelPattern(unitS);
+    float parcelFactor = parcelInfo.x;
+    float hedgeMask = parcelInfo.y;
+    float furrowMask = parcelInfo.z;
     vec3 croppedLowland = mix(tempForest, tempPasture, 0.45 + 0.45 * fertility);
     vec3 parcelAlbedo = mix(vec3(0.34, 0.32, 0.19), vec3(0.22, 0.37, 0.15), parcelFactor);
-    vec3 temperateAlbedo = mix(croppedLowland, parcelAlbedo, zoomAgMask * 0.65);
+    parcelAlbedo *= mix(1.0, 0.90 + 0.18 * furrowMask, closeDetail01);
+    parcelAlbedo = mix(parcelAlbedo, vec3(0.08, 0.17, 0.07), hedgeMask * closeDetail01 * 0.72);
+    vec3 temperateAlbedo = mix(croppedLowland, parcelAlbedo, zoomAgMask * 0.72);
 
     // Smooth 2D Whittaker interpolation across thermal & moisture gradients.
     vec3 coldBelt = mix(tundraHeath, borealTaiga, smoothstep(0.25, 0.58, moist));
@@ -706,10 +877,11 @@ void main() {
     vec3 landAlbedo = mix(coldBelt, tempBelt, smoothstep(0.14, 0.44, warmth));
     landAlbedo = mix(landAlbedo, warmBelt, smoothstep(0.54, 0.84, warmth));
 
-    // Exposed mountain bedrock & strata bands on steep relief & alpine elevations.
+    // Exposed mountain bedrock, coastal cliff bluffs & fractured scree bands.
     float strataBand = 0.5 + 0.5 * sin(effectiveElevM * 0.032 + microVar * 4.5 + strataRough * 0.7);
-    vec3 rockCol = mix(vec3(0.30, 0.28, 0.27), vec3(0.46, 0.44, 0.41), strataBand);
-    float rockMask = smoothstep(0.22, 0.68, slopeGrad + smoothstep(780.0, 2300.0, effectiveElevM) * 0.55);
+    float screeDetail = ridgedFbm3(unitS * 175.0) * closeDetail01;
+    vec3 rockCol = mix(vec3(0.30, 0.28, 0.27), vec3(0.46, 0.44, 0.41), clamp(strataBand * 0.7 + screeDetail * 0.35, 0.0, 1.0));
+    float rockMask = smoothstep(0.20, 0.66, slopeGrad + smoothstep(780.0, 2300.0, effectiveElevM) * 0.55);
     landAlbedo = mix(landAlbedo, rockCol, clamp(rockMask, 0.0, 0.92));
 
     // Alpine snowline, aspect shading & live weather snow accumulation.
@@ -724,9 +896,9 @@ void main() {
     vec3 beachCol = mix(vec3(0.54, 0.49, 0.38), vec3(0.34, 0.32, 0.27), clamp(strataRough / 12.0, 0.0, 1.0));
     landAlbedo = mix(landAlbedo, beachCol, beachMask * (1.0 - snowMask) * 0.65);
 
-    satRgb = landAlbedo * (0.38 + 0.70 * reliefNdl);
+    satRgb = landAlbedo * (0.34 + 0.74 * reliefNdl);
     // Subtle Rayleigh haze over high mountains and far atmospheric limb (3D sphere mode).
-    satRgb += vec3(0.15, 0.26, 0.42) * fresnelRim * sunLimb * (1.0 - uProjectionMorph) * 0.38;
+    satRgb += vec3(0.15, 0.26, 0.42) * fresnelRim * sunLimb * (1.0 - uProjectionMorph) * 0.34;
   }
   satRgb = mix(satRgb, isOceanPixel ? uOceanDeepRgb : uLandLowRgb, 0.06);
 

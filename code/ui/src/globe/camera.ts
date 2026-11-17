@@ -16,6 +16,8 @@ interface ActiveFlyTo {
   readonly endQuat: THREE.Quaternion;
   readonly startAltNorm: number;
   readonly endAltNorm: number;
+  readonly startManualPitchOffset: number;
+  readonly endManualPitchOffset: number;
   readonly startPan: readonly [number, number];
   readonly endPan: readonly [number, number];
   elapsedMs: number;
@@ -40,14 +42,18 @@ function smoothstep01(t: number): number {
 
 /**
  * Pole-free quaternion orbital camera supporting continuous arcball panning across
- * both poles and antimeridian, tilt pitch, logarithmic altitude zoom, dynamic close-up FOV,
+ * both poles and antimeridian, inertial cursor-directed altitude zoom, automatic 0->45 deg
+ * terrain-flyover pitch with manual offset, dynamic perspective near-plane tuning,
  * compass north realignment, great-circle fly-to, and 2D Equal-Area/Mercator framing (`UI-GLB-001`..`007`).
  */
 export class GlobeOrbitalCamera {
   readonly camera: THREE.PerspectiveCamera;
   private focusQuat: THREE.Quaternion;
   private altitudeNorm: number;
-  private pitchRad = 0.08;
+  private targetAltitudeNorm: number;
+  private zoomCursorTargetUnit: Vec3 | null = null;
+  private manualPitchOffsetRad = 0;
+  private terrainReliefSampler: ((unit: Vec3) => number) | null = null;
   private flyTo: ActiveFlyTo | null = null;
   private morphAnim: ActiveMorphTransition | null = null;
   private focusCellId = 0;
@@ -57,10 +63,32 @@ export class GlobeOrbitalCamera {
   private flatPanXY: [number, number] = [0, 0];
 
   constructor(aspect = 16 / 9, initialAltitudeNorm = 0.62) {
-    this.camera = new THREE.PerspectiveCamera(44, Math.max(aspect, 0.1), 0.02, 40);
+    this.camera = new THREE.PerspectiveCamera(44, Math.max(aspect, 0.1), 0.015, 40);
     this.focusQuat = new THREE.Quaternion();
     this.altitudeNorm = clamp(initialAltitudeNorm, 0, 1);
+    this.targetAltitudeNorm = this.altitudeNorm;
     this.syncCameraTransform();
+  }
+
+  setTerrainReliefSampler(sampler: ((unit: Vec3) => number) | null): void {
+    this.terrainReliefSampler = sampler;
+    this.syncCameraTransform();
+  }
+
+  refreshSurfaceTransform(): void {
+    this.syncCameraTransform();
+  }
+
+  getAutoPitchRad(): number {
+    return smoothstep01((0.45 - this.altitudeNorm) / 0.43) * (Math.PI / 4);
+  }
+
+  getEffectivePitchRad(): number {
+    return clamp(this.getAutoPitchRad() + this.manualPitchOffsetRad, 0, 1.02);
+  }
+
+  getTargetAltitudeNorm(): number {
+    return this.targetAltitudeNorm;
   }
 
   setAspect(width: number, height: number): void {
@@ -199,7 +227,7 @@ export class GlobeOrbitalCamera {
     return {
       altitudeNorm: this.altitudeNorm,
       altitudeRadius: this.getAltitudeRadius(),
-      pitchRad: this.pitchRad,
+      pitchRad: this.getEffectivePitchRad(),
       headingRad: this.getHeadingRadians(),
       focusCellId: this.focusCellId,
       focusUnit: this.getFocusUnit(),
@@ -222,8 +250,10 @@ export class GlobeOrbitalCamera {
    */
   panByPixels(deltaX: number, deltaY: number, viewportHeight = 800): void {
     this.cancelFlyTo();
+    this.targetAltitudeNorm = this.altitudeNorm;
+    this.zoomCursorTargetUnit = null;
     if (this.projectionMode !== "globe") {
-      const spanScale = (0.35 + 1.55 * this.altitudeNorm) / Math.max(viewportHeight, 200);
+      const spanScale = (0.14 + 1.55 * this.altitudeNorm) / Math.max(viewportHeight, 200);
       this.flatPanXY[0] = clamp(this.flatPanXY[0] - deltaX * spanScale, -1.42, 1.42);
       this.flatPanXY[1] = clamp(this.flatPanXY[1] + deltaY * spanScale, -1.42, 1.42);
       const unproj = unprojectFlat2DToUnit(
@@ -239,7 +269,7 @@ export class GlobeOrbitalCamera {
       return;
     }
 
-    const scale = (0.9 * this.altitudeNorm + 0.12) * (1.8 / Math.max(viewportHeight, 200));
+    const scale = (1.05 * this.altitudeNorm + 0.045) * (1.8 / Math.max(viewportHeight, 200));
     const rightAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(this.focusQuat).normalize();
     const upAxis = new THREE.Vector3(0, 1, 0).applyQuaternion(this.focusQuat).normalize();
 
@@ -250,31 +280,50 @@ export class GlobeOrbitalCamera {
   }
 
   /**
-   * Adjusts tilt angle away from zenith while keeping horizon clamp `[0..0.85 rad]`.
+   * Adjusts manual tilt offset relative to the altitude auto-pitch curve while keeping `[0 .. 1.02 rad]`.
    */
   tiltByPixels(deltaY: number): void {
     this.cancelFlyTo();
-    this.pitchRad = clamp(this.pitchRad - deltaY * 0.004, 0, 0.85);
+    const autoPitch = this.getAutoPitchRad();
+    const desiredEffective = clamp(autoPitch + this.manualPitchOffsetRad - deltaY * 0.004, 0, 1.02);
+    this.manualPitchOffsetRad = clamp(desiredEffective - autoPitch, -Math.PI / 4, 0.95);
     this.syncCameraTransform();
   }
 
   /**
-   * Zooms logarithmically between orbital view (`1.0`) and tactical close surface (`0.0`).
+   * Queues an inertially smoothed wheel zoom impulse steered toward an optional world unit coordinate.
+   */
+  zoomSmoothByWheelDelta(deltaAltitudeNorm: number, cursorTargetUnit: Vec3 | null = null): void {
+    this.cancelFlyTo();
+    this.targetAltitudeNorm = clamp(this.targetAltitudeNorm + deltaAltitudeNorm, 0, 1);
+    if (deltaAltitudeNorm < 0 && cursorTargetUnit) {
+      this.zoomCursorTargetUnit = norm3(cursorTargetUnit);
+    } else if (deltaAltitudeNorm > 0) {
+      this.zoomCursorTargetUnit = null;
+    }
+  }
+
+  /**
+   * Steps altitude logarithmically between orbital view (`1.0`) and tactical close surface (`0.0`).
    */
   zoomBySteps(steps: number): void {
     this.cancelFlyTo();
     this.altitudeNorm = clamp(this.altitudeNorm + steps * 0.08, 0, 1);
+    this.targetAltitudeNorm = this.altitudeNorm;
+    this.zoomCursorTargetUnit = null;
     this.syncCameraTransform();
   }
 
   setAltitudeNorm(altNorm: number): void {
     this.cancelFlyTo();
     this.altitudeNorm = clamp(altNorm, 0, 1);
+    this.targetAltitudeNorm = this.altitudeNorm;
+    this.zoomCursorTargetUnit = null;
     this.syncCameraTransform();
   }
 
   /**
-   * Smoothly or immediately realigns local camera up toward planetary North while preserving focus point.
+   * Smoothly or immediately realigns local camera up toward planetary North and resets manual pitch offset.
    */
   resetNorth(immediate = false): void {
     const f = new THREE.Vector3(...this.getFocusUnit());
@@ -285,10 +334,13 @@ export class GlobeOrbitalCamera {
     const m = new THREE.Matrix4().makeBasis(right, orthoUp, f);
     const endQuat = new THREE.Quaternion().setFromRotationMatrix(m).normalize();
 
+    this.zoomCursorTargetUnit = null;
+    this.targetAltitudeNorm = this.altitudeNorm;
+
     if (immediate) {
       this.flyTo = null;
       this.focusQuat.copy(endQuat);
-      this.pitchRad = 0;
+      this.manualPitchOffsetRad = 0;
       this.syncCameraTransform();
     } else {
       this.flyTo = {
@@ -296,6 +348,8 @@ export class GlobeOrbitalCamera {
         endQuat,
         startAltNorm: this.altitudeNorm,
         endAltNorm: this.altitudeNorm,
+        startManualPitchOffset: this.manualPitchOffsetRad,
+        endManualPitchOffset: 0,
         startPan: [this.flatPanXY[0], this.flatPanXY[1]],
         endPan: [this.flatPanXY[0], this.flatPanXY[1]],
         elapsedMs: 0,
@@ -319,6 +373,9 @@ export class GlobeOrbitalCamera {
     const endQuat = arcQuat.multiply(this.focusQuat.clone()).normalize();
     const clampedAlt = clamp(targetAltitudeNorm, 0, 1);
 
+    this.zoomCursorTargetUnit = null;
+    this.targetAltitudeNorm = clampedAlt;
+
     let endPan: readonly [number, number] = [this.flatPanXY[0], this.flatPanXY[1]];
     if (this.projectionMode !== "globe") {
       const projected = projectUnitToFlat2D(targetUnit, this.projectionMode, this.projectionOriginUnit);
@@ -331,6 +388,7 @@ export class GlobeOrbitalCamera {
       this.flyTo = null;
       this.focusQuat.copy(endQuat);
       this.altitudeNorm = clampedAlt;
+      this.targetAltitudeNorm = clampedAlt;
       this.flatPanXY = [endPan[0], endPan[1]];
       this.syncCameraTransform();
       return;
@@ -341,6 +399,8 @@ export class GlobeOrbitalCamera {
       endQuat,
       startAltNorm: this.altitudeNorm,
       endAltNorm: clampedAlt,
+      startManualPitchOffset: this.manualPitchOffsetRad,
+      endManualPitchOffset: this.manualPitchOffsetRad,
       startPan: [this.flatPanXY[0], this.flatPanXY[1]],
       endPan,
       elapsedMs: 0,
@@ -374,6 +434,10 @@ export class GlobeOrbitalCamera {
       this.focusQuat.slerpQuaternions(this.flyTo.startQuat, this.flyTo.endQuat, eased).normalize();
       this.altitudeNorm =
         this.flyTo.startAltNorm + (this.flyTo.endAltNorm - this.flyTo.startAltNorm) * eased;
+      this.targetAltitudeNorm = this.altitudeNorm;
+      this.manualPitchOffsetRad =
+        this.flyTo.startManualPitchOffset +
+        (this.flyTo.endManualPitchOffset - this.flyTo.startManualPitchOffset) * eased;
       this.flatPanXY = [
         this.flyTo.startPan[0] + (this.flyTo.endPan[0] - this.flyTo.startPan[0]) * eased,
         this.flyTo.startPan[1] + (this.flyTo.endPan[1] - this.flyTo.startPan[1]) * eased,
@@ -381,6 +445,71 @@ export class GlobeOrbitalCamera {
 
       if (rawT >= 1) {
         this.flyTo = null;
+      } else {
+        active = true;
+      }
+    } else if (Math.abs(this.targetAltitudeNorm - this.altitudeNorm) > 1e-5) {
+      changed = true;
+      const dt = Math.min(Math.max(0, deltaMs), 100);
+      const alpha = 1 - Math.exp(-dt / 85);
+      const prevAlt = this.altitudeNorm;
+      const diff = this.targetAltitudeNorm - prevAlt;
+      const nextAlt = Math.abs(diff) < 1e-4 ? this.targetAltitudeNorm : prevAlt + diff * alpha;
+      this.altitudeNorm = nextAlt;
+
+      if (nextAlt < prevAlt && this.zoomCursorTargetUnit) {
+        const steerFrac = clamp((prevAlt - nextAlt) / Math.max(0.06, prevAlt + 0.02), 0, 0.35) * 0.65;
+        if (this.projectionMode !== "globe") {
+          const proj = projectUnitToFlat2D(
+            this.zoomCursorTargetUnit,
+            this.projectionMode,
+            this.projectionOriginUnit,
+          );
+          if (proj.valid) {
+            const tx = clamp(proj.x, -1.42, 1.42);
+            const ty = clamp(proj.y, -1.42, 1.42);
+            this.flatPanXY[0] = clamp(
+              this.flatPanXY[0] + (tx - this.flatPanXY[0]) * steerFrac,
+              -1.42,
+              1.42,
+            );
+            this.flatPanXY[1] = clamp(
+              this.flatPanXY[1] + (ty - this.flatPanXY[1]) * steerFrac,
+              -1.42,
+              1.42,
+            );
+            const unproj = unprojectFlat2DToUnit(
+              this.flatPanXY[0],
+              this.flatPanXY[1],
+              this.projectionMode,
+              this.projectionOriginUnit,
+            );
+            if (unproj) {
+              this.alignFocusUnitPreservingUp(unproj);
+            }
+          }
+        } else {
+          const curFocus = new THREE.Vector3(...this.getFocusUnit()).normalize();
+          const destFocus = new THREE.Vector3(
+            this.zoomCursorTargetUnit[0],
+            this.zoomCursorTargetUnit[1],
+            this.zoomCursorTargetUnit[2],
+          ).normalize();
+          if (curFocus.distanceToSquared(destFocus) > 1e-8) {
+            const fullArc = new THREE.Quaternion().setFromUnitVectors(curFocus, destFocus);
+            const stepArc = new THREE.Quaternion().slerpQuaternions(
+              new THREE.Quaternion(),
+              fullArc,
+              steerFrac,
+            );
+            this.focusQuat.premultiply(stepArc).normalize();
+          }
+        }
+      }
+
+      if (Math.abs(this.targetAltitudeNorm - this.altitudeNorm) <= 1e-4) {
+        this.altitudeNorm = this.targetAltitudeNorm;
+        this.zoomCursorTargetUnit = null;
       } else {
         active = true;
       }
@@ -393,11 +522,16 @@ export class GlobeOrbitalCamera {
   }
 
   private syncCameraTransform(): void {
-    // Narrow FOV gracefully in close settlement/regional zooms while keeping MIN/MAX radius invariant.
-    const closeZoomT = smoothstep01((0.24 - this.altitudeNorm) / 0.24);
-    const targetFov = 44 - closeZoomT * 30;
-    if (Math.abs(targetFov - this.camera.fov) > 1e-4) {
+    // Keep natural aerial perspective FOV (44 -> 38 deg) & refine near plane for close-up terrain.
+    const closeZoomT = smoothstep01((0.28 - this.altitudeNorm) / 0.28);
+    const targetFov = 44 - closeZoomT * 6;
+    const targetNear = this.altitudeNorm < 0.35 ? 0.0015 : 0.015;
+    if (
+      Math.abs(targetFov - this.camera.fov) > 1e-4 ||
+      Math.abs(targetNear - this.camera.near) > 1e-5
+    ) {
       this.camera.fov = targetFov;
+      this.camera.near = targetNear;
       this.camera.updateProjectionMatrix();
     }
 
@@ -405,37 +539,50 @@ export class GlobeOrbitalCamera {
     const u = new THREE.Vector3(0, 1, 0).applyQuaternion(this.focusQuat).normalize();
     const right = new THREE.Vector3().crossVectors(u, f).normalize();
 
-    const radius = this.getAltitudeRadius();
-    const altAboveSurface = Math.max(0.05, radius - 1.0);
-    const tiltRatio = this.pitchRad * smoothstep01(1 - this.altitudeNorm);
+    const focusUnit: Vec3 = [f.x, f.y, f.z];
+    const focusRelief = Math.max(0, this.terrainReliefSampler ? this.terrainReliefSampler(focusUnit) : 0);
+    const focusTarget = f.clone().multiplyScalar(1.0 + focusRelief);
+
+    const minVisualStandOff = 0.028;
+    const maxVisualStandOff = MAX_ALTITUDE_RADIUS - 1.0;
+    const visualStandOff =
+      minVisualStandOff * Math.pow(maxVisualStandOff / minVisualStandOff, this.altitudeNorm);
+
+    const effectivePitch = this.getEffectivePitchRad();
     const camOffset = f
       .clone()
-      .multiplyScalar(Math.cos(tiltRatio) * altAboveSurface)
-      .add(u.clone().multiplyScalar(-Math.sin(tiltRatio) * altAboveSurface));
+      .multiplyScalar(Math.cos(effectivePitch) * visualStandOff)
+      .add(u.clone().multiplyScalar(-Math.sin(effectivePitch) * visualStandOff));
 
-    const spherePos = f.clone().add(camOffset);
-    if (spherePos.length() < 1.04) {
-      spherePos.normalize().multiplyScalar(1.04);
+    const spherePos = focusTarget.clone().add(camOffset);
+    const camDir = spherePos.clone().normalize();
+    const underCamRelief = Math.max(
+      0,
+      this.terrainReliefSampler ? this.terrainReliefSampler([camDir.x, camDir.y, camDir.z]) : 0,
+    );
+    const minSafeRadius = 1.0 + underCamRelief + 0.012;
+    if (spherePos.length() < minSafeRadius) {
+      spherePos.copy(camDir).multiplyScalar(minSafeRadius);
     }
 
-    const forwardLook = f.clone().sub(spherePos).normalize();
+    const forwardLook = focusTarget.clone().sub(spherePos).normalize();
     const sphereUpRaw = new THREE.Vector3().crossVectors(right, forwardLook).normalize();
     const sphereUp = sphereUpRaw.lengthSq() > 0.1 ? sphereUpRaw : u;
 
     if (this.projectionMorph > 0.001) {
-      const flatZ = 0.28 + Math.pow(this.altitudeNorm, 1.1) * 3.25;
+      const flatZ = 0.16 + Math.pow(this.altitudeNorm, 1.15) * 3.35;
       const flatPos = new THREE.Vector3(this.flatPanXY[0], this.flatPanXY[1], flatZ);
-      const flatTarget = new THREE.Vector3(this.flatPanXY[0], this.flatPanXY[1], 0);
+      const flatTarget = new THREE.Vector3(this.flatPanXY[0], this.flatPanXY[1], focusRelief * 0.65);
       const flatUp = new THREE.Vector3(0, 1, 0);
 
       const m = this.projectionMorph;
       this.camera.position.copy(spherePos.lerp(flatPos, m));
       this.camera.up.copy(sphereUp.lerp(flatUp, m).normalize());
-      this.camera.lookAt(f.clone().lerp(flatTarget, m));
+      this.camera.lookAt(focusTarget.clone().lerp(flatTarget, m));
     } else {
       this.camera.position.copy(spherePos);
       this.camera.up.copy(sphereUp);
-      this.camera.lookAt(f);
+      this.camera.lookAt(focusTarget);
     }
     this.camera.updateMatrixWorld();
   }

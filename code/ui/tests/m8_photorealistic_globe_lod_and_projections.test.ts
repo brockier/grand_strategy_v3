@@ -17,6 +17,7 @@ import {
   unprojectFlat2DToUnit,
 } from "../src/spine";
 import {
+  GlobeOrbitalCamera,
   GlobePatchLodManager,
   SettlementDetailClusterGroup,
   classifySemanticZoomTier,
@@ -37,7 +38,7 @@ const CANONICAL_M3_M4 = JSON.parse(fs.readFileSync(M3_M4_FIXTURE_PATH, "utf8")) 
 
 describe("Photorealistic Planet Presentation, Multi-Tier Semantic Zoom LOD, De-Clustered Ribbons & Projections", () => {
   // @req UI-GLB-006
-  it("subdivides 5,762-cell planet patches across LOD 0..3 around focus and keeps unexplored biophysical slots zeroed (UI-GLB-006)", () => {
+  it("subdivides 5,762-cell planet patches across LOD 0..4 around focus and keeps unexplored biophysical slots zeroed (UI-GLB-006)", () => {
     const topo = generateGoldbergTopology(24);
     expect(topo.cellCount).toBe(5762);
     expect(topo.pentagonCount).toBe(12);
@@ -53,17 +54,19 @@ describe("Photorealistic Planet Presentation, Multi-Tier Semantic Zoom LOD, De-C
     const orbitalTris = patchLod.getTotalVisibleTriangles();
     expect(orbitalCounts[0]).toBeGreaterThan(0);
     expect(orbitalCounts[3]).toBe(0);
+    expect(orbitalCounts[4]).toBe(0);
 
     patchLod.updateForCamera(focus, 0.05, 0);
     const closeCounts = patchLod.getLodCounts();
     const closeTris = patchLod.getTotalVisibleTriangles();
+    expect(closeCounts[4]).toBeGreaterThan(0);
     expect(closeCounts[3]).toBeGreaterThan(0);
     expect(closeTris).toBeGreaterThan(orbitalTris * 4);
 
     // 2D flat mode shows all 20 sectors simultaneously.
     patchLod.updateForCamera(focus, 0.85, 1);
     const flatCounts = patchLod.getLodCounts();
-    expect(flatCounts[0] + flatCounts[1] + flatCounts[2] + flatCounts[3]).toBe(20);
+    expect(flatCounts[0] + flatCounts[1] + flatCounts[2] + flatCounts[3] + flatCounts[4]).toBe(20);
 
     // Biophysical DataTexture remains strictly [0, 0, 0, 0] on Unexplored & Rumored cells while packing Surveyed data.
     const bioCells: KnownCellDto[] = [
@@ -423,6 +426,175 @@ describe("Photorealistic Planet Presentation, Multi-Tier Semantic Zoom LOD, De-C
       bus.emit({ kind: "SwitchGlobeProjection", projection: "globe" });
       viewport.stepRender(16);
       expect(viewport.status.projectionMode).toBe("globe");
+    } finally {
+      viewport.dispose();
+      dom.window.close();
+      (globalThis as unknown as { document: unknown }).document = prevDoc;
+      (globalThis as unknown as { window: unknown }).window = prevWin;
+      (globalThis as unknown as { HTMLElement: unknown }).HTMLElement = prevHtml;
+    }
+  });
+
+  // @req UI-GLB-002
+  // @req UI-GLB-006
+  it("performs smooth inertial cursor-zoom, transitions pitch from 0 to 45 deg, elevates all explored land, and spawns instanced 3D forests (UI-GLB-002, UI-GLB-006)", async () => {
+    const topo = generateGoldbergTopology(3);
+    const cellMap = new Map<number, GoldbergCellGeometry>();
+    for (const c of topo.cells) cellMap.set(c.cellId, c);
+
+    // 1. Inertial cursor-directed scroll zoom & 0..45 deg auto-pitch + manual offset
+    const cam = new GlobeOrbitalCamera(16 / 9, 0.72);
+    const cursorTarget = topo.cells[18].centerUnit;
+    const initialDist = greatCircleRadians(cam.getFocusUnit(), cursorTarget);
+    cam.zoomSmoothByWheelDelta(-0.24, cursorTarget);
+    expect(cam.getAltitudeNorm()).toBeCloseTo(0.72, 6);
+
+    let prevAlt = cam.getAltitudeNorm();
+    for (let f = 0; f < 40; f += 1) {
+      cam.stepAnimation(16);
+      const curAlt = cam.getAltitudeNorm();
+      expect(curAlt).toBeLessThanOrEqual(prevAlt + 1e-6);
+      expect(curAlt).toBeGreaterThanOrEqual(0.48 - 1e-4);
+      prevAlt = curAlt;
+    }
+    expect(cam.getAltitudeNorm()).toBeCloseTo(0.48, 2);
+    expect(greatCircleRadians(cam.getFocusUnit(), cursorTarget)).toBeLessThan(initialDist);
+
+    cam.setAltitudeNorm(0.60);
+    expect(cam.getTelemetry().pitchRad).toBe(0);
+    cam.setAltitudeNorm(0.01);
+    expect(cam.getTelemetry().pitchRad).toBeCloseTo(Math.PI / 4, 3);
+    cam.tiltByPixels(-50);
+    expect(cam.getTelemetry().pitchRad).toBeGreaterThan(Math.PI / 4 + 0.05);
+    cam.resetNorth(true);
+    expect(cam.getTelemetry().pitchRad).toBeCloseTo(Math.PI / 4, 3);
+
+    // 2. Full-spectrum 3D terrain elevation across coastal lowlands, midlands & alpine peaks (0 on ocean/unexplored)
+    const testCenterId = 10;
+    const oceanId = 200;
+    const coastId = 20;
+    const hillId = 35;
+    const peakId = 50;
+    const unexplId = 300;
+    const elevCells: KnownCellDto[] = [];
+    const registerCluster = (cid: number, elevM: number, isOcean: boolean, biome: string) => {
+      const ids = [cid, ...topo.cells[cid].neighbors];
+      for (const id of ids) {
+        if (elevCells.some((c) => c.cellId === id)) continue;
+        elevCells.push({
+          tier: "surveyed",
+          cellId: id,
+          observedTick: 10,
+          isLiveHqSight: true,
+          elevationM: elevM,
+          confidence01: 1,
+          provenanceLabel: "Survey",
+          biomeKey: biome,
+          isOcean,
+          meanAnnualTempC: isOcean ? 12 : 14 - Math.max(0, elevM) * 0.005,
+          aridityIndex01: 1.0,
+          soilFertility01: 0.7,
+        });
+      }
+    };
+    registerCluster(testCenterId, 160, false, "temperate_forest");
+    registerCluster(oceanId, -300, true, "ocean");
+    registerCluster(coastId, 40, false, "temperate_forest");
+    registerCluster(hillId, 220, false, "temperate_forest");
+    registerCluster(peakId, 2400, false, "alpine_rock");
+    elevCells.push({ tier: "unexplored", cellId: unexplId });
+
+    const reliefSnap: DiegeticSnapshot = {
+      ...CANONICAL_M3_M4,
+      hqPresence: { ...CANONICAL_M3_M4.hqPresence, cellId: testCenterId },
+      knownSettlements: [
+        {
+          settlementId: 0,
+          settlementName: "Haven",
+          cellId: testCenterId,
+          isHq: true,
+        },
+      ],
+      knownCells: elevCells,
+      observedWeather: [],
+    };
+    const sampler = createShaderTerrainSurfaceSampler(reliefSnap, topo);
+    const sUnexpl = sampler.sample(topo.cells[unexplId].centerUnit, unexplId, unexplId, 0.08);
+    const sOcean = sampler.sample(topo.cells[oceanId].centerUnit, oceanId, oceanId, 0.08);
+    const sCoast = sampler.sample(topo.cells[coastId].centerUnit, coastId, coastId, 0.08);
+    const sHill = sampler.sample(topo.cells[hillId].centerUnit, hillId, hillId, 0.08);
+    const sPeak = sampler.sample(topo.cells[peakId].centerUnit, peakId, peakId, 0.08);
+
+    expect(sUnexpl.isExplored).toBe(false);
+    expect(sUnexpl.vertexReliefHeight).toBe(0);
+    expect(sOcean.vertexReliefHeight).toBe(0);
+    expect(sCoast.vertexReliefHeight).toBeGreaterThan(0.002);
+    expect(sHill.vertexReliefHeight).toBeGreaterThan(sCoast.vertexReliefHeight);
+    expect(sPeak.vertexReliefHeight).toBeGreaterThan(sHill.vertexReliefHeight);
+
+    // 3. Instanced 3D woodland crowns & grounded structures on explored dry land
+    const clusterGroup = new SettlementDetailClusterGroup();
+    const projectPoint = (unit: readonly [number, number, number], lift: number) =>
+      new THREE.Vector3(unit[0], unit[1], unit[2]).normalize().multiplyScalar(1 + lift);
+    const declustered = computeDeclusteredEntityOffsets(reliefSnap, cellMap, 0.08);
+    const built = clusterGroup.rebuild(
+      reliefSnap,
+      topo,
+      cellMap,
+      declustered.formations,
+      0.08,
+      projectPoint,
+      false,
+      sampler,
+      topo.cells[testCenterId].centerUnit,
+    );
+    expect(built).toBe(1);
+    const instancedForests = clusterGroup.group.children.filter(
+      (c): c is THREE.InstancedMesh => c instanceof THREE.InstancedMesh,
+    );
+    expect(instancedForests.length).toBeGreaterThan(0);
+    const totalTreeInstances = instancedForests.reduce((sum, im) => sum + im.count, 0);
+    expect(totalTreeInstances).toBeGreaterThan(0);
+
+    const tmpMat = new THREE.Matrix4();
+    const tmpPos = new THREE.Vector3();
+    for (const im of instancedForests) {
+      for (let i = 0; i < im.count; i += 1) {
+        im.getMatrixAt(i, tmpMat);
+        tmpPos.setFromMatrixPosition(tmpMat).normalize();
+        const ts = sampler.sample([tmpPos.x, tmpPos.y, tmpPos.z], testCenterId, testCenterId, 0.08);
+        expect(ts.isExplored).toBe(true);
+        expect(ts.effectiveElevM).toBeGreaterThanOrEqual(0);
+      }
+    }
+    clusterGroup.dispose();
+
+    // 4. 3D ray-marched oblique terrain picking accuracy at ~45 deg tilt
+    const dom = new JSDOM("<!doctype html><html><body><div id='app-shell'></div></body></html>");
+    const prevDoc = (globalThis as unknown as { document: unknown }).document;
+    const prevWin = (globalThis as unknown as { window: unknown }).window;
+    const prevHtml = (globalThis as unknown as { HTMLElement: unknown }).HTMLElement;
+    (globalThis as unknown as { document: unknown }).document = dom.window.document;
+    (globalThis as unknown as { window: unknown }).window = dom.window;
+    (globalThis as unknown as { HTMLElement: unknown }).HTMLElement = dom.window.HTMLElement;
+
+    const canvas = dom.window.document.createElement("canvas");
+    Object.defineProperty(canvas, "clientWidth", { value: 1280 });
+    Object.defineProperty(canvas, "clientHeight", { value: 720 });
+    canvas.getContext = (() => null) as unknown as typeof canvas.getContext;
+    dom.window.document.getElementById("app-shell")!.appendChild(canvas);
+
+    const store = new DiegeticStore();
+    store.ingestSnapshot(M2_SNAPSHOTS[0]);
+    const bus = new UiIntentBus();
+    const viewport = await initializeGlobeViewport(canvas, store, bus, []);
+    try {
+      const targetCellId = topo.cells[0].cellId;
+      viewport.camera.flyToUnitVector(topo.cells[targetCellId].centerUnit, 0.06, 0, true);
+      viewport.stepRender(16);
+      expect(viewport.camera.getTelemetry().pitchRad).toBeGreaterThan(0.65);
+      const hit = viewport.layerHost.pickGlobeAtNdc(0, 0);
+      expect(hit?.cellId).toBe(targetCellId);
     } finally {
       viewport.dispose();
       dom.window.close();

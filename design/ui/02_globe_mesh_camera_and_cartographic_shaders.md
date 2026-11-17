@@ -26,21 +26,24 @@
 ### 2.1 Watertight Welded Subdivided Icosphere + Frustum Patch LOD (`UI-GLB-001.1`, `UI-GLB-006`)
 
 - Builds base indexed `THREE.BufferGeometry` directly from `PlanetGeometryPort` topology transferred via `DiegeticStore::selectGlobeTopology()` (`m = 24`, `5,762` sample vertices, `11,520` outward-wound spherical triangles, Euler `V - E + F = 2`, zero hex/pentagon seams).
-- **Frustum-Culled Spherical Patch LOD (`lod-patches.ts`):** Splits the globe into 20 icosahedral sector patches cached across 4 subdivision levels (`LOD 0` = `1x`, `LOD 1` = `4x`, `LOD 2` = `16x`, `LOD 3` = `64x` triangles near focus at low altitude) with continuous `aCornerCells` + interpolated `aBarycentric` weights and skirt rim vertices to prevent inter-LOD cracks.
+- **Frustum-Culled Spherical Patch LOD (`lod-patches.ts`):** Splits the globe into 20 icosahedral sector patches cached across 5 subdivision levels (`LOD 0` = `1x`, `LOD 1` = `4x`, `LOD 2` = `16x`, `LOD 3` = `64x`, `LOD 4` = `256x` triangles near focus at low altitude via `SUBDIV_PER_LOD = [1, 2, 4, 8, 16]`) with continuous `aCornerCells` + interpolated `aBarycentric` weights and skirt rim vertices to prevent inter-LOD cracks.
 - **No Voronoi Hex Boundaries:** Nearest-vertex winner selection is eliminated; every pixel interpolates elevation, climate, wetness, fertility, strata, and river plumes smoothly with sub-cell fractal coastal noise (`coastalWarp`) before testing land-vs-water (`h > 0`).
-- Smooth circular cartographic reticles (`dot(normalize(vSpherePos), uHoveredUnitPos)`) mark hovered and selected continuous coordinates across both 3D and 2D views.
+- Smooth circular cartographic reticles (`dot(normalize(vSpherePos), uHoveredUnitPos)`) mark hovered and selected continuous coordinates across both 3D and 2D views via 3D terrain ray-marched picking.
 
-### 2.2 Quaternion Orbital Camera + Optical Telephoto Zoom & 2D Projections (`UI-GLB-002`, `UI-GLB-007`)
+### 2.2 Quaternion Orbital Camera + Inertial Cursor-Zoom, Auto-Pitch & 2D Projections (`UI-GLB-002`, `UI-GLB-007`)
 
 ```typescript
 interface GlobeCameraState {
-  focusUnitNormal: THREE.Vector3; // Unit vector pointing to camera center on sphere
-  northTangent: THREE.Vector3;    // Orthonormal heading vector
-  altitudeRadius: number;         // Logarithmic zoom range [1.12 .. 3.60]
-  fovDeg: number;                 // Continuous zoom narrowing 44 deg -> 16 deg below altNorm 0.22
-  pitchRad: number;               // Clamped [0.0 .. 0.85]
+  focusUnitNormal: THREE.Vector3;     // Unit vector pointing to camera focus on sphere
+  northTangent: THREE.Vector3;        // Orthonormal heading vector
+  altitudeRadius: number;             // Logarithmic zoom range [1.12 .. 3.60]
+  targetAltitudeNorm: number;         // Damped wheel-zoom destination in [0 .. 1]
+  zoomCursorTargetUnit: Vec3 | null;  // Anchor unit coordinate under mouse cursor during zoom-in
+  fovDeg: number;                     // Natural wide perspective 44 deg -> 38 deg below altNorm 0.28
+  autoPitchRad: number;               // Smooth 0 deg (>= 0.45) -> 45 deg (<= 0.02) close-up tilt
+  manualPitchOffsetRad: number;       // Right-drag / Shift-drag pitch override, cleared by resetNorth()
   projectionMode: "globe" | "equal_area" | "mercator";
-  projectionMorph01: number;      // Smooth 0 <-> 1 transition tween
+  projectionMorph01: number;          // Smooth 0 <-> 1 transition tween
   activeFlyTween: FlyTweenState | null;
 }
 ```
@@ -58,20 +61,21 @@ Snapshot updates write updated cell bytes into two off-screen double-buffered `1
 ### 3.1 Satellite-First Biophysical PBR Shader + Optional Parchment Lens (`UI-GLB-003`, `UI-GLB-004`)
 In [shaders.ts](file:///home/roger/Projects/ng/code/ui/src/globe/shaders.ts):
 1. Compute `cartographicBlend = smoothstep(0.25, 0.75, altitudeNorm)` (`0 -> 1`).
-2. **Vertex Relief & Projection Morph:** Displace vertex radial height by smooth interpolated elevation plus zoom-scaled spherical ridged fBm micro-relief (strictly masked by `knownGate = step(0.55, kSum)` so unexplored horizon remains smooth twilight curvature), then morph cleanly between 3D sphere coordinates and 2D `EqualArea` (`Lambert Azimuthal Equal-Area`) or `Mercator` coordinates via `uProjectionMorph`.
+2. **Unified 3D Diorama Land Relief & Projection Morph:** Both `VERTEX_SHADER` (`uCellDataTex` + `uBiophysicalTex`) and the CPU surface sampler (`createShaderTerrainSurfaceSampler`) compute an identical altitude-invariant 3D displacement across all explored land (`effectiveElevM > 0`), combining coastal bluffs, concave hypsometric plains and plateaus, rolling 3D lowland hills, incised `strahler` river valleys, and craggy alpine peaks, while strictly masking unexplored horizon vertices to zero (`kSum < 0.35`). The vertex shader morphs cleanly between 3D sphere coordinates and 2D `EqualArea` (`Lambert Azimuthal Equal-Area`) or `Mercator` coordinates via `uProjectionMorph`.
 3. **Biophysical Satellite Surface Pass (`uParchmentMode < 0.5`, Default at All Zooms):**
    - Continuous Whittaker reflectance from `(tempC, aridity01, fertility01, slope, elevM)` matching ESA Sentinel-2 true-color imagery: Sahara ochre sand, Mediterranean scrub, Atlantic pasture-field mosaic, dark Nordic taiga, slope-exposed bedrock strata, and aspect/temperature snowpack & glaciers.
-   - Shallow-to-abyssal water absorption with suspended teal-ochre river-mouth sediment plumes, capillary Fresnel sky reflection, and polar sea-ice floes.
-   - Screen-space derivative / spherical gradient micro-bump lighting + Rayleigh blue limb glow scaled by `cartographicBlend`.
+   - Shallow-to-abyssal water absorption with suspended teal-ochre river-mouth sediment plumes, capillary Fresnel sky reflection, coastal surf foam lines at close zoom, and polar sea-ice floes.
+   - World-space tangent normal perturbation aligned to `uSunDir` keeps terrain lighting invariant across `0 deg -> 45 deg` pitch and polar orbits, fading in close-up crop furrows, hedgerows, forest canopy crowns, and fractured cliff scree as altitude decreases.
    - **Twilight Unmapped Globe + Cloud Feathering:** `kSum < 0.52` renders pure dark twilight unmapped planet with subtle graticules; `0.52 .. 0.86` feathers surveyed terrain softly through multi-octave cloud banks.
 4. **Selectable Antique Parchment Lens (`uParchmentMode > 0.5`):** Cross-fades to aged paper grain, crisp `fwidth` contour isolines, `1px` shoreline ink, and slope cross-hatching at any altitude.
 
 For complete patch LOD, hydrology ribbon, and 4-tier semantic zoom specifications, see [10_photorealistic_planet_and_semantic_zoom_lod.md](file:///home/roger/Projects/ng/design/ui/10_photorealistic_planet_and_semantic_zoom_lod.md).
 
-### 3.2 Gimbal-Free Polar Navigation (`UI-GLB-002`)
+### 3.2 Gimbal-Free Polar Navigation, Inertial Cursor-Zoom & Terrain Clearance (`UI-GLB-002`)
 1. Mouse drag computes incremental arcball quaternion around camera right/up vectors directly on `focusUnitNormal`, eliminating Euler pole singularities.
-2. Pressing compass north-reset smoothly slerps `northTangent` back toward geographic North Pole meridian.
-3. Clicking any hyperlinked coordinate (`FlyGlobeToCell`) interpolates along the sphere's shortest great-circle slerp geodesic while easing `altitudeRadius`.
+2. Wheel input normalizes `deltaY` across pixel/line/page modes, updates `targetAltitudeNorm`, picks the 3D ray-marched cursor target coordinate when zooming inward, and exponentially damps `altitudeNorm` + focus steering per animation frame while smoothly transitioning pitch from vertical (`0 deg`) to oblique terrain flyover (`45 deg`) with a terrain-clearance minimum radius guard and low-altitude `camera.near` refinement (`0.0015`).
+3. Pressing compass north-reset smoothly slerps `northTangent` back toward geographic North Pole meridian and zeros `manualPitchOffsetRad` back to the default altitude-pitch curve.
+4. Clicking any hyperlinked coordinate (`FlyGlobeToCell`) interpolates along the sphere's shortest great-circle slerp geodesic while easing `altitudeRadius`.
 
 ---
 
