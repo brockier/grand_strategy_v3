@@ -1714,8 +1714,8 @@ export function createKnowledgeArchiveWindowPlugin(): WindowContentPlugin {
   return {
     pluginId: "knowledge_archive",
     defaultTitle: "Empirical Archive & Fragility",
-    minWidth: 480,
-    minHeight: 360,
+    minWidth: 640,
+    minHeight: 520,
     hotkey: "k",
     mountContent(container, _instanceKey, spine) {
       const tabGroup = createAccessibleTabGroup(document, {

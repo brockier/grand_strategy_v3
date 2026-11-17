@@ -101,6 +101,9 @@ describe("Option B & Milestones M5-M7 Live Chromium Electron End-to-End Integrat
       instSummaryHasHeading: boolean;
       updatedGovModel: string | null;
       knowledgeBadges: number;
+      knowledgeRowCount: number;
+      knowledgeCardEnclosesRows: boolean;
+      knowledgeAllRowsVisibleOnOpen: boolean;
       hasTechTreeText: boolean;
       modeTarget: string;
       updatedInnovationMode: string | null;
@@ -148,6 +151,9 @@ describe("Option B & Milestones M5-M7 Live Chromium Electron End-to-End Integrat
     expect(result.updatedGovModel).toBe("constitutional_cabinet");
 
     expect(result.knowledgeBadges).toBeGreaterThanOrEqual(0);
+    expect(result.knowledgeRowCount).toBeGreaterThanOrEqual(6);
+    expect(result.knowledgeCardEnclosesRows).toBe(true);
+    expect(result.knowledgeAllRowsVisibleOnOpen).toBe(true);
     expect(result.hasTechTreeText).toBe(false);
     if (result.modeTarget) {
       expect(result.updatedInnovationMode).toBe(result.modeTarget);

@@ -616,7 +616,12 @@ void main() {
     fbm4(unitS * 9.0 + vec3(-3.8, 0.6, 5.1)),
     fbm4(unitS * 9.0 + vec3(2.9, -4.1, 1.4))
   ) - 0.5;
-  float coastBand = 1.0 - smoothstep(40.0, 520.0, abs(baseElevM));
+  float isLand0 = step(0.499, d0.r);
+  float isLand1 = step(0.499, d1.r);
+  float isLand2 = step(0.499, d2.r);
+  float landFrac = isLand0 * w0 + isLand1 * w1 + isLand2 * w2;
+  float coastTransition = smoothstep(0.05, 0.32, landFrac) * smoothstep(0.05, 0.32, 1.0 - landFrac);
+  float coastBand = (1.0 - smoothstep(40.0, 520.0, abs(baseElevM))) * coastTransition;
   float coastMacro = (fbm4(unitS * 16.0 + warpVec * 1.45) - 0.48) * 320.0;
   float coastDetail = (fbm4(unitS * 44.0 + warpVec * 2.1) - 0.50) * 145.0;
   float fjordMask = smoothstep(0.68, 1.15, absLat);

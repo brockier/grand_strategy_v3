@@ -24,7 +24,10 @@ import {
   createGlobeShaderController,
   initializeGlobeViewport,
 } from "../src/globe";
-import { buildHydrologyRibbonMesh } from "../src/globe/hydrology-ribbons";
+import {
+  buildHydrologyRibbonMesh,
+  createShaderTerrainSurfaceSampler,
+} from "../src/globe/hydrology-ribbons";
 
 const M2_FIXTURE_PATH = path.resolve(__dirname, "fixtures/colony_m2_snapshot.json");
 const M2_SNAPSHOTS = JSON.parse(fs.readFileSync(M2_FIXTURE_PATH, "utf8")) as DiegeticSnapshot[];
@@ -251,6 +254,78 @@ describe("Photorealistic Planet Presentation, Multi-Tier Semantic Zoom LOD, De-C
     );
     expect(minAngToUnexplored).toBeGreaterThan(edgeSpan * 0.45);
     ribbon.mesh!.geometry.dispose();
+
+    // Verify coastal rivers draining into an ocean cell terminate at the land/sea shoreline with zero ocean vertices.
+    const coastSrcId = hqCellId;
+    const coastOceanId = hqNbr;
+    const coastKnownCells: KnownCellDto[] = [];
+    const seenCoastIds = new Set<number>();
+    const pushCoastCell = (id: number, elevM: number, isOcean: boolean, isSrc: boolean) => {
+      if (seenCoastIds.has(id)) return;
+      seenCoastIds.add(id);
+      coastKnownCells.push({
+        tier: "surveyed",
+        cellId: id,
+        observedTick: 12,
+        isLiveHqSight: isSrc,
+        elevationM: elevM,
+        confidence01: 1.0,
+        provenanceLabel: "Coastal Survey",
+        biomeKey: isOcean ? "ocean" : "temperate_forest",
+        isOcean,
+        riverDownstreamCellId: isSrc ? coastOceanId : null,
+        riverFlowNorm01: isSrc ? 0.85 : 0.0,
+        strahlerOrder: isSrc ? 3 : 1,
+      });
+    };
+    pushCoastCell(coastSrcId, 55, false, true);
+    for (const nbr of topo.cells[coastSrcId].neighbors) {
+      if (nbr !== coastOceanId) pushCoastCell(nbr, 95, false, false);
+    }
+    pushCoastCell(coastOceanId, -220, true, false);
+    for (const nbr of topo.cells[coastOceanId].neighbors) {
+      pushCoastCell(nbr, -260, true, false);
+    }
+    const coastSnap: DiegeticSnapshot = {
+      ...fogSnap,
+      knownCells: coastKnownCells,
+    };
+    const coastRibbon = buildHydrologyRibbonMesh(
+      coastSnap,
+      topo,
+      cellMap,
+      weatherByCell,
+      0.2,
+      mat,
+      projectPoint,
+      false,
+    );
+    expect(coastRibbon.renderedRiverCount).toBe(1);
+    expect(coastRibbon.mesh).not.toBeNull();
+    const sampler = createShaderTerrainSurfaceSampler(coastSnap, topo);
+    const cPosAttr = coastRibbon.mesh!.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const oceanCenter = new THREE.Vector3(...topo.cells[coastOceanId].centerUnit).normalize();
+    let minEffElev = Infinity;
+    let minAngToOcean = Math.PI;
+    for (let i = 0; i < cPosAttr.count; i += 1) {
+      const unit: readonly [number, number, number] = [
+        cPosAttr.getX(i),
+        cPosAttr.getY(i),
+        cPosAttr.getZ(i),
+      ];
+      const len = Math.hypot(unit[0], unit[1], unit[2]);
+      const normU: readonly [number, number, number] = [unit[0] / len, unit[1] / len, unit[2] / len];
+      const sample = sampler.sample(normU, coastSrcId, coastOceanId, 0.2);
+      expect(sample.isExplored).toBe(true);
+      expect(sample.effectiveElevM).toBeGreaterThanOrEqual(0);
+      if (sample.effectiveElevM < minEffElev) minEffElev = sample.effectiveElevM;
+      const v = new THREE.Vector3(normU[0], normU[1], normU[2]);
+      const ang = Math.acos(Math.max(-1, Math.min(1, v.dot(oceanCenter))));
+      if (ang < minAngToOcean) minAngToOcean = ang;
+    }
+    expect(minEffElev).toBeLessThan(20);
+    expect(minAngToOcean).toBeGreaterThan(edgeSpan * 0.25);
+    coastRibbon.mesh!.geometry.dispose();
     mat.dispose();
 
     // Semantic zoom classification + radial declustering + Tier-3 procedural settlement buildings.

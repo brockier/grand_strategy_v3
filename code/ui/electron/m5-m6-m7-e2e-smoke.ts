@@ -127,6 +127,17 @@ export async function runM5M6M7E2ESmoke(
     // 4. Open Empirical Knowledge Archive (UI-DAT-007.1, UI-DAT-007.2) & update innovation mode on live engine.
     document.querySelector('[data-open-plugin="knowledge_archive"]')?.click();
     await wait(60);
+    const kCard = document.querySelector('[data-knowledge-settlement]');
+    const kRows = kCard ? Array.from(kCard.querySelectorAll('.ng-ledger-row')) : [];
+    const kWinPanel = kCard?.closest('.ng-win-tabpanel');
+    const lastKRow = kRows.length > 0 ? kRows[kRows.length - 1] : null;
+    const knowledgeRowCount = kRows.length;
+    const knowledgeCardEnclosesRows = Boolean(
+      kCard && lastKRow && kCard.getBoundingClientRect().bottom >= lastKRow.getBoundingClientRect().bottom - 1,
+    );
+    const knowledgeAllRowsVisibleOnOpen = Boolean(
+      kWinPanel && lastKRow && kWinPanel.getBoundingClientRect().bottom >= lastKRow.getBoundingClientRect().bottom - 1,
+    );
     const knowledgeBadges = document.querySelectorAll(".ng-fragility-badge").length;
     const hasTechTreeText = /Tech Tree|Science Points|Buy Tech/i.test(document.body.textContent ?? "");
     const patentsTab = document.querySelector('[aria-label="Empirical Knowledge Archive Sections"] [role="tab"][data-tab-key="patents"]');
@@ -239,6 +250,9 @@ export async function runM5M6M7E2ESmoke(
       instSummaryHasHeading: instSummaryHeadings.some(Boolean),
       updatedGovModel,
       knowledgeBadges,
+      knowledgeRowCount,
+      knowledgeCardEnclosesRows,
+      knowledgeAllRowsVisibleOnOpen,
       hasTechTreeText,
       modeTarget,
       updatedInnovationMode,

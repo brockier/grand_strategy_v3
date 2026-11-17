@@ -35,15 +35,16 @@
 
 ### 2.2 `shaders.ts` — Satellite Biophysical PBR & Parchment Dual-Pass Shader
 - Samples double-buffered `uCellDataTex` (`[elev, wetness, biomeCode, alpha]`) and `uBiophysicalTex` (`[temp, aridity, strataFertility, strahlerPlume]`), interpolating across barycentric weights `w0, w1, w2` with zero nearest-neighbor Voronoi boundaries.
-- **Sub-Cell Fractal Coastline (`coastalWarp`):** Adds multi-octave domain-warped fBm scaled by coastal irregularity and latitude (`|lat|` boosts fjord dissection) to interpolated elevation before sea-level thresholding (`h > 0`), eliminating hexagonal shoreline chords.
+- **Sub-Cell Fractal Coastline (`coastalWarp`):** Adds multi-octave domain-warped fBm gated by `coastTransition` (`smoothstep(0.05, 0.32, landFrac) * smoothstep(0.05, 0.32, 1.0 - landFrac)`) and latitude (`|lat|` boosts fjord dissection) so coastal fractal displacement applies strictly across mixed land/ocean triangles before sea-level thresholding (`h > 0`), keeping pure-land cells and cell centers dry while eliminating hexagonal shoreline chords.
 - **Dark Twilight Unmapped Globe + Cloud Feathering:** `kSum < 0.52` renders pure dark twilight spherical space/globe (strict zero leakage of unexplored cells); `0.52 <= kSum < 0.86` feathers surveyed terrain smoothly through multi-octave cloud fBm.
 - **Biophysical Reflectance Synthesis:** Blends dry sand/erg, Mediterranean scrub, temperate lowland meadows & field-patch micro-grain, boreal spruce taiga, slope-exposed bedrock (`limestone`, `granite`, `basalt`), temperature-driven alpine snowpack, shallow-shelf turquoise -> deep abyssal navy ocean absorption, coastal river sediment plumes, capillary water glint, polar pack ice, Rayleigh horizon glow, and optional `Parchment` chart lens (`uParchmentMode`).
 - **3D <-> 2D Projection Morph (`uProjectionMode`, `uProjectionMorph`):** Smoothly transitions vertex coordinates between unit-sphere `Globe`, focus-centered `EqualArea` (`Lambert Azimuthal Equal-Area`), and focus-meridian-centered `Mercator` while culling wrapped antimeridian triangles (`vSeamCull`).
 
 ### 2.3 `hydrology-ribbons.ts` — Fog-Clipped Meandering Triangle-Strip Ribbons
-- Never emits river segments into `unexplored` space: when `src` is known (`surveyed` or `stale`) and `dst` is `unexplored`, clips the geodesic path at `t = 0.44` inside explored territory and tapers ribbon width cleanly to `0`.
+- Never emits river segments into `unexplored` space: when `src` is known (`surveyed` or `stale`) and `dst` is `unexplored`, clips the geodesic path at `t = 0.42` inside explored territory and tapers ribbon width cleanly to `0`.
+- Terminates rivers strictly at the land/sea interface: evaluates the deterministic shader `effectiveElevM` function along each spline and bisects land-to-sea crossings to stop at `effectiveElevM = +2.0m` with a tapered mouth cap so zero river geometry enters ocean pixels (`effectiveElevM < 0`).
 - Generates smooth spherical Catmull-Rom ribbons displaced laterally in local tangent space by deterministic multi-harmonic meanders (`sin(pi * t)` envelope weighted by inverse slope so flat plains meander more than steep gorges).
-- Width scales continuously with `strahlerOrder` and `floodStage01`, flaring slightly into tapered estuary deltas where `dst` is ocean, eliminating all 3-line parallel flood artifacts.
+- Width scales continuously with `strahlerOrder` and `floodStage01`, gently swelling just inland before tapering cleanly into the shoreline mouth cap, eliminating all 3-line parallel flood artifacts and ocean-crossing river extensions.
 
 ### 2.4 `semantic-zoom.ts` — 4-Tier Semantic Zoom, De-Clustered Icons & 3D Settlements
 | Tier | `altitudeNorm` Range | Terrain / Hydrology | Entities, Formations & Architecture |
