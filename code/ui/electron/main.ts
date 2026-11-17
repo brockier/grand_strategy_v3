@@ -18,23 +18,16 @@ function getArgValue(prefix: string): string | null {
   return null;
 }
 
-const explicitOzone = getArgValue("--ozone-platform=");
-const isLinuxWayland =
-  process.platform === "linux" &&
-  Boolean(process.env.WAYLAND_DISPLAY || process.env.XDG_SESSION_TYPE === "wayland");
-
-// Enable Chromium Dawn WebGPU with Vulkan + WebGL2 fallback across Linux X11, Wayland & Windows.
-app.commandLine.appendSwitch("enable-unsafe-webgpu");
+// Chromium Dawn WebGPU (Windows/macOS) + native ANGLE OpenGL ES 3.2 WebGL2 on Linux Wayland & X11 (`UI-SHL-001`).
+if (process.platform === "linux") {
+  // Prevent Chromium Skia-Vulkan and Dawn-Vulkan compositor errors across Wayland, XWayland/X11, and Headless.
+  app.commandLine.appendSwitch("disable-vulkan");
+  app.commandLine.appendSwitch("use-webgpu-adapter", "opengles");
+} else {
+  app.commandLine.appendSwitch("enable-unsafe-webgpu");
+}
 app.commandLine.appendSwitch("enable-webgl");
 app.commandLine.appendSwitch("ignore-gpu-blocklist");
-if (isLinuxWayland && !explicitOzone && Boolean(process.env.DISPLAY)) {
-  app.commandLine.appendSwitch("ozone-platform", "x11");
-  app.commandLine.appendSwitch("enable-features", "Vulkan");
-} else if ((isLinuxWayland && !explicitOzone && !process.env.DISPLAY) || explicitOzone === "wayland") {
-  // Native Wayland Ozone rejects Vulkan on shared GPU surfaces; leave Vulkan disabled on pure Wayland.
-} else {
-  app.commandLine.appendSwitch("enable-features", "Vulkan");
-}
 if (process.env.NG_SOFTWARE_GL === "1") {
   app.commandLine.appendSwitch("use-gl", "angle");
   app.commandLine.appendSwitch("use-angle", "swiftshader-webgl");
@@ -42,7 +35,15 @@ if (process.env.NG_SOFTWARE_GL === "1") {
 }
 
 const SMOKE_MODE = getArgValue("--smoke-mode=");
+const SMOKE_VISIBLE = process.argv.includes("--smoke-visible");
 const INITIAL_CORRUPT_PACK = getArgValue("--corrupt-pack=");
+
+let gpuProcessCrashCount = 0;
+app.on("child-process-gone", (_ev, details) => {
+  if (details.type === "GPU") {
+    gpuProcessCrashCount += 1;
+  }
+});
 
 interface RuntimePaths {
   readonly indexHtml: string;
@@ -726,12 +727,13 @@ async function startOrGetSessionState(paths: RuntimePaths): Promise<unknown> {
 }
 
 function createMainWindow(paths: RuntimePaths): BrowserWindow {
-  const headless = process.env.NG_HEADLESS_TEST === "1" || SMOKE_MODE !== null;
+  const headless = (process.env.NG_HEADLESS_TEST === "1" || SMOKE_MODE !== null) && !SMOKE_VISIBLE;
   const isOzoneHeadless = process.argv.some((arg) => arg.includes("ozone-platform=headless"));
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
     show: !headless || isOzoneHeadless,
+    ...(SMOKE_VISIBLE ? { focusable: false, skipTaskbar: true } : {}),
     backgroundColor: "#11100e",
     webPreferences: {
       preload: paths.preloadJs,
@@ -739,7 +741,7 @@ function createMainWindow(paths: RuntimePaths): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
       webSecurity: true,
-      backgroundThrottling: !headless,
+      backgroundThrottling: !(headless || SMOKE_VISIBLE),
     },
   });
   if (isOzoneHeadless) {
@@ -956,11 +958,19 @@ app.whenReady().then(() => {
         const initial = await mainWindow.webContents.executeJavaScript(`(() => {
           const dlg = document.getElementById("mod-diagnostic-dialog");
           const rows = Array.from(document.querySelectorAll("#mod-diagnostic-dialog tbody tr")).map(tr => tr.textContent);
+          const rt = window.__ngM2Runtime;
+          let globeAvgRgb = [0, 0, 0];
+          if (rt && rt.globe && window.__ngBootStatus?.mode === "live") {
+            rt.globe.stepRender(16);
+            const sample = rt.globe.captureFrameSample(48);
+            if (sample) globeAvgRgb = sample.averageRgb;
+          }
           return {
             status: window.__ngBootStatus,
             dialogOpen: Boolean(dlg && dlg.hasAttribute("open")),
             dialogRows: rows,
-            hudTitle: document.getElementById("hud-scenario-title")?.textContent ?? ""
+            hudTitle: document.getElementById("hud-scenario-title")?.textContent ?? "",
+            globeAvgRgb,
           };
         })()`);
 
@@ -984,7 +994,34 @@ app.whenReady().then(() => {
           })()`);
         }
 
-        console.log("SMOKE_RESULT:" + JSON.stringify({ smokeMode: SMOKE_MODE, initial, ackGood, ackBad, recovered }));
+        let visibleSurface: {
+          windowShown: boolean;
+          compositedEmpty: boolean;
+          compositedSize: { width: number; height: number };
+        } | null = null;
+        if (SMOKE_VISIBLE) {
+          await new Promise((r) => setTimeout(r, 150));
+          const shot = await mainWindow.webContents.capturePage();
+          visibleSurface = {
+            windowShown: mainWindow.isVisible(),
+            compositedEmpty: shot.isEmpty(),
+            compositedSize: shot.getSize(),
+          };
+        }
+
+        console.log(
+          "SMOKE_RESULT:" +
+            JSON.stringify({
+              smokeMode: SMOKE_MODE,
+              gpuProcessCrashCount,
+              initial,
+              ackGood,
+              ackBad,
+              recovered,
+              visibleSurface,
+            }),
+        );
+        await disposeActiveSession();
         app.exit(0);
       } catch (err) {
         console.error("SMOKE_ERROR:", err);

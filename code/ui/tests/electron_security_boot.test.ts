@@ -25,6 +25,7 @@ afterEach(() => {
 
 interface SmokePayload {
   smokeMode: string;
+  gpuProcessCrashCount: number;
   initial: {
     status: {
       ready: boolean;
@@ -39,6 +40,7 @@ interface SmokePayload {
     dialogOpen: boolean;
     dialogRows: string[];
     hudTitle: string;
+    globeAvgRgb: number[];
   };
   ackGood: { accepted: boolean; errorCode: string | null; message: string };
   ackBad: { accepted: boolean; errorCode: string | null; message: string };
@@ -47,17 +49,34 @@ interface SmokePayload {
     dialogOpen: boolean;
     hudTitle: string;
   } | null;
+  visibleSurface: {
+    windowShown: boolean;
+    compositedEmpty: boolean;
+    compositedSize: { width: number; height: number };
+  } | null;
 }
 
-function runElectronSmoke(extraArgs: string[]): {
+const FATAL_GPU_STDERR_RE =
+  /is not compatible with Vulkan|Failed to create vulkan surface|GetGeometry failed|XGetWindowAttributes failed|Failed to send GpuControl\.CreateCommandBuffer|ContextResult::kTransientFailure|ContextResult::kFatalFailure|DMABUF/i;
+
+function runElectronSmoke(
+  extraArgs: string[],
+  options?: { visibleDesktop?: boolean },
+): {
   durationMs: number;
   stderr: string;
   result: SmokePayload;
 } {
   const start = Date.now();
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  if (options?.visibleDesktop) {
+    delete env.NG_HEADLESS_TEST;
+  } else {
+    env.NG_HEADLESS_TEST = "1";
+  }
   const proc = spawnSync(ELECTRON_BIN, [MAIN_JS, ...extraArgs], {
     cwd: UI_ROOT,
-    env: { ...process.env, NG_HEADLESS_TEST: "1" },
+    env,
     encoding: "utf8",
     timeout: 25000,
     stdio: ["ignore", "pipe", "pipe"],
@@ -86,7 +105,8 @@ describe("Electron Security Sandbox, GPU Geodesic Globe & Mod Recovery", () => {
   it("boots Electron with contextIsolation, Chromium sandbox, Dawn WebGPU/WebGL2 shader compilation, and strict IPC validation (UI-SHL-001, UI-SHL-003)", () => {
     const { result, stderr } = runElectronSmoke(["--smoke-mode=healthy"]);
     const status = result.initial.status;
-    expect(stderr).not.toContain("is not compatible with Vulkan");
+    expect(stderr).not.toMatch(FATAL_GPU_STDERR_RE);
+    expect(result.gpuProcessCrashCount).toBe(0);
 
     // UI-SHL-001 assertions
     expect(status.ready).toBe(true);
@@ -139,11 +159,13 @@ describe("Electron Security Sandbox, GPU Geodesic Globe & Mod Recovery", () => {
       `[[commodities]]\nid = "wrought_iron"\n_patch = true\nstructural_strength = "not_a_float"\n`,
     );
 
-    const { durationMs, result } = runElectronSmoke([
+    const { durationMs, result, stderr } = runElectronSmoke([
       "--smoke-mode=corrupt-mod",
       `--corrupt-pack=${badPackDir}`,
     ]);
 
+    expect(stderr).not.toMatch(FATAL_GPU_STDERR_RE);
+    expect(result.gpuProcessCrashCount).toBe(0);
     expect(durationMs).toBeLessThan(15000);
     expect(result.initial.status.ready).toBe(true);
     expect(result.initial.status.mode).toBe("mod_error");
@@ -155,5 +177,31 @@ describe("Electron Security Sandbox, GPU Geodesic Globe & Mod Recovery", () => {
     expect(result.recovered?.status.mode).toBe("live");
     expect(result.recovered?.dialogOpen).toBe(false);
     expect(result.recovered?.hudTitle).toContain("The Unexplained Colony");
+  });
+
+  // @req UI-SHL-001
+  it("presents a real visible compositor surface with hardware WebGL2 rendering and zero Vulkan/X11/Wayland command-buffer errors (UI-SHL-001)", () => {
+    const hasDesktopDisplay =
+      process.platform === "win32" ||
+      process.platform === "darwin" ||
+      Boolean(process.env.WAYLAND_DISPLAY || process.env.DISPLAY);
+
+    const { result, stderr } = runElectronSmoke(
+      hasDesktopDisplay
+        ? ["--smoke-mode=healthy", "--smoke-visible"]
+        : ["--ozone-platform=headless", "--enable-unsafe-swiftshader", "--smoke-mode=healthy", "--smoke-visible"],
+      { visibleDesktop: hasDesktopDisplay },
+    );
+
+    expect(stderr).not.toMatch(FATAL_GPU_STDERR_RE);
+    expect(result.gpuProcessCrashCount).toBe(0);
+    expect(result.initial.status.ready).toBe(true);
+    expect(result.initial.status.shaderCompiled).toBe(true);
+    expect(result.initial.globeAvgRgb.some((v) => v > 0)).toBe(true);
+    expect(result.visibleSurface).not.toBeNull();
+    expect(result.visibleSurface?.windowShown).toBe(true);
+    expect(result.visibleSurface?.compositedEmpty).toBe(false);
+    expect(result.visibleSurface?.compositedSize.width).toBeGreaterThanOrEqual(640);
+    expect(result.visibleSurface?.compositedSize.height).toBeGreaterThanOrEqual(400);
   });
 });
