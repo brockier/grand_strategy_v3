@@ -11,6 +11,7 @@ import {
   RgbTuple,
   scale3,
   sub3,
+  SurveyedRoadEdgeDto,
   tangentBasis,
   Vec3,
 } from "../spine";
@@ -746,58 +747,96 @@ export class SettlementDetailClusterGroup {
       }
     }
 
-    // 5b. Resource / quarry / timber-mill outposts anchored at non-settlement endpoints of access roads
+    // 5b. Resource / quarry / timber-mill outposts anchored solely at terminal endpoints of access corridors
     const renderedOutpostCells = new Set<number>();
+    const accessCorridors = new Map<string, SurveyedRoadEdgeDto[]>();
     for (const road of snapshot.surveyedRoads ?? []) {
       if (road.roadPurpose !== "resource_or_port_access") continue;
-      const endpointCellId = !settledCellIds.has(road.toCellId)
-        ? road.toCellId
-        : !settledCellIds.has(road.fromCellId)
-          ? road.fromCellId
-          : null;
-      if (endpointCellId === null || renderedOutpostCells.has(endpointCellId)) continue;
-      const epCell = cellMap.get(endpointCellId);
-      if (!epCell) continue;
-      renderedOutpostCells.add(endpointCellId);
-      builtClusters += 1;
+      const key = road.purposeLabel || `edge:${road.edgeId}`;
+      const list = accessCorridors.get(key);
+      if (list) {
+        list.push(road);
+      } else {
+        accessCorridors.set(key, [road]);
+      }
+    }
 
-      const outpostPick: GlobeRayHit = {
-        hitKind: "facility",
-        cellId: endpointCellId,
-        facilityId: 900000 + road.edgeId,
-        label: road.purposeLabel || `Outpost (Edge ${road.edgeId})`,
-      };
-      const isQuarry = (road.purposeLabel ?? "").toLowerCase().includes("quarry");
-      addBuilding(
-        epCell.centerUnit,
-        endpointCellId,
-        0,
-        0,
-        0.0034 * scaleFactor,
-        0.0028 * scaleFactor,
-        0.0026 * scaleFactor,
-        isQuarry ? 0 : 0.0016 * scaleFactor,
-        0.4,
-        isQuarry ? this.foundationMat : this.timberWallMat,
-        outpostPick,
-      );
-      if (isQuarry) {
-        placeMesh(
-          this.unitCylGeom,
-          this.metalMat,
+    for (const [corridorKey, corridorRoads] of accessCorridors) {
+      const deg = new Map<number, number>();
+      const edgeTouchingCell = new Map<number, SurveyedRoadEdgeDto>();
+      for (const road of corridorRoads) {
+        deg.set(road.fromCellId, (deg.get(road.fromCellId) ?? 0) + 1);
+        deg.set(road.toCellId, (deg.get(road.toCellId) ?? 0) + 1);
+        edgeTouchingCell.set(road.fromCellId, road);
+        edgeTouchingCell.set(road.toCellId, road);
+      }
+      const terminalCandidates: number[] = [];
+      for (const [cid, d] of deg) {
+        if (!settledCellIds.has(cid) && d === 1) {
+          terminalCandidates.push(cid);
+        }
+      }
+      if (terminalCandidates.length === 0) {
+        for (const road of corridorRoads) {
+          if (!settledCellIds.has(road.toCellId)) terminalCandidates.push(road.toCellId);
+          else if (!settledCellIds.has(road.fromCellId)) terminalCandidates.push(road.fromCellId);
+        }
+      }
+
+      for (const endpointCellId of terminalCandidates) {
+        if (renderedOutpostCells.has(endpointCellId)) continue;
+        const anchorRoad = edgeTouchingCell.get(endpointCellId) ?? corridorRoads[corridorRoads.length - 1];
+        if (!anchorRoad) continue;
+        const epCell = cellMap.get(endpointCellId);
+        if (!epCell) continue;
+        renderedOutpostCells.add(endpointCellId);
+        builtClusters += 1;
+
+        const rawPurpose = anchorRoad.purposeLabel ?? corridorKey;
+        const arrowParts = rawPurpose.split("->").map((s) => s.trim()).filter((s) => s.length > 0);
+        const formattedOutpostLabel =
+          arrowParts.length >= 2
+            ? `${arrowParts[arrowParts.length - 1]} (${arrowParts[0]})`
+            : rawPurpose || `Outpost (Cell #${endpointCellId})`;
+
+        const outpostPick: GlobeRayHit = {
+          hitKind: "facility",
+          cellId: endpointCellId,
+          facilityId: 900000 + anchorRoad.edgeId,
+          label: formattedOutpostLabel,
+        };
+        const isQuarry = rawPurpose.toLowerCase().includes("quarry");
+        addBuilding(
           epCell.centerUnit,
           endpointCellId,
-          0.0022 * scaleFactor,
-          0.0012 * scaleFactor,
-          0.0009 * scaleFactor,
-          0.0046 * scaleFactor,
-          0.0009 * scaleFactor,
-          0.0023 * scaleFactor,
           0,
-          true,
-          false,
+          0,
+          0.0034 * scaleFactor,
+          0.0028 * scaleFactor,
+          0.0026 * scaleFactor,
+          isQuarry ? 0 : 0.0016 * scaleFactor,
+          0.4,
+          isQuarry ? this.foundationMat : this.timberWallMat,
           outpostPick,
         );
+        if (isQuarry) {
+          placeMesh(
+            this.unitCylGeom,
+            this.metalMat,
+            epCell.centerUnit,
+            endpointCellId,
+            0.0022 * scaleFactor,
+            0.0012 * scaleFactor,
+            0.0009 * scaleFactor,
+            0.0046 * scaleFactor,
+            0.0009 * scaleFactor,
+            0.0023 * scaleFactor,
+            0,
+            true,
+            false,
+            outpostPick,
+          );
+        }
       }
     }
 

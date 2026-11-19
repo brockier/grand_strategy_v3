@@ -342,4 +342,104 @@ describe("M2 Desktop Window Manager, Docking, Layout Serialization & Chrome-Occl
     expect(manager.listFrames()).toHaveLength(1);
     expect(manager.listFrames()[0].collapsed).toBe(false);
   });
+
+  // @req UI-WIN-001
+  // @req UI-WIN-007
+  it("dynamically clamps new, dragged, and preset windows below wrapped multi-row top HUD bars (UI-WIN-001, UI-WIN-007)", () => {
+    const hud = dom.window.document.createElement("header");
+    hud.id = "command-hud-bar";
+    hud.className = "ng-hud-bar";
+    hud.getBoundingClientRect = () =>
+      ({
+        top: 8,
+        bottom: 98,
+        left: 12,
+        right: 1268,
+        width: 1256,
+        height: 90,
+        x: 12,
+        y: 8,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    root.appendChild(hud);
+
+    const winId = manager.openWindow("entity_inspector")!;
+    expect(manager.getFrameSnapshot(winId)!.y).toBeGreaterThanOrEqual(106);
+
+    manager.moveFrame(winId, 20, 10, false);
+    expect(manager.getFrameSnapshot(winId)!.y).toBeGreaterThanOrEqual(106);
+
+    expect(manager.applyNamedPreset("war-room")).toBe(true);
+    for (const frame of manager.listFrames()) {
+      expect(frame.y).toBeGreaterThanOrEqual(106);
+    }
+  });
+
+  // @req UI-GLB-008
+  // @req UI-MAP-005.1
+  it("re-evaluates hover circle and tooltip at stationary cursor while WASDQE camera navigation moves the globe (UI-GLB-008, UI-MAP-005.1)", () => {
+    const canvas = dom.window.document.getElementById("globe-canvas") as HTMLCanvasElement;
+    let camStep = 0;
+    const sampleCellA: [number, number, number] = [0.98, 0.14, 0.14];
+    const sampleCellB: [number, number, number] = [0.85, 0.42, 0.31];
+    const host: GlobeLayerHost = {
+      scene: {},
+      camera: {},
+      overlayRootId: "app-shell",
+      getCanvasElement: () => canvas,
+      projectUnitToScreen: () => ({ xPx: 400, yPx: 300, visible: true }),
+      pickGlobeAtNdc: () =>
+        camStep === 0
+          ? {
+              hitKind: "cell",
+              cellId: 1326,
+              localElevationM: 566,
+              label: "savanna_steppe (Cell 1326, 566m)",
+              unitXyz: sampleCellA,
+              latDeg: 8,
+              lonDeg: 8,
+            }
+          : {
+              hitKind: "cell",
+              cellId: 1307,
+              localElevationM: 218,
+              label: "savanna_steppe (Cell 1307, 218m)",
+              unitXyz: sampleCellB,
+              latDeg: 24,
+              lonDeg: 20,
+            },
+      isPointOccludedByChrome: () => false,
+    };
+
+    const emitted: UiIntent[] = [];
+    bus.subscribe((intent) => emitted.push(intent));
+
+    const picker = new OcclusionAwareCellPicker();
+    picker.mount(host, store, bus);
+
+    canvas.dispatchEvent(new dom.window.MouseEvent("pointermove", { clientX: 400, clientY: 300, bubbles: true }));
+    expect(dom.window.document.getElementById("map-hover-tooltip")?.textContent).toContain("Cell 1326");
+
+    camStep = 1;
+    bus.emit({
+      kind: "UpdateCameraTelemetry",
+      telemetry: {
+        altitudeNorm: 0.25,
+        altitudeRadius: 1.4,
+        pitchRad: 0.7,
+        headingRad: 0.2,
+        focusCellId: 1307,
+        focusUnit: sampleCellB,
+      },
+    });
+
+    const tip = dom.window.document.getElementById("map-hover-tooltip");
+    expect(tip?.hidden).toBe(false);
+    expect(tip?.textContent).toContain("Cell 1307");
+    const lastHover = [...emitted].reverse().find((i) => i.kind === "HoverMapFeature");
+    expect(lastHover?.kind === "HoverMapFeature" ? lastHover.hit?.cellId : null).toBe(1307);
+    expect(lastHover?.kind === "HoverMapFeature" ? lastHover.hit?.unitXyz : null).toEqual(sampleCellB);
+
+    picker.dispose();
+  });
 });

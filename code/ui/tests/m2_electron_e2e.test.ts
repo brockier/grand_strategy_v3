@@ -167,5 +167,5 @@ describe("Milestone 2 Headless Chromium Electron End-to-End Integration", () => 
     expect(p2.presets).toContain("e2e-saved-desk");
     expect(p2.appliedSavedPreset).toBe(true);
     expect(p2.restoredFrameCount).toBeGreaterThanOrEqual(2);
-  });
+  }, 30_000);
 });

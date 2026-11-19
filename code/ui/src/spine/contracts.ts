@@ -852,6 +852,7 @@ export type GlobeRayHit =
       readonly hitKind: "cell";
       readonly cellId: number;
       readonly label: string;
+      readonly localElevationM?: number;
       readonly unitXyz?: readonly [number, number, number];
       readonly latDeg?: number;
       readonly lonDeg?: number;

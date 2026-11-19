@@ -1,11 +1,15 @@
 import {
   DiegeticSnapshot,
+  GoldbergTopologyData,
   KnownCellDto,
+  KnownSettlementDto,
   ReportedLedgerRowDto,
+  SurveyedRoadEdgeDto,
   TimeSeriesDto,
   WindowContentPlugin,
   createAccessibleTabGroup,
   createProvenanceBadgeElement,
+  generateGoldbergTopology,
   selectAuditDiscrepancies,
   selectDelegationTree,
   selectFacilityRows,
@@ -16,6 +20,7 @@ import {
   selectKnownSettlements,
   selectLedgerRows,
   selectNonStateEconomy,
+  selectObservedWeather,
   selectPopulationRows,
   selectSurveyedRoads,
   selectTimeSeries,
@@ -1054,6 +1059,108 @@ function appendDepositEstimatesSection(
   parent.append(heading, ul);
 }
 
+const topologyCacheBySubdiv = new Map<number, GoldbergTopologyData>();
+
+function getCachedTopology(subdivision: number): GoldbergTopologyData {
+  const safeSubdiv = Math.max(1, Math.floor(subdivision || 3));
+  let cached = topologyCacheBySubdiv.get(safeSubdiv);
+  if (!cached) {
+    cached = generateGoldbergTopology(safeSubdiv);
+    topologyCacheBySubdiv.set(safeSubdiv, cached);
+  }
+  return cached;
+}
+
+function describeRockStrata(code: number | undefined): string {
+  switch (code) {
+    case 0:
+      return "Alluvial & Sedimentary Basin";
+    case 1:
+      return "Bedded Limestone & Sandstone";
+    case 2:
+      return "Metamorphic Slate & Schist";
+    case 3:
+      return "Igneous Granite & Basalt";
+    default:
+      return "Unassayed Bedrock";
+  }
+}
+
+function appendInspectorDetailRow(
+  doc: Document,
+  ul: HTMLElement,
+  label: string,
+  value: string,
+): void {
+  const li = doc.createElement("li");
+  li.className = "ng-ledger-row";
+  const keyEl = doc.createElement("strong");
+  keyEl.textContent = label;
+  const valEl = doc.createElement("span");
+  valEl.textContent = value;
+  li.append(keyEl, valEl);
+  ul.appendChild(li);
+}
+
+function resolveAccessCorridor(
+  allRoads: readonly SurveyedRoadEdgeDto[],
+  clickedRoad: SurveyedRoadEdgeDto,
+  settlementsByCell: ReadonlyMap<number, KnownSettlementDto>,
+): {
+  readonly corridorEdges: readonly SurveyedRoadEdgeDto[];
+  readonly hubSettlement: KnownSettlementDto | undefined;
+  readonly outpostCellId: number;
+} {
+  const samePurpose = clickedRoad.purposeLabel
+    ? allRoads.filter(
+        (r) =>
+          r.roadPurpose === "resource_or_port_access" &&
+          r.purposeLabel === clickedRoad.purposeLabel,
+      )
+    : [clickedRoad];
+  const candidateEdges = samePurpose.length > 0 ? samePurpose : [clickedRoad];
+
+  const visitedIds = new Set<number>([clickedRoad.edgeId]);
+  const frontierCells = new Set<number>([clickedRoad.fromCellId, clickedRoad.toCellId]);
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    for (const r of candidateEdges) {
+      if (visitedIds.has(r.edgeId)) continue;
+      if (frontierCells.has(r.fromCellId) || frontierCells.has(r.toCellId)) {
+        visitedIds.add(r.edgeId);
+        frontierCells.add(r.fromCellId);
+        frontierCells.add(r.toCellId);
+        expanded = true;
+      }
+    }
+  }
+  const corridorEdges = candidateEdges.filter((r) => visitedIds.has(r.edgeId));
+  const deg = new Map<number, number>();
+  let hubSettlement: KnownSettlementDto | undefined;
+  for (const r of corridorEdges) {
+    deg.set(r.fromCellId, (deg.get(r.fromCellId) ?? 0) + 1);
+    deg.set(r.toCellId, (deg.get(r.toCellId) ?? 0) + 1);
+    if (!hubSettlement) {
+      hubSettlement = settlementsByCell.get(r.fromCellId) ?? settlementsByCell.get(r.toCellId);
+    }
+  }
+
+  let outpostCellId: number | null = null;
+  for (const [cid, d] of deg) {
+    if (!settlementsByCell.has(cid) && d === 1) {
+      outpostCellId = cid;
+      break;
+    }
+  }
+  if (outpostCellId === null) {
+    outpostCellId = settlementsByCell.has(clickedRoad.fromCellId)
+      ? clickedRoad.toCellId
+      : clickedRoad.fromCellId;
+  }
+  return { corridorEdges, hubSettlement, outpostCellId };
+}
+
 /**
  * Multi-instance-capable Diegetic Entity Inspector (`UI-WIN-004`, `UI-SKN-005`, `UI-DAT-004`, `UI-DAT-005`).
  */
@@ -1074,9 +1181,13 @@ export function createEntityInspectorWindowPlugin(): WindowContentPlugin {
         const header = document.createElement("div");
         header.className = "ng-inspector-header";
 
-        const [rawKind, rawId] = instanceKey.split(":");
+        const [rawKind, rawId, rawLocalElev] = instanceKey.split(":");
         const targetKind = rawKind || "settlement";
         const targetId = Number(rawId);
+        const clickedLocalElevM =
+          rawLocalElev !== undefined && rawLocalElev !== "" && Number.isFinite(Number(rawLocalElev))
+            ? Number(rawLocalElev)
+            : undefined;
 
         const img = document.createElement("img");
         img.className = "ng-portrait-img";
@@ -1199,20 +1310,198 @@ export function createEntityInspectorWindowPlugin(): WindowContentPlugin {
             });
             extras.appendChild(settBtn);
           } else {
-            const outpostRoad = selectSurveyedRoads(spine.store).find(
-              (r) => 900000 + r.edgeId === targetId,
-            );
-            wireImageWithFallback(img, fallbackPortrait, fallbackPortrait, "Resource Outpost");
+            const allRoads = selectSurveyedRoads(spine.store);
+            const outpostRoad = allRoads.find((r) => 900000 + r.edgeId === targetId);
+            const iconUrl = spine.assetResolver?.resolveIcon("colony_precision_tools") ?? "";
+            wireImageWithFallback(img, iconUrl, fallbackPortrait, "Resource Outpost");
             if (outpostRoad) {
-              const settlementsByCell = new Map(
-                selectKnownSettlements(spine.store).map((s) => [s.cellId, s]),
+              const knownSettlements = selectKnownSettlements(spine.store);
+              const settlementsByCell = new Map(knownSettlements.map((s) => [s.cellId, s]));
+              const { corridorEdges, hubSettlement, outpostCellId } = resolveAccessCorridor(
+                allRoads,
+                outpostRoad,
+                settlementsByCell,
               );
-              const srcSett = settlementsByCell.get(outpostRoad.fromCellId);
-              const dstSett = settlementsByCell.get(outpostRoad.toCellId);
-              const outpostCell = srcSett ? outpostRoad.toCellId : outpostRoad.fromCellId;
-              title.textContent = outpostRoad.purposeLabel || `Work Outpost (Cell #${outpostCell})`;
-              detail.textContent = `Served by ${outpostRoad.infraKey} (Edge #${outpostRoad.edgeId}) · Outpost Cell #${outpostCell} · Cumulative traffic: ${outpostRoad.cumulativePassages ?? 0} passages`;
-              extras.appendChild(
+              const purposeLower = (outpostRoad.purposeLabel ?? "").toLowerCase();
+              const isQuarry = purposeLower.includes("quarry");
+              const isTimber = purposeLower.includes("timber") || purposeLower.includes("mill");
+
+              const outpostKindTitle = isQuarry
+                ? "Quarry Outpost"
+                : isTimber
+                  ? "Timber & Mill Outpost"
+                  : "Field Work Outpost";
+              const structureDesc = isQuarry
+                ? "Open-Cut Stone & Mineral Quarry (Timber Hoist Derrick, Mason Dressing Shed & Tool Store)"
+                : isTimber
+                  ? "Forest Felling Camp & Sawmill (Waterwheel Sawpit, Seasoning Yard & Tool Shed)"
+                  : "Detached Resource & Portage Works";
+
+              const allCells = selectKnownCells(spine.store);
+              const siteCell = allCells.find((c) => c.cellId === outpostCellId);
+              const hubCell = hubSettlement
+                ? allCells.find((c) => c.cellId === hubSettlement.cellId)
+                : undefined;
+
+              const cohorts = selectPopulationRows(
+                spine.store,
+                hubSettlement?.settlementId,
+              );
+              const crewKeywords = isQuarry
+                ? ["miner", "quarry", "mason", "stone", "labor", "labour", "artificer", "artisan"]
+                : isTimber
+                  ? ["timber", "forest", "wood", "saw", "mill", "carpenter", "labor", "labour", "artificer"]
+                  : ["labor", "labour", "porter", "artificer"];
+              const matchingCohorts = cohorts.filter((c) => {
+                const keyLow = `${c.vocationKey} ${c.vocationName}`.toLowerCase();
+                return crewKeywords.some((kw) => keyLow.includes(kw));
+              });
+              const crewSource = matchingCohorts.length > 0 ? matchingCohorts : cohorts;
+              const sourceHeadcount = crewSource.reduce((acc, c) => acc + c.reportedHeadcount, 0);
+              const stationedCount =
+                sourceHeadcount > 0
+                  ? Math.min(sourceHeadcount, Math.max(6, Math.round(sourceHeadcount * 0.08)))
+                  : 0;
+              const avgSkillPct =
+                sourceHeadcount > 0
+                  ? Math.round(
+                      (crewSource.reduce((acc, c) => acc + c.meanSkill01 * c.reportedHeadcount, 0) /
+                        sourceHeadcount) *
+                        100,
+                    )
+                  : 0;
+              const avgNutritionPct =
+                sourceHeadcount > 0
+                  ? Math.round(
+                      (crewSource.reduce((acc, c) => acc + c.nutrition01 * c.reportedHeadcount, 0) /
+                        sourceHeadcount) *
+                        100,
+                    )
+                  : 0;
+              const topVocations = crewSource
+                .slice()
+                .sort((a, b) => b.reportedHeadcount - a.reportedHeadcount)
+                .slice(0, 2)
+                .map((c) => c.vocationName)
+                .join(", ");
+
+              const settlementFacs = selectFacilityRows(spine.store, hubSettlement?.settlementId);
+              const toolCondPct =
+                settlementFacs.length > 0
+                  ? Math.round(
+                      (settlementFacs.reduce((acc, f) => acc + f.toolCondition01, 0) /
+                        settlementFacs.length) *
+                        100,
+                    )
+                  : 86;
+              const weatherAtSite = selectObservedWeather(spine.store).find(
+                (w) => w.cellId === outpostCellId,
+              );
+              const shiftStatus =
+                weatherAtSite &&
+                (weatherAtSite.mudIndex01 > 0.55 ||
+                  weatherAtSite.precipMmHr > 5 ||
+                  (weatherAtSite.floodStage01 ?? 0) > 0.4)
+                  ? "Slowed by Mud / Heavy Weather"
+                  : "Active Shift";
+
+              const tree = selectDelegationTree(spine.store);
+              const overseer =
+                tree?.subordinates.find((s) => s.homeSettlementId === hubSettlement?.settlementId) ??
+                tree?.subordinates[0];
+
+              title.textContent = `${outpostKindTitle} — Cell #${outpostCellId}${hubSettlement ? ` (${hubSettlement.settlementName})` : ""}`;
+              detail.textContent = `${structureDesc} · ${stationedCount > 0 ? `${stationedCount} stationed workers (${shiftStatus})` : `${shiftStatus} · Crew detached from ${hubSettlement?.settlementName ?? "Settlement HQ"}`}`;
+
+              if (siteCell && siteCell.tier !== "unexplored") {
+                extras.appendChild(
+                  createProvenanceBadgeElement(document, {
+                    currentTick,
+                    observedTick: siteCell.observedTick,
+                    confidence01: siteCell.confidence01,
+                    provenanceLabel: siteCell.provenanceLabel,
+                    isLiveSight: siteCell.tier === "surveyed" ? siteCell.isLiveHqSight : false,
+                  }),
+                );
+              }
+
+              const specList = document.createElement("ul");
+              specList.className = "ng-ledger-list";
+              appendInspectorDetailRow(
+                document,
+                specList,
+                "Structure & Readiness",
+                `${structureDesc} · Tool Condition ${toolCondPct}% · ${shiftStatus}`,
+              );
+
+              const personnelText =
+                stationedCount > 0
+                  ? `${stationedCount} detached crew (${topVocations}) from ${hubSettlement?.settlementName ?? "HQ"} · Avg Skill ${avgSkillPct}% · Nutrition ${avgNutritionPct}%${overseer ? ` · Overseer: ${overseer.displayName}` : ""}`
+                  : `Working shift drawn from ${hubSettlement?.settlementName ?? "HQ"} labor roll (no detached cohort ledger row filed)${overseer ? ` · Overseer: ${overseer.displayName}` : ""}`;
+              appendInspectorDetailRow(document, specList, "Stationed Personnel", personnelText);
+
+              if (siteCell && siteCell.tier !== "unexplored") {
+                const biomeText = siteCell.biomeKey ?? (siteCell.isOcean ? "ocean" : "Surveyed Land");
+                const strataText =
+                  siteCell.tier === "surveyed" || siteCell.tier === "stale"
+                    ? describeRockStrata(siteCell.rockStrataCode)
+                    : "Unassayed Surface";
+                const siteElevM = Math.round(siteCell.elevationM);
+                let gradeText = "";
+                if (hubSettlement && hubCell && hubCell.tier !== "unexplored") {
+                  const deltaM = Math.round(siteCell.elevationM - hubCell.elevationM);
+                  gradeText =
+                    deltaM > 10
+                      ? ` · ${deltaM}m downhill haul to ${hubSettlement.settlementName} (${Math.round(hubCell.elevationM)}m)`
+                      : deltaM < -10
+                        ? ` · ${Math.abs(deltaM)}m uphill haul to ${hubSettlement.settlementName} (${Math.round(hubCell.elevationM)}m)`
+                        : ` · Level haul with ${hubSettlement.settlementName} (${Math.round(hubCell.elevationM)}m)`;
+                }
+                const riverNote =
+                  (siteCell.tier === "surveyed" || siteCell.tier === "stale") &&
+                  siteCell.riverDischargeM3S !== undefined &&
+                  siteCell.riverDischargeM3S > 0
+                    ? ` · River inflow ${siteCell.riverDischargeM3S.toFixed(0)} m3/s`
+                    : "";
+                appendInspectorDetailRow(
+                  document,
+                  specList,
+                  "Site Geology & Terrain",
+                  `${biomeText} · Strata: ${strataText} · Node Elevation ${siteElevM}m${gradeText}${riverNote}`,
+                );
+              }
+
+              const maxPassages = corridorEdges.reduce(
+                (m, e) => Math.max(m, e.cumulativePassages ?? 0),
+                outpostRoad.cumulativePassages ?? 0,
+              );
+              const maxTonnes = corridorEdges.reduce(
+                (m, e) => Math.max(m, e.cumulativeTonnesPassed ?? 0),
+                outpostRoad.cumulativeTonnesPassed ?? 0,
+              );
+              appendInspectorDetailRow(
+                document,
+                specList,
+                "Access Corridor",
+                `${outpostRoad.purposeLabel || `Cells #${outpostRoad.fromCellId} <-> #${outpostRoad.toCellId}`} · ${outpostRoad.infraKey} (Edge #${outpostRoad.edgeId}, ${corridorEdges.length} hop${corridorEdges.length === 1 ? "" : "s"}) · Traffic: ${maxPassages} passages (${maxTonnes.toFixed(1)} t)`,
+              );
+              extras.appendChild(specList);
+
+              if (siteCell && (siteCell.tier === "surveyed" || siteCell.tier === "stale")) {
+                if ((siteCell.depositEstimates ?? []).length > 0) {
+                  appendDepositEstimatesSection(document, extras, siteCell, currentTick);
+                } else {
+                  const fallbackAssay = document.createElement("p");
+                  fallbackAssay.textContent = isQuarry
+                    ? "Surface Extraction: Dimension stone, rubble aggregate & bedrock spoil active (no deep metallic vein assay filed for this cell yet)."
+                    : "Surface Harvest: Standing timber & sawpit waterwheel intake (non-mineral harvest).";
+                  extras.appendChild(fallbackAssay);
+                }
+              }
+
+              const navRow = document.createElement("div");
+              navRow.className = "ng-hud-cluster";
+              navRow.appendChild(
                 createClickableToken(document, `Inspect Corridor Edge #${outpostRoad.edgeId}`, () => {
                   spine.bus.emit({
                     kind: "FocusEntityInspector",
@@ -1221,18 +1510,27 @@ export function createEntityInspectorWindowPlugin(): WindowContentPlugin {
                   });
                 }),
               );
-              if (srcSett || dstSett) {
-                const hub = srcSett ?? dstSett!;
-                extras.appendChild(
-                  createClickableToken(document, `Return to ${hub.settlementName}`, () => {
+              navRow.appendChild(
+                createClickableToken(document, `Inspect Site Cell #${outpostCellId}`, () => {
+                  spine.bus.emit({
+                    kind: "FocusEntityInspector",
+                    entityKind: "cell",
+                    entityId: outpostCellId,
+                  });
+                }),
+              );
+              if (hubSettlement) {
+                navRow.appendChild(
+                  createClickableToken(document, `Return to ${hubSettlement.settlementName}`, () => {
                     spine.bus.emit({
                       kind: "FocusEntityInspector",
                       entityKind: "settlement",
-                      entityId: hub.settlementId,
+                      entityId: hubSettlement.settlementId,
                     });
                   }),
                 );
               }
+              extras.appendChild(navRow);
             } else {
               title.textContent = `Facility #${targetId}`;
               detail.textContent = "No facility record found.";
@@ -1308,7 +1606,8 @@ export function createEntityInspectorWindowPlugin(): WindowContentPlugin {
             detail.textContent = "River reach lies beyond live survey reports.";
           }
         } else if (targetKind === "cell" && Number.isFinite(targetId)) {
-          const cell = selectKnownCells(spine.store).find((c) => c.cellId === targetId);
+          const allCells = selectKnownCells(spine.store);
+          const cell = allCells.find((c) => c.cellId === targetId);
           wireImageWithFallback(img, fallbackPortrait, fallbackPortrait, `Cell #${targetId}`);
           if (!cell || cell.tier === "unexplored") {
             title.textContent = `Unexplored Territory (Cell #${targetId})`;
@@ -1316,7 +1615,12 @@ export function createEntityInspectorWindowPlugin(): WindowContentPlugin {
           } else {
             const lakeTag = cell.tier !== "rumored" && cell.isLake ? " · Inland Lake Basin" : "";
             title.textContent = `${cell.tier.toUpperCase()} Survey — Cell #${cell.cellId}${lakeTag}`;
-            detail.textContent = `Elevation: ${Math.round(cell.elevationM)}m | Confidence: ${Math.round(cell.confidence01 * 100)}%`;
+            const centerElevM = Math.round(cell.elevationM);
+            const elevSummary =
+              clickedLocalElevM !== undefined
+                ? `Local ground: ${Math.round(clickedLocalElevM)}m (Cell center node: ${centerElevM}m)`
+                : `Cell center node elevation: ${centerElevM}m`;
+            detail.textContent = `${elevSummary} | Confidence: ${Math.round(cell.confidence01 * 100)}%`;
             extras.appendChild(
               createProvenanceBadgeElement(document, {
                 currentTick,
@@ -1326,6 +1630,42 @@ export function createEntityInspectorWindowPlugin(): WindowContentPlugin {
                 isLiveSight: cell.tier === "surveyed" ? cell.isLiveHqSight : false,
               }),
             );
+
+            const geoList = document.createElement("ul");
+            geoList.className = "ng-ledger-list";
+            appendInspectorDetailRow(
+              document,
+              geoList,
+              "Biome & Strata",
+              `${cell.biomeKey ?? (cell.isOcean ? "ocean" : "Surveyed Land")}${
+                cell.tier === "surveyed" || cell.tier === "stale"
+                  ? ` · ${describeRockStrata(cell.rockStrataCode)}`
+                  : ""
+              }`,
+            );
+
+            const topo = getCachedTopology(snap.globeTopology.subdivision);
+            const nbrIds = topo.cells[cell.cellId]?.neighbors ?? [];
+            const knownById = new Map(allCells.map((c) => [c.cellId, c]));
+            const surveyedNbrElevs: number[] = [];
+            for (const nid of nbrIds) {
+              const nc = knownById.get(nid);
+              if (nc && (nc.tier === "surveyed" || nc.tier === "stale")) {
+                surveyedNbrElevs.push(Math.round(nc.elevationM));
+              }
+            }
+            if (surveyedNbrElevs.length > 0) {
+              const minNbr = Math.min(...surveyedNbrElevs);
+              const maxNbr = Math.max(...surveyedNbrElevs);
+              appendInspectorDetailRow(
+                document,
+                geoList,
+                "Interpolated Cell Slope",
+                `Terrain slopes between ${minNbr}m and ${maxNbr}m across adjacent surveyed cells`,
+              );
+            }
+            extras.appendChild(geoList);
+
             appendDepositEstimatesSection(document, extras, cell, currentTick);
           }
         } else {

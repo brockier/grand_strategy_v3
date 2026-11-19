@@ -638,7 +638,6 @@ void main() {
   float kSum = k0 + k1 + k2;
 
   // Reticle rings around continuously picked coordinate.
-  float cid = floor(vCellId + 0.5);
   bool hasHoverVec = length(uHoveredUnitXyz) > 0.5;
   bool hasSelectVec = length(uSelectedUnitXyz) > 0.5;
   float hoverAng = hasHoverVec ? acos(clamp(dot(unitS, normalize(uHoveredUnitXyz)), -1.0, 1.0)) : 9.0;
@@ -646,10 +645,10 @@ void main() {
   float reticleScale = mix(1.0, 0.34, smoothstep(0.45, 0.02, uCameraAltitudeNorm));
   float hoverRing = hasHoverVec
     ? (1.0 - smoothstep(0.004 * reticleScale, 0.010 * reticleScale, abs(hoverAng - 0.018 * reticleScale))) * step(hoverAng, 0.04 * reticleScale)
-    : step(abs(cid - uHoveredCellId), 0.25);
+    : 0.0;
   float selectRing = hasSelectVec
     ? (1.0 - smoothstep(0.005 * reticleScale, 0.012 * reticleScale, abs(selectAng - 0.024 * reticleScale))) * step(selectAng, 0.05 * reticleScale)
-    : step(abs(cid - uSelectedCellId), 0.25);
+    : 0.0;
 
   float fresnelRim = pow(1.0 - clamp(abs(dot(viewNorm, vec3(0.0, 0.0, 1.0))), 0.0, 1.0), 3.2);
   float sunLimb = clamp(dot(unitS, sunDir) * 0.55 + 0.45, 0.15, 1.0);

@@ -179,6 +179,7 @@ export async function initializeGlobeViewport(
   let selectedCellId: number | null = null;
   let hoveredUnitXyz: Vec3 | null = null;
   let selectedUnitXyz: Vec3 | null = null;
+  let suppressImmediateHoverRender = false;
   let activeOverlayMode = "terrain";
   let weatherOverlayActive = false;
   let previewDestinationCellId: number | null = null;
@@ -556,20 +557,33 @@ export async function initializeGlobeViewport(
           lonDeg,
         };
       }
+      const sampledSurf = terrainSampler?.sample(hitUnit, nearestCellId, nearestCellId, altNorm);
+      const localElevM =
+        sampledSurf && sampledSurf.isExplored
+          ? Math.round(sampledSurf.effectiveElevM)
+          : Math.round(known.elevationM);
+      const centerElevM = Math.round(known.elevationM);
+
       if (known.tier === "stale") {
         return {
           hitKind: "cell",
           cellId: nearestCellId,
-          label: `Stale Recon (Cell ${nearestCellId})`,
+          localElevationM: localElevM,
+          label: `Stale Recon (Cell ${nearestCellId}, ${localElevM}m)`,
           unitXyz: hitUnit,
           latDeg,
           lonDeg,
         };
       }
+      const elevText =
+        Math.abs(localElevM - centerElevM) >= 3
+          ? `${localElevM}m local · ${centerElevM}m cell node`
+          : `${localElevM}m`;
       return {
         hitKind: "cell",
         cellId: nearestCellId,
-        label: `${known.biomeKey ?? (known.isOcean ? "ocean" : "Surveyed")} (Cell ${nearestCellId}, ${Math.round(known.elevationM)}m)`,
+        localElevationM: localElevM,
+        label: `${known.biomeKey ?? (known.isOcean ? "ocean" : "Surveyed")} (Cell ${nearestCellId}, ${elevText})`,
         unitXyz: hitUnit,
         latDeg,
         lonDeg,
@@ -762,14 +776,25 @@ export async function initializeGlobeViewport(
     const { forward, right, yaw } = readNavAxesFromKeys();
     const keyActive = orbitalCamera.stepKeyboardNavigation(forward, right, yaw, delta);
     const camActive = orbitalCamera.stepAnimation(delta) || keyActive;
-    renderOnce();
     if (camActive) {
-      emitTelemetry();
+      orbitalCamera.camera.updateMatrixWorld();
+      suppressImmediateHoverRender = true;
+      try {
+        emitTelemetry();
+      } finally {
+        suppressImmediateHoverRender = false;
+      }
     }
 
-    for (const layer of layers) {
-      layer.onFrameRender(orbitalCamera.getAltitudeNorm(), delta / 1000);
+    suppressImmediateHoverRender = true;
+    try {
+      for (const layer of layers) {
+        layer.onFrameRender(orbitalCamera.getAltitudeNorm(), delta / 1000);
+      }
+    } finally {
+      suppressImmediateHoverRender = false;
     }
+    renderOnce();
   };
 
   const rafLoop = () => {
@@ -912,6 +937,7 @@ export async function initializeGlobeViewport(
       const target = meshBuild.cellById.get(intent.cellId);
       if (target) {
         selectedCellId = intent.cellId;
+        selectedUnitXyz = null;
         orbitalCamera.flyToUnitVector(target.centerUnit, intent.zoomAltitude ?? 0.2, 500, false);
         renderOnce();
         emitTelemetry();
@@ -945,7 +971,9 @@ export async function initializeGlobeViewport(
         : hoveredCellId !== null
           ? meshBuild.cellById.get(hoveredCellId)?.centerUnit ?? null
           : null;
-      renderOnce();
+      if (!suppressImmediateHoverRender) {
+        renderOnce();
+      }
     } else if (intent.kind === "SelectMapFeature") {
       activeSelectionHit = intent.hit;
       if (!intent.hit || intent.hit.hitKind === "cell") {

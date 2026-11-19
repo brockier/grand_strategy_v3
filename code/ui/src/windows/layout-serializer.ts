@@ -124,11 +124,12 @@ export function clampFramePosition(
   width: number,
   viewportW: number,
   viewportH: number,
+  minTopMarginPx: number = HUD_TOP_MARGIN_PX,
 ): { readonly x: number; readonly y: number } {
   const minVisibleX = Math.min(MIN_HEADER_VISIBLE_X_PX, width);
   const minX = -(width - minVisibleX);
   const maxX = Math.max(0, viewportW - minVisibleX);
-  const minY = HUD_TOP_MARGIN_PX;
+  const minY = Math.max(HUD_TOP_MARGIN_PX, Math.round(minTopMarginPx));
   const maxY = Math.max(minY, viewportH - MIN_HEADER_VISIBLE_Y_PX);
   return {
     x: Math.round(clamp(x, minX, maxX)),
@@ -159,6 +160,7 @@ export function deserializeAndClampLayout(
   targetViewportWidth: number,
   targetViewportHeight: number,
   getBounds?: (pluginId: string) => PluginMinBounds | undefined,
+  minTopMarginPx: number = HUD_TOP_MARGIN_PX,
 ): WindowLayoutDocumentDto | null {
   try {
     const parsed: unknown = JSON.parse(rawJson);
@@ -175,6 +177,7 @@ export function deserializeAndClampLayout(
     const dstH = Math.max(240, targetViewportHeight);
     const scaleX = dstW / srcW;
     const scaleY = dstH / srcH;
+    const topMargin = Math.max(HUD_TOP_MARGIN_PX, Math.round(minTopMarginPx));
 
     const clampedFrames: SerializedWindowFrameDto[] = [];
     for (const rawFrame of obj.frames) {
@@ -198,7 +201,7 @@ export function deserializeAndClampLayout(
       let minW = 240;
       let minH = 160;
       let maxW = dstW - 16;
-      let maxH = dstH - HUD_TOP_MARGIN_PX - 12;
+      let maxH = dstH - topMargin - 12;
       for (const tab of tabs) {
         const b = getBounds?.(tab.pluginId);
         if (b) {
@@ -215,8 +218,8 @@ export function deserializeAndClampLayout(
       const height = Math.round(clamp(rawHeight, minH, Math.max(minH, maxH)));
 
       const scaledX = typeof f.x === "number" ? f.x * scaleX : 16;
-      const scaledY = typeof f.y === "number" ? f.y * scaleY : HUD_TOP_MARGIN_PX + 12;
-      const clampedPos = clampFramePosition(scaledX, scaledY, width, dstW, dstH);
+      const scaledY = typeof f.y === "number" ? f.y * scaleY : topMargin + 12;
+      const clampedPos = clampFramePosition(scaledX, scaledY, width, dstW, dstH, topMargin);
 
       clampedFrames.push({
         frameId: typeof f.frameId === "string" && f.frameId.length > 0 ? f.frameId : `frame-${clampedFrames.length + 1}`,

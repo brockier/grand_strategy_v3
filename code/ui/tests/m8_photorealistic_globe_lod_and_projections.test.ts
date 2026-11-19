@@ -916,13 +916,54 @@ describe("Photorealistic Planet Presentation, Multi-Tier Semantic Zoom LOD, De-C
     bus.subscribe((i) => emitted.push(i));
 
     const viewport = await initializeGlobeViewport(canvas, store, bus, []);
+    const shaderCtrl = createGlobeShaderController();
     try {
+      // Fragment shader must never fill discrete aCellId polygons when selectedUnitXyz is null (star-polygon regression).
+      expect(shaderCtrl.material.fragmentShader).not.toContain("step(abs(cid - uSelectedCellId)");
+      expect(shaderCtrl.material.fragmentShader).not.toContain("step(abs(cid - uHoveredCellId)");
+
       // Aim directly at settlement center even though formation is co-located on cell 0 -> must resolve settlement/building, never hijacked by formation!
       viewport.camera.flyToUnitVector(topo.cells[hqId].centerUnit, 0.12, 0, true);
       viewport.stepRender(16);
       const centerHit = viewport.layerHost.pickGlobeAtNdc(0, 0);
       expect(centerHit?.hitKind).not.toBe("formation");
       expect(["settlement", "facility"]).toContain(centerHit?.hitKind);
+
+      // Sloping cell continuous elevation sampling: picking from high cell (280m) toward lower coastal/valley neighbor differs from static cell node elevation.
+      const slopeOutpostSnap: DiegeticSnapshot = {
+        ...testSnap,
+        knownCells: testSnap.knownCells.map((c) =>
+          c.cellId === roadOutpostId && c.tier === "surveyed"
+            ? { ...c, elevationM: 566, rockStrataCode: 1 }
+            : c.cellId === hqId && c.tier === "surveyed"
+              ? { ...c, elevationM: 20 }
+              : c,
+        ),
+        knownSettlements: [],
+        surveyedRoads: [],
+        trackedConvoys: [],
+        warfare: undefined,
+      };
+      store.ingestSnapshot(slopeOutpostSnap);
+      viewport.updateFromSnapshot(slopeOutpostSnap);
+
+      const farNbr = norm3(slerpUnitVec3(topo.cells[roadOutpostId].centerUnit, topo.cells[hqId].centerUnit, 0.42));
+      viewport.camera.flyToUnitVector(topo.cells[roadOutpostId].centerUnit, 0.12, 0, true);
+      viewport.stepRender(16);
+      const crestHit = viewport.layerHost.pickGlobeAtNdc(0, 0);
+
+      viewport.camera.flyToUnitVector(farNbr, 0.12, 0, true);
+      viewport.stepRender(16);
+      const slopeHit = viewport.layerHost.pickGlobeAtNdc(0, 0);
+
+      expect(crestHit?.hitKind).toBe("cell");
+      expect(slopeHit?.hitKind).toBe("cell");
+      if (crestHit?.hitKind === "cell" && slopeHit?.hitKind === "cell") {
+        expect(crestHit.localElevationM).toBeGreaterThan(slopeHit.localElevationM! + 50);
+      }
+
+      store.ingestSnapshot(testSnap);
+      viewport.updateFromSnapshot(testSnap);
 
       // Aim directly at road midpoint -> resolves "road" with purpose label!
       const roadMid = norm3(slerpUnitVec3(topo.cells[hqId].centerUnit, topo.cells[roadOutpostId].centerUnit, 0.5));
@@ -952,7 +993,7 @@ describe("Photorealistic Planet Presentation, Multi-Tier Semantic Zoom LOD, De-C
       const lastSel = [...emitted].reverse().find((e) => e.kind === "SelectMapFeature");
       expect(lastSel?.kind === "SelectMapFeature" ? lastSel.hit : undefined).toBeNull();
 
-      // Dedicated Entity Inspector views render road, river, and resource-outpost facility records.
+      // Dedicated Entity Inspector views render road, river, cell slope, and rich resource-outpost facility dossiers.
       const reg = new PluginRegistry();
       reg.registerWindowPlugin(createEntityInspectorWindowPlugin());
       const winHost = dom.window.document.getElementById("win-host")!;
@@ -961,10 +1002,17 @@ describe("Photorealistic Planet Presentation, Multi-Tier Semantic Zoom LOD, De-C
       expect(winHost.textContent).toContain("Haven -> Quarry Outpost");
       bus.emit({ kind: "FocusEntityInspector", entityKind: "river", entityId: hqId });
       expect(winHost.textContent).toContain("140.0 m3/s");
+      bus.emit({ kind: "FocusEntityInspector", entityKind: "cell", entityId: roadOutpostId, localElevationM: 215 });
+      expect(winHost.textContent).toContain("Local ground: 215m");
+      expect(winHost.textContent).toContain("Cell center node: 280m");
       bus.emit({ kind: "FocusEntityInspector", entityKind: "facility", entityId: 900077 });
+      expect(winHost.textContent).toContain("Quarry Outpost");
+      expect(winHost.textContent).toContain("Open-Cut Stone & Mineral Quarry");
+      expect(winHost.textContent).toContain("Stationed Personnel");
       expect(winHost.textContent).toContain("Haven -> Quarry Outpost");
       wm.dispose();
     } finally {
+      shaderCtrl.dispose();
       viewport.dispose();
       dom.window.close();
       (globalThis as unknown as { document: unknown }).document = prevDoc;

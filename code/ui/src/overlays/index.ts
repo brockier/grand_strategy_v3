@@ -644,10 +644,31 @@ function formatHoverTooltipText(hit: GlobeRayHit, snapshot: DiegeticSnapshot | n
   return `${hit.label}${coordSuffix}`;
 }
 
+function hoverHitsDiffer(a: GlobeRayHit | null, b: GlobeRayHit | null): boolean {
+  if (a === b) return false;
+  if (!a || !b) return true;
+  if (a.hitKind !== b.hitKind || a.cellId !== b.cellId || a.label !== b.label) return true;
+  if (
+    a.hitKind === "cell" &&
+    b.hitKind === "cell" &&
+    a.localElevationM !== b.localElevationM
+  ) {
+    return true;
+  }
+  const ua = a.unitXyz;
+  const ub = b.unitXyz;
+  if (Boolean(ua) !== Boolean(ub)) return true;
+  if (ua && ub) {
+    const dist = Math.hypot(ua[0] - ub[0], ua[1] - ub[1], ua[2] - ub[2]);
+    if (dist > 1e-6) return true;
+  }
+  return false;
+}
+
 /**
  * Chrome-occlusion-aware ray-picking & hover tooltip controller (`UI-MAP-005`).
  * Aborts hover/click picking whenever a floating window, HUD bar, or modal dialog
- * occludes the cursor coordinate.
+ * occludes the cursor coordinate, and re-evaluates hover targets continuously as the camera moves.
  */
 export class OcclusionAwareCellPicker implements MapLayerPlugin {
   readonly layerId = "diegetic_picking_and_hover";
@@ -678,6 +699,9 @@ export class OcclusionAwareCellPicker implements MapLayerPlugin {
     let downX = 0;
     let downY = 0;
     let pointerDownActive = false;
+    let pointerInside = false;
+    let lastClientX = 0;
+    let lastClientY = 0;
 
     const hideHover = (clientX: number, clientY: number) => {
       if (this.tooltip) {
@@ -689,34 +713,54 @@ export class OcclusionAwareCellPicker implements MapLayerPlugin {
       }
     };
 
-    const onPointerDown = (ev: PointerEvent) => {
-      downX = ev.clientX;
-      downY = ev.clientY;
-      pointerDownActive = !host.isPointOccludedByChrome(ev.clientX, ev.clientY);
-    };
-
-    const onPointerMove = (ev: PointerEvent) => {
-      if (host.isPointOccludedByChrome(ev.clientX, ev.clientY)) {
-        hideHover(ev.clientX, ev.clientY);
+    const evaluateHoverAt = (clientX: number, clientY: number, forceEmit: boolean) => {
+      if (host.isPointOccludedByChrome(clientX, clientY)) {
+        hideHover(clientX, clientY);
         return;
       }
-      const { ndcX, ndcY } = clientPointToNdc(canvas, ev.clientX, ev.clientY);
+      const { ndcX, ndcY } = clientPointToNdc(canvas, clientX, clientY);
       const hit = host.pickGlobeAtNdc(ndcX, ndcY);
+      const changed = hoverHitsDiffer(this.lastHoveredHit, hit);
       this.lastHoveredHit = hit;
       if (hit && this.tooltip) {
         this.tooltip.hidden = false;
         this.tooltip.textContent = formatHoverTooltipText(hit, this.latestSnapshot);
-        this.tooltip.style.left = `${Math.round(ev.clientX + 14)}px`;
-        this.tooltip.style.top = `${Math.round(ev.clientY + 14)}px`;
+        this.tooltip.style.left = `${Math.round(clientX + 14)}px`;
+        this.tooltip.style.top = `${Math.round(clientY + 14)}px`;
       } else if (this.tooltip) {
         this.tooltip.hidden = true;
       }
-      bus.emit({ kind: "HoverMapFeature", hit, clientX: ev.clientX, clientY: ev.clientY });
+      if (forceEmit || changed) {
+        bus.emit({ kind: "HoverMapFeature", hit, clientX, clientY });
+      }
+    };
+
+    const onPointerDown = (ev: PointerEvent) => {
+      downX = ev.clientX;
+      downY = ev.clientY;
+      pointerInside = true;
+      lastClientX = ev.clientX;
+      lastClientY = ev.clientY;
+      pointerDownActive = !host.isPointOccludedByChrome(ev.clientX, ev.clientY);
+    };
+
+    const onPointerMove = (ev: PointerEvent) => {
+      pointerInside = true;
+      lastClientX = ev.clientX;
+      lastClientY = ev.clientY;
+      evaluateHoverAt(ev.clientX, ev.clientY, true);
     };
 
     const onPointerLeave = () => {
+      pointerInside = false;
       hideHover(0, 0);
     };
+
+    const unsubBus = bus.subscribe((intent) => {
+      if (intent.kind === "UpdateCameraTelemetry" && pointerInside) {
+        evaluateHoverAt(lastClientX, lastClientY, false);
+      }
+    });
 
     const onClick = (ev: MouseEvent) => {
       if (host.isPointOccludedByChrome(ev.clientX, ev.clientY)) {
@@ -775,6 +819,7 @@ export class OcclusionAwareCellPicker implements MapLayerPlugin {
           kind: "FocusEntityInspector",
           entityKind: "cell",
           entityId: hit.cellId,
+          ...(hit.localElevationM !== undefined ? { localElevationM: hit.localElevationM } : {}),
         });
       }
     };
@@ -785,6 +830,7 @@ export class OcclusionAwareCellPicker implements MapLayerPlugin {
     canvas.addEventListener("click", onClick);
 
     this.cleanups.push(() => {
+      unsubBus();
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerleave", onPointerLeave);

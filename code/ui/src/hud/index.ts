@@ -33,6 +33,7 @@ export function mountCommandHud(
   bus: UiIntentBus,
 ): () => void {
   const bar = document.createElement("header");
+  bar.id = "command-hud-bar";
   bar.className = "ng-hud-bar";
   bar.setAttribute("data-chrome-occluder", "true");
 

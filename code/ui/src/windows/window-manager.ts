@@ -166,7 +166,10 @@ export class DesktopWindowManager implements LayoutPresetPort {
           pinned: intent.pinned,
         });
       } else if (intent.kind === "FocusEntityInspector") {
-        const key = `${intent.entityKind}:${intent.entityId}`;
+        const key =
+          intent.localElevationM !== undefined
+            ? `${intent.entityKind}:${intent.entityId}:${Math.round(intent.localElevationM)}`
+            : `${intent.entityKind}:${intent.entityId}`;
         this.openWindow("entity_inspector", {
           instanceKey: key,
           pinned: intent.pinned,
@@ -177,6 +180,8 @@ export class DesktopWindowManager implements LayoutPresetPort {
         this.applyNamedPreset(intent.presetName);
       } else if (intent.kind === "SaveWindowLayoutPreset") {
         this.saveNamedPreset(intent.presetName);
+      } else if (intent.kind === "SkinBundleUpdated") {
+        this.reclampFramesBelowHud();
       }
     });
 
@@ -206,7 +211,48 @@ export class DesktopWindowManager implements LayoutPresetPort {
     const doc = this.hostRoot.ownerDocument;
     doc.addEventListener("keydown", onKeyDown);
 
-    this.cleanups.push(unsubBus, () => doc.removeEventListener("keydown", onKeyDown));
+    const unsubStore = this.spine.store.subscribe(() => {
+      this.reclampFramesBelowHud();
+    });
+
+    let hudResizeObserver: ResizeObserver | null = null;
+    let observedHudEl: HTMLElement | null = null;
+    const attachHudResizeObserver = () => {
+      const hudEl = this.findHudBarElement();
+      if (!hudResizeObserver || hudEl === observedHudEl) return;
+      if (observedHudEl) {
+        hudResizeObserver.unobserve(observedHudEl);
+      }
+      observedHudEl = hudEl;
+      if (hudEl) {
+        hudResizeObserver.observe(hudEl);
+        this.reclampFramesBelowHud();
+      }
+    };
+
+    if (typeof ResizeObserver !== "undefined") {
+      hudResizeObserver = new ResizeObserver(() => {
+        this.reclampFramesBelowHud();
+      });
+      attachHudResizeObserver();
+    }
+
+    let hudMutationObserver: MutationObserver | null = null;
+    if (typeof MutationObserver !== "undefined") {
+      hudMutationObserver = new MutationObserver(() => {
+        attachHudResizeObserver();
+        this.reclampFramesBelowHud();
+      });
+      hudMutationObserver.observe(this.hostRoot, { childList: true });
+    }
+
+    this.cleanups.push(
+      unsubBus,
+      unsubStore,
+      () => doc.removeEventListener("keydown", onKeyDown),
+      () => hudResizeObserver?.disconnect(),
+      () => hudMutationObserver?.disconnect(),
+    );
   }
 
   public setSpinePorts(next: UiSpineContext): void {
@@ -230,7 +276,57 @@ export class DesktopWindowManager implements LayoutPresetPort {
     this.announcerEl.textContent = message;
   }
 
-  private computeFrameBounds(frame: ManagedFrame): {
+  private findHudBarElement(): HTMLElement | null {
+    return (
+      this.hostRoot.querySelector<HTMLElement>("#command-hud-bar, .ng-hud-bar") ??
+      this.hostRoot.ownerDocument.querySelector<HTMLElement>("#command-hud-bar, .ng-hud-bar")
+    );
+  }
+
+  public getEffectiveTopMarginPx(): number {
+    const hudEl = this.findHudBarElement();
+    if (!hudEl) return HUD_TOP_MARGIN_PX;
+    const rect = typeof hudEl.getBoundingClientRect === "function" ? hudEl.getBoundingClientRect() : null;
+    const rectBottom = rect && rect.height > 0 && rect.bottom > 0 ? rect.bottom : 0;
+    const offsetBottom = hudEl.offsetHeight > 0 ? hudEl.offsetTop + hudEl.offsetHeight : 0;
+    const measuredBottom = Math.max(rectBottom, offsetBottom);
+    if (measuredBottom <= 0) return HUD_TOP_MARGIN_PX;
+    return Math.max(HUD_TOP_MARGIN_PX, Math.ceil(measuredBottom + 8));
+  }
+
+  public reclampFramesBelowHud(): void {
+    const topMargin = this.getEffectiveTopMarginPx();
+    for (const frame of this.frames) {
+      const bounds = this.computeFrameBounds(frame, topMargin);
+      const clampedW = Math.round(clamp(frame.width, bounds.minW, bounds.maxW));
+      const clampedH = Math.round(clamp(frame.height, bounds.minH, bounds.maxH));
+      const clampedPos = clampFramePosition(
+        frame.x,
+        frame.y,
+        clampedW,
+        this.viewportW,
+        this.viewportH,
+        topMargin,
+      );
+      if (
+        clampedW !== frame.width ||
+        clampedH !== frame.height ||
+        clampedPos.x !== frame.x ||
+        clampedPos.y !== frame.y
+      ) {
+        frame.width = clampedW;
+        frame.height = clampedH;
+        frame.x = clampedPos.x;
+        frame.y = clampedPos.y;
+        this.syncFrameGeometry(frame);
+      }
+    }
+  }
+
+  private computeFrameBounds(
+    frame: ManagedFrame,
+    topMarginPx: number = this.getEffectiveTopMarginPx(),
+  ): {
     minW: number;
     minH: number;
     maxW: number;
@@ -239,7 +335,7 @@ export class DesktopWindowManager implements LayoutPresetPort {
     let minW = 240;
     let minH = 160;
     let maxW = Math.max(240, this.viewportW - 16);
-    let maxH = Math.max(160, this.viewportH - HUD_TOP_MARGIN_PX - 12);
+    let maxH = Math.max(160, this.viewportH - topMarginPx - 12);
     for (const tab of frame.tabs) {
       minW = Math.max(minW, tab.plugin.minWidth);
       minH = Math.max(minH, tab.plugin.minHeight);
@@ -289,6 +385,7 @@ export class DesktopWindowManager implements LayoutPresetPort {
           }
           this.activateTab(frame.frameId, tab.tabId);
           this.focusFrame(frame.frameId);
+          this.reclampFramesBelowHud();
           return frame.frameId;
         }
       }
@@ -296,12 +393,13 @@ export class DesktopWindowManager implements LayoutPresetPort {
 
     const frameId = `win-${this.nextId}`;
     this.nextId += 1;
+    const topMargin = this.getEffectiveTopMarginPx();
     const width = Math.max(plugin.minWidth, opts.width ?? plugin.minWidth + 60);
     const height = Math.max(plugin.minHeight, opts.height ?? plugin.minHeight + 60);
     const stagger = (this.frames.length % 5) * 32;
     const rawX = opts.x ?? 24 + stagger;
-    const rawY = opts.y ?? HUD_TOP_MARGIN_PX + 16 + stagger;
-    const clampedPos = clampFramePosition(rawX, rawY, width, this.viewportW, this.viewportH);
+    const rawY = opts.y ?? topMargin + 12 + stagger;
+    const clampedPos = clampFramePosition(rawX, rawY, width, this.viewportW, this.viewportH, topMargin);
 
     const frame = this.createFrameElement(frameId, clampedPos.x, clampedPos.y, width, height, Boolean(opts.collapsed));
     const tab = this.createTabForPlugin(frame, plugin, wantKey, wantPinned);
@@ -701,12 +799,13 @@ export class DesktopWindowManager implements LayoutPresetPort {
     const frame = this.frames.find((f) => f.frameId === frameId);
     if (!frame) return;
 
+    const topMargin = this.getEffectiveTopMarginPx();
     let candidateX = targetX;
     let candidateY = targetY;
 
     if (applyMagnetSnap) {
       const xTargets: number[] = [0, this.viewportW - frame.width];
-      const yTargets: number[] = [HUD_TOP_MARGIN_PX, this.viewportH - frame.height];
+      const yTargets: number[] = [topMargin, this.viewportH - frame.height];
       for (const other of this.frames) {
         if (other.frameId === frame.frameId) continue;
         xTargets.push(other.x, other.x + other.width, other.x - frame.width);
@@ -727,7 +826,7 @@ export class DesktopWindowManager implements LayoutPresetPort {
       }
     }
 
-    const clamped = clampFramePosition(candidateX, candidateY, frame.width, this.viewportW, this.viewportH);
+    const clamped = clampFramePosition(candidateX, candidateY, frame.width, this.viewportW, this.viewportH, topMargin);
     frame.x = clamped.x;
     frame.y = clamped.y;
     this.syncFrameGeometry(frame);
@@ -739,7 +838,8 @@ export class DesktopWindowManager implements LayoutPresetPort {
   ): void {
     const frame = this.frames.find((f) => f.frameId === frameId);
     if (!frame) return;
-    const bounds = this.computeFrameBounds(frame);
+    const topMargin = this.getEffectiveTopMarginPx();
+    const bounds = this.computeFrameBounds(frame, topMargin);
     frame.width = Math.round(clamp(rect.width, bounds.minW, bounds.maxW));
     frame.height = Math.round(clamp(rect.height, bounds.minH, bounds.maxH));
     const clampedPos = clampFramePosition(
@@ -748,6 +848,7 @@ export class DesktopWindowManager implements LayoutPresetPort {
       frame.width,
       this.viewportW,
       this.viewportH,
+      topMargin,
     );
     frame.x = clampedPos.x;
     frame.y = clampedPos.y;
@@ -847,9 +948,10 @@ export class DesktopWindowManager implements LayoutPresetPort {
 
     const frameId = `win-${this.nextId}`;
     this.nextId += 1;
+    const topMargin = this.getEffectiveTopMarginPx();
     const width = Math.max(tab.plugin.minWidth + 40, src.width);
     const height = Math.max(tab.plugin.minHeight + 40, src.height);
-    const clampedPos = clampFramePosition(dropX, dropY, width, this.viewportW, this.viewportH);
+    const clampedPos = clampFramePosition(dropX, dropY, width, this.viewportW, this.viewportH, topMargin);
 
     const nextFrame = this.createFrameElement(frameId, clampedPos.x, clampedPos.y, width, height, false);
     nextFrame.tabs.push(tab);
@@ -1040,6 +1142,7 @@ export class DesktopWindowManager implements LayoutPresetPort {
   }
 
   public restoreFromJson(rawJson: string): boolean {
+    const topMargin = this.getEffectiveTopMarginPx();
     const doc = deserializeAndClampLayout(
       rawJson,
       this.viewportW,
@@ -1055,6 +1158,7 @@ export class DesktopWindowManager implements LayoutPresetPort {
             }
           : undefined;
       },
+      topMargin,
     );
     if (!doc) return false;
 

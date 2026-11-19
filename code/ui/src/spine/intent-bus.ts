@@ -24,6 +24,7 @@ export type UiIntent =
       readonly entityKind: EntityKind;
       readonly entityId: number;
       readonly pinned?: boolean;
+      readonly localElevationM?: number;
     }
   | {
       readonly kind: "OpenSystemWindow";
