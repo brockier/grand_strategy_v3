@@ -146,6 +146,16 @@ pub enum KnownCellDto {
         drainage_area_km2: f32,
         #[serde(default = "default_strahler_order", rename = "strahlerOrder")]
         strahler_order: u8,
+        #[serde(default, rename = "isLake")]
+        is_lake: bool,
+        #[serde(default, rename = "riverChannelDownstreamCellId")]
+        river_channel_downstream_cell_id: Option<u32>,
+        #[serde(default, rename = "riverDischargeM3S")]
+        river_discharge_m3_s: f32,
+        #[serde(default, rename = "riverVelocityMps")]
+        river_velocity_mps: f32,
+        #[serde(default, rename = "hydroPotentialKw")]
+        hydro_potential_kw: f32,
     },
     Surveyed {
         #[serde(rename = "cellId")]
@@ -188,6 +198,16 @@ pub enum KnownCellDto {
         drainage_area_km2: f32,
         #[serde(default = "default_strahler_order", rename = "strahlerOrder")]
         strahler_order: u8,
+        #[serde(default, rename = "isLake")]
+        is_lake: bool,
+        #[serde(default, rename = "riverChannelDownstreamCellId")]
+        river_channel_downstream_cell_id: Option<u32>,
+        #[serde(default, rename = "riverDischargeM3S")]
+        river_discharge_m3_s: f32,
+        #[serde(default, rename = "riverVelocityMps")]
+        river_velocity_mps: f32,
+        #[serde(default, rename = "hydroPotentialKw")]
+        hydro_potential_kw: f32,
     },
 }
 
@@ -240,6 +260,14 @@ pub struct SurveyedRoadEdgeDto {
     pub river_edge: bool,
     #[serde(default)]
     pub bridge_cap_kg: Option<f64>,
+    #[serde(default)]
+    pub road_purpose: String,
+    #[serde(default)]
+    pub purpose_label: String,
+    #[serde(default)]
+    pub cumulative_passages: u32,
+    #[serde(default)]
+    pub cumulative_tonnes_passed: f64,
 }
 
 /// Communication delay contour sample from current HQ across known settlements/cells.
@@ -1161,6 +1189,11 @@ pub struct EdgeViewInput {
     pub washed_out: bool,
     pub river_edge: bool,
     pub bridge_cap_kg: Option<f64>,
+    pub road_built: bool,
+    pub road_purpose: String,
+    pub purpose_label: String,
+    pub cumulative_passages: u32,
+    pub cumulative_tonnes_passed: f64,
 }
 
 /// Auxiliary M5-M7 optional plug trait references supplied through `sim-spine` ports (`ENG-EPI-001`).
@@ -1415,6 +1448,13 @@ impl PlayerKnowledgeArchive {
                 rock_strata_code: planet.cell_strata_code(cid),
                 drainage_area_km2: planet.cell_drainage_area_km2(cid),
                 strahler_order: planet.cell_strahler_order(cid),
+                is_lake: planet.cell_is_lake(cid),
+                river_channel_downstream_cell_id: planet
+                    .cell_river_channel_downstream(cid)
+                    .map(CellId::get),
+                river_discharge_m3_s: planet.cell_river_discharge_m3_s(cid),
+                river_velocity_mps: planet.cell_river_velocity_mps(cid),
+                hydro_potential_kw: planet.cell_hydro_potential_kw(cid),
             },
         );
     }
@@ -1461,6 +1501,13 @@ impl PlayerKnowledgeArchive {
                 rock_strata_code: planet.cell_strata_code(cid),
                 drainage_area_km2: planet.cell_drainage_area_km2(cid),
                 strahler_order: planet.cell_strahler_order(cid),
+                is_lake: planet.cell_is_lake(cid),
+                river_channel_downstream_cell_id: planet
+                    .cell_river_channel_downstream(cid)
+                    .map(CellId::get),
+                river_discharge_m3_s: planet.cell_river_discharge_m3_s(cid),
+                river_velocity_mps: planet.cell_river_velocity_mps(cid),
+                hydro_potential_kw: planet.cell_hydro_potential_kw(cid),
             },
         );
     }
@@ -1610,6 +1657,11 @@ impl PlayerKnowledgeArchive {
                     rock_strata_code,
                     drainage_area_km2,
                     strahler_order,
+                    is_lake,
+                    river_channel_downstream_cell_id,
+                    river_discharge_m3_s,
+                    river_velocity_mps,
+                    hydro_potential_kw,
                     ..
                 } => {
                     let age = tick.get().saturating_sub(observed_tick);
@@ -1638,6 +1690,11 @@ impl PlayerKnowledgeArchive {
                                 rock_strata_code,
                                 drainage_area_km2,
                                 strahler_order,
+                                is_lake,
+                                river_channel_downstream_cell_id,
+                                river_discharge_m3_s,
+                                river_velocity_mps,
+                                hydro_potential_kw,
                             },
                         );
                     } else if let Some(KnownCellDto::Surveyed {
@@ -1667,6 +1724,11 @@ impl PlayerKnowledgeArchive {
                     rock_strata_code,
                     drainage_area_km2,
                     strahler_order,
+                    is_lake,
+                    river_channel_downstream_cell_id,
+                    river_discharge_m3_s,
+                    river_velocity_mps,
+                    hydro_potential_kw,
                     ..
                 } => {
                     let age = tick.get().saturating_sub(observed_tick);
@@ -1694,6 +1756,11 @@ impl PlayerKnowledgeArchive {
                             rock_strata_code,
                             drainage_area_km2,
                             strahler_order,
+                            is_lake,
+                            river_channel_downstream_cell_id,
+                            river_discharge_m3_s,
+                            river_velocity_mps,
+                            hydro_potential_kw,
                         },
                     );
                 }
@@ -1759,6 +1826,13 @@ impl PlayerKnowledgeArchive {
                     rock_strata_code: planet.cell_strata_code(cid),
                     drainage_area_km2: planet.cell_drainage_area_km2(cid),
                     strahler_order: planet.cell_strahler_order(cid),
+                    is_lake: planet.cell_is_lake(cid),
+                    river_channel_downstream_cell_id: planet
+                        .cell_river_channel_downstream(cid)
+                        .map(CellId::get),
+                    river_discharge_m3_s: planet.cell_river_discharge_m3_s(cid),
+                    river_velocity_mps: planet.cell_river_velocity_mps(cid),
+                    hydro_potential_kw: planet.cell_hydro_potential_kw(cid),
                 },
             );
         }
@@ -2022,44 +2096,37 @@ impl PlayerKnowledgeArchive {
             }
         }
 
-        // Surveyed road edges around surveyed land cells
+        // Surveyed road edges: strictly emit built or traffic-worn roads whose both land endpoints are known (`ENG-LOG-007`).
         let mut surveyed_roads = Vec::new();
         let mut seen_edges = BTreeSet::new();
-        for &s_cell in &surveyed_settlement_cells {
-            for &nbr in planet.cell_neighbors(CellId(s_cell)) {
-                let nbr_u32 = nbr.get();
-                if !self.surveyed_cells.contains_key(&nbr_u32) {
-                    continue;
-                }
-                let nbr_geo = planet.cell_biome_and_strata(nbr);
-                if nbr_geo.is_ocean {
-                    continue;
-                }
-                if let Some(eid) = planet.cell_edge(CellId(s_cell), nbr)
-                    && seen_edges.insert(eid.get())
-                {
-                    if let Some(info) = extras.road_edges.get(&eid.get()) {
-                        surveyed_roads.push(SurveyedRoadEdgeDto {
-                            edge_id: eid.get(),
-                            from_cell_id: s_cell,
-                            to_cell_id: nbr_u32,
-                            infra_key: info.infra_key.clone(),
-                            washed_out: info.washed_out,
-                            river_edge: info.river_edge,
-                            bridge_cap_kg: info.bridge_cap_kg,
-                        });
-                    } else {
-                        surveyed_roads.push(SurveyedRoadEdgeDto {
-                            edge_id: eid.get(),
-                            from_cell_id: s_cell,
-                            to_cell_id: nbr_u32,
-                            infra_key: "foot_trail".to_string(),
-                            washed_out: false,
-                            river_edge: false,
-                            bridge_cap_kg: None,
-                        });
-                    }
-                }
+        for info in extras.road_edges.values() {
+            if !info.road_built {
+                continue;
+            }
+            if !self.surveyed_cells.contains_key(&info.from_cell_id)
+                || !self.surveyed_cells.contains_key(&info.to_cell_id)
+            {
+                continue;
+            }
+            let from_ocean = planet.cell_biome_and_strata(CellId(info.from_cell_id)).is_ocean;
+            let to_ocean = planet.cell_biome_and_strata(CellId(info.to_cell_id)).is_ocean;
+            if from_ocean || to_ocean {
+                continue;
+            }
+            if seen_edges.insert(info.edge_id) {
+                surveyed_roads.push(SurveyedRoadEdgeDto {
+                    edge_id: info.edge_id,
+                    from_cell_id: info.from_cell_id,
+                    to_cell_id: info.to_cell_id,
+                    infra_key: info.infra_key.clone(),
+                    washed_out: info.washed_out,
+                    river_edge: info.river_edge,
+                    bridge_cap_kg: info.bridge_cap_kg,
+                    road_purpose: info.road_purpose.clone(),
+                    purpose_label: info.purpose_label.clone(),
+                    cumulative_passages: info.cumulative_passages,
+                    cumulative_tonnes_passed: info.cumulative_tonnes_passed,
+                });
             }
         }
 
@@ -2372,13 +2439,17 @@ impl PlayerKnowledgeArchive {
                 .congested_edges()
                 .iter()
                 .filter_map(|ce| {
-                    if !seen_edges.contains(&ce.edge_id.get()) {
-                        return None;
-                    }
-                    let (from_cell_id, to_cell_id) = surveyed_edge_endpoints
-                        .get(&ce.edge_id.get())
-                        .copied()
-                        .unwrap_or((0, 0));
+                    let (from_cell_id, to_cell_id) =
+                        if let Some(pair) = surveyed_edge_endpoints.get(&ce.edge_id.get()) {
+                            *pair
+                        } else if let Some(info) = extras.road_edges.get(&ce.edge_id.get())
+                            && self.surveyed_cells.contains_key(&info.from_cell_id)
+                            && self.surveyed_cells.contains_key(&info.to_cell_id)
+                        {
+                            (info.from_cell_id, info.to_cell_id)
+                        } else {
+                            return None;
+                        };
                     Some(EdgeCongestionDto {
                         edge_id: ce.edge_id.get(),
                         from_cell_id,
@@ -2768,6 +2839,11 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     rock_strata_code,
                     drainage_area_km2,
                     strahler_order,
+                    is_lake,
+                    river_channel_downstream_cell_id,
+                    river_discharge_m3_s,
+                    river_velocity_mps,
+                    hydro_potential_kw,
                 } => {
                     write_u8(out, 1);
                     write_u32_le(out, *cell_id);
@@ -2796,6 +2872,17 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     write_u8(out, *rock_strata_code);
                     write_f32_bits(out, *drainage_area_km2);
                     write_u8(out, *strahler_order);
+                    write_u8(out, u8::from(*is_lake));
+                    match river_channel_downstream_cell_id {
+                        Some(ch_ds) => {
+                            write_u8(out, 1);
+                            write_u32_le(out, *ch_ds);
+                        }
+                        None => write_u8(out, 0),
+                    }
+                    write_f32_bits(out, *river_discharge_m3_s);
+                    write_f32_bits(out, *river_velocity_mps);
+                    write_f32_bits(out, *hydro_potential_kw);
                 }
                 KnownCellDto::Rumored {
                     cell_id,
@@ -2840,6 +2927,11 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     rock_strata_code,
                     drainage_area_km2,
                     strahler_order,
+                    is_lake,
+                    river_channel_downstream_cell_id,
+                    river_discharge_m3_s,
+                    river_velocity_mps,
+                    hydro_potential_kw,
                 } => {
                     write_u8(out, 3);
                     write_u32_le(out, *cell_id);
@@ -2868,6 +2960,17 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     write_u8(out, *rock_strata_code);
                     write_f32_bits(out, *drainage_area_km2);
                     write_u8(out, *strahler_order);
+                    write_u8(out, u8::from(*is_lake));
+                    match river_channel_downstream_cell_id {
+                        Some(ch_ds) => {
+                            write_u8(out, 1);
+                            write_u32_le(out, *ch_ds);
+                        }
+                        None => write_u8(out, 0),
+                    }
+                    write_f32_bits(out, *river_discharge_m3_s);
+                    write_f32_bits(out, *river_velocity_mps);
+                    write_f32_bits(out, *hydro_potential_kw);
                 }
             }
         }
@@ -3009,6 +3112,15 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     rock_strata_code: read_u8(input)?,
                     drainage_area_km2: read_f32_bits(input)?,
                     strahler_order: read_u8(input)?,
+                    is_lake: read_u8(input)? != 0,
+                    river_channel_downstream_cell_id: if read_u8(input)? != 0 {
+                        Some(read_u32_le(input)?)
+                    } else {
+                        None
+                    },
+                    river_discharge_m3_s: read_f32_bits(input)?,
+                    river_velocity_mps: read_f32_bits(input)?,
+                    hydro_potential_kw: read_f32_bits(input)?,
                 },
                 2 => KnownCellDto::Rumored {
                     cell_id: read_u32_le(input)?,
@@ -3046,6 +3158,15 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     rock_strata_code: read_u8(input)?,
                     drainage_area_km2: read_f32_bits(input)?,
                     strahler_order: read_u8(input)?,
+                    is_lake: read_u8(input)? != 0,
+                    river_channel_downstream_cell_id: if read_u8(input)? != 0 {
+                        Some(read_u32_le(input)?)
+                    } else {
+                        None
+                    },
+                    river_discharge_m3_s: read_f32_bits(input)?,
+                    river_velocity_mps: read_f32_bits(input)?,
+                    hydro_potential_kw: read_f32_bits(input)?,
                 },
                 other => return Err(format!("invalid KnownCellDto tag {other}")),
             };

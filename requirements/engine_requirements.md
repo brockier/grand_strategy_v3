@@ -261,6 +261,15 @@ Every requirement block carries one of four normative lifecycle statuses:
 - **Requirement:** Planetary generation at configurable higher density (`goldberg_subdivision = 24`, yielding `5,762` sample nodes and `11,520` triangles) SHALL synthesize domain-warped anisotropic ridged mountain belts, two-tier continental-shelf (`-15m` to `-180m`) versus abyssal-basin bathymetry, high-latitude glacial fjord and archipelago carving, fluvial valley incision, integer `strahler_order`, and continuous `aridity_index_01` and `soil_fertility_01` biophysical fields exposed for explored cells through `PlanetGeometryPort` and `player-view`.
 - **Acceptance Criteria:** Property tests at `m = 24` verify `5,762` cells and `11,520` triangles, non-trivial continental-shelf ocean coverage (`-200m .. 0m` >= 5% of ocean cells), hierarchical Strahler stream orders (`max >= 3`), bounded biophysical indices (`aridity_index_01` and `soil_fertility_01` in `[0.0, 1.0]`), circular geodesic HQ sight horizons, and bit-exact canonical save/load determinism.
 
+### ENG-GEO-008: Volumetric River Discharge, Flow Direction, Inland Lakes & Terminus Closure
+- **ID:** `ENG-GEO-008`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Property-Sim`
+- **Lineage:** `Origin`
+- **Requirement:** Every perennial land river channel SHALL maintain a directed acyclic downstream pointer (`river_channel_downstream`), physical volumetric runoff discharge (`river_discharge_m3_s` accumulated monotonically downstream from climate precipitation minus evaporation), surface flow velocity (`river_velocity_mps`), hydroelectric drop potential (`hydro_potential_kw`), and explicit inland lake basin classification (`is_lake`) so that every perennial river terminates strictly in another perennial river confluence, an inland lake, or an ocean coast cell without mid-slope or headless dangling endpoints.
+- **Acceptance Criteria:** Planetary hydrology tests across multiple seeds verify conservation and strict non-decreasing downstream accumulation of `river_discharge_m3_s`, positive `river_velocity_mps` and non-negative `hydro_potential_kw` on perennial channels, and `100%` terminus closure in a downstream confluence, `is_lake` cell, or ocean cell with bit-identical canonical codec serialization.
+
 ---
 
 ## 6. Dynamic Hourly Weather & Surface Physics (`ENG-WTH`)
@@ -815,6 +824,15 @@ Every requirement block carries one of four normative lifecycle statuses:
 - **Lineage:** `Parent: ENG-LOG-006`
 - **Requirement:** Drawing private wagons or vessels into state/military charter service SHALL reduce remaining un-chartered private carrying capacity, throttling civilian merchant deliveries of staple food/fuel and lifting destination spot prices.
 - **Acceptance Criteria:** Comparative simulations prove mass state carrier chartering lowers civilian commodity tonnage delivered by merchant caravans and raises destination scarcity prices relative to unchartered baseline runs.
+
+### ENG-LOG-007: Purpose-Driven Built Road Network & Directional River Current Navigation
+- **ID:** `ENG-LOG-007`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Origin`
+- **Requirement:** Land infrastructure edges SHALL distinguish unbuilt open wilderness from constructed or traffic-worn roads tagged with explicit origin/destination provenance (`RoadPurposeKind` covering inter-settlement corridors, resource/port access routes, chartered arterials, and organic traffic-worn tracks formed once repeated passages or freight tonnage cross configured thresholds), conferring lower traversal friction only along built roads, while watercraft transit along perennial river edges SHALL compute asymmetric downstream versus upstream groundspeed from the channel current velocity (`river_velocity_mps`) and minimum navigable discharge (`river_discharge_m3_s`).
+- **Acceptance Criteria:** Logistics integration tests verify zero dead-end spoke roads around starting settlements, measurable travel-speed reduction across unbuilt wilderness versus constructed roads, organic `TrafficWornTrack` emergence after repeated convoy transits, asymmetric downstream faster than upstream river barge speeds, and strict epistemic zeroing of purpose/flow fields in `player-view` on `Unexplored` cells.
 
 ---
 

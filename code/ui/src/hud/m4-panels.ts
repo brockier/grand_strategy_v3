@@ -717,7 +717,7 @@ export function createNotificationMatrixWindowPlugin(): WindowContentPlugin {
     defaultTitle: "Notification & Auto-Pause Rules",
     minWidth: 460,
     minHeight: 280,
-    hotkey: "n",
+    hotkey: "v",
     mountContent(container, _instanceKey, spine) {
       const root = document.createElement("div");
       root.className = "ng-responsive-grid";

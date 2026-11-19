@@ -82,6 +82,11 @@ export type KnownCellDto =
       readonly rockStrataCode?: number;
       readonly drainageAreaKm2?: number;
       readonly strahlerOrder?: number;
+      readonly isLake?: boolean;
+      readonly riverChannelDownstreamCellId?: number | null;
+      readonly riverDischargeM3S?: number;
+      readonly riverVelocityMps?: number;
+      readonly hydroPotentialKw?: number;
     }
   | {
       readonly tier: "surveyed";
@@ -103,6 +108,11 @@ export type KnownCellDto =
       readonly rockStrataCode?: number;
       readonly drainageAreaKm2?: number;
       readonly strahlerOrder?: number;
+      readonly isLake?: boolean;
+      readonly riverChannelDownstreamCellId?: number | null;
+      readonly riverDischargeM3S?: number;
+      readonly riverVelocityMps?: number;
+      readonly hydroPotentialKw?: number;
     };
 
 export interface KnownSettlementDto {
@@ -120,6 +130,10 @@ export interface SurveyedRoadEdgeDto {
   readonly washedOut?: boolean;
   readonly riverEdge?: boolean;
   readonly bridgeCapKg?: number | null;
+  readonly roadPurpose?: string;
+  readonly purposeLabel?: string;
+  readonly cumulativePassages?: number;
+  readonly cumulativeTonnesPassed?: number;
 }
 
 export interface CommLatencyContourDto {
@@ -674,6 +688,7 @@ export interface GlobePalette {
   readonly peakSnowRgb: RgbTuple;
   readonly riverWaterRgb: RgbTuple;
   readonly roadOchreRgb: RgbTuple;
+  readonly roadStoneRgb?: RgbTuple;
   readonly settlementMarkerRgb: RgbTuple;
   readonly contourInkRgb: RgbTuple;
   readonly compassRoseRgb: RgbTuple;
@@ -798,11 +813,23 @@ export type GlobeRayHit =
       readonly lonDeg?: number;
     }
   | {
+      readonly hitKind: "facility";
+      readonly cellId: number;
+      readonly facilityId: number;
+      readonly settlementId?: number;
+      readonly label: string;
+      readonly unitXyz?: readonly [number, number, number];
+      readonly latDeg?: number;
+      readonly lonDeg?: number;
+    }
+  | {
       readonly hitKind: "road";
       readonly cellId: number;
       readonly edgeId: number;
       readonly fromCellId: number;
       readonly toCellId: number;
+      readonly roadPurpose?: string;
+      readonly purposeLabel?: string;
       readonly label: string;
       readonly unitXyz?: readonly [number, number, number];
       readonly latDeg?: number;
@@ -813,6 +840,9 @@ export type GlobeRayHit =
       readonly cellId: number;
       readonly toCellId: number;
       readonly flowNorm01: number;
+      readonly dischargeM3S?: number;
+      readonly velocityMps?: number;
+      readonly hydroPotentialKw?: number;
       readonly label: string;
       readonly unitXyz?: readonly [number, number, number];
       readonly latDeg?: number;

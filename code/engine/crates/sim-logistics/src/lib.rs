@@ -23,16 +23,68 @@ use sim_spine::ports::{
     PlanetGeometryPort, ShipmentRequest, SurfaceConditionsPort, TransitChannelKind,
 };
 
+/// Explicit economic or engineering reason why an overland road edge exists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RoadPurposeKind {
+    UnbuiltWilderness,
+    SettlementToSettlement,
+    ResourceOrPortAccess,
+    CharteredArterial,
+    TrafficWornTrack,
+}
+
+impl RoadPurposeKind {
+    /// Canonical string identifier for snapshot serialization and inspection.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::UnbuiltWilderness => "unbuilt_wilderness",
+            Self::SettlementToSettlement => "settlement_to_settlement",
+            Self::ResourceOrPortAccess => "resource_or_port_access",
+            Self::CharteredArterial => "chartered_arterial",
+            Self::TrafficWornTrack => "traffic_worn_track",
+        }
+    }
+}
+
+fn purpose_to_u8(kind: RoadPurposeKind) -> u8 {
+    match kind {
+        RoadPurposeKind::UnbuiltWilderness => 0,
+        RoadPurposeKind::SettlementToSettlement => 1,
+        RoadPurposeKind::ResourceOrPortAccess => 2,
+        RoadPurposeKind::CharteredArterial => 3,
+        RoadPurposeKind::TrafficWornTrack => 4,
+    }
+}
+
+fn u8_to_purpose(code: u8) -> Result<RoadPurposeKind, String> {
+    match code {
+        0 => Ok(RoadPurposeKind::UnbuiltWilderness),
+        1 => Ok(RoadPurposeKind::SettlementToSettlement),
+        2 => Ok(RoadPurposeKind::ResourceOrPortAccess),
+        3 => Ok(RoadPurposeKind::CharteredArterial),
+        4 => Ok(RoadPurposeKind::TrafficWornTrack),
+        other => Err(format!("invalid road purpose code {other}")),
+    }
+}
+
 /// Physical state and restrictions of an edge connecting two adjacent planetary cells.
 #[derive(Clone, Debug, PartialEq)]
 pub struct EdgeLogisticsState {
     pub edge_id: EdgeId,
+    pub from_cell: CellId,
+    pub to_cell: CellId,
     pub infra_class: InfraClassId,
     pub bridge_weight_cap_kg: Option<f64>,
     pub washed_out: bool,
     pub river_edge: bool,
     pub sea_edge: bool,
     pub requires_bridge_for_land: bool,
+    pub road_built: bool,
+    pub road_purpose: RoadPurposeKind,
+    pub purpose_label: String,
+    pub cumulative_passages: u32,
+    pub cumulative_tonnes_passed: f64,
 }
 
 /// Arrived non-courier physical payload queued for deposition into `sim-economy` at arrival.
@@ -245,9 +297,19 @@ impl LogisticsNetwork {
                     }
                     let elev_v = planet.cell_elevation_m(v);
                     let ds_v = planet.watershed_downstream(v);
+                    let ch_u = planet.cell_river_channel_downstream(u);
+                    let ch_v = planet.cell_river_channel_downstream(v);
                     let sea_edge = elev_u <= 0.0 || elev_v <= 0.0;
-                    let drains_between = (ds_u == Some(v) && planet.cell_drainage_area_km2(u) >= 400.0)
-                        || (ds_v == Some(u) && planet.cell_drainage_area_km2(v) >= 400.0);
+                    let is_perennial_river_edge = (ch_u == Some(v)
+                        && planet.cell_river_discharge_m3_s(u) >= 25.0)
+                        || (ch_v == Some(u) && planet.cell_river_discharge_m3_s(v) >= 25.0);
+                    let mock_river = ch_u.is_none()
+                        && ch_v.is_none()
+                        && planet.cell_river_discharge_m3_s(u) == 0.0
+                        && planet.cell_river_discharge_m3_s(v) == 0.0
+                        && ((ds_u == Some(v) && planet.cell_drainage_area_km2(u) >= 400.0)
+                            || (ds_v == Some(u) && planet.cell_drainage_area_km2(v) >= 400.0));
+                    let drains_between = is_perennial_river_edge || mock_river;
                     let infra_class = if sea_edge && river_channel_infra.is_some() {
                         river_channel_infra.unwrap_or(default_infra)
                     } else {
@@ -257,12 +319,19 @@ impl LogisticsNetwork {
                         edge_id,
                         EdgeLogisticsState {
                             edge_id,
+                            from_cell: u,
+                            to_cell: v,
                             infra_class,
                             bridge_weight_cap_kg: None,
                             washed_out: false,
                             river_edge: drains_between || sea_edge,
                             sea_edge,
                             requires_bridge_for_land: false,
+                            road_built: false,
+                            road_purpose: RoadPurposeKind::UnbuiltWilderness,
+                            purpose_label: String::new(),
+                            cumulative_passages: 0,
+                            cumulative_tonnes_passed: 0.0,
                         },
                     );
                 }
@@ -315,19 +384,87 @@ impl LogisticsNetwork {
         river_edge: bool,
         requires_bridge_for_land: bool,
     ) {
-        let sea_edge = self.edges.get(&edge_id).map(|e| e.sea_edge).unwrap_or(false);
+        let prev = self.edges.get(&edge_id).cloned();
+        let sea_edge = prev.as_ref().map(|e| e.sea_edge).unwrap_or(false);
+        let from_cell = prev.as_ref().map(|e| e.from_cell).unwrap_or(CellId(0));
+        let to_cell = prev.as_ref().map(|e| e.to_cell).unwrap_or(CellId(0));
+        let road_built = (infra_class != self.default_infra)
+            || prev.as_ref().map(|e| e.road_built).unwrap_or(false);
+        let road_purpose = prev
+            .as_ref()
+            .map(|e| e.road_purpose)
+            .filter(|&p| p != RoadPurposeKind::UnbuiltWilderness)
+            .unwrap_or(if road_built {
+                RoadPurposeKind::CharteredArterial
+            } else {
+                RoadPurposeKind::UnbuiltWilderness
+            });
+        let purpose_label = prev
+            .as_ref()
+            .map(|e| e.purpose_label.clone())
+            .filter(|l| !l.is_empty())
+            .unwrap_or_else(|| {
+                if road_built {
+                    "Engineered Roadway".to_owned()
+                } else {
+                    String::new()
+                }
+            });
         self.edges.insert(
             edge_id,
             EdgeLogisticsState {
                 edge_id,
+                from_cell,
+                to_cell,
                 infra_class,
                 bridge_weight_cap_kg,
                 washed_out,
                 river_edge,
                 sea_edge,
                 requires_bridge_for_land,
+                road_built,
+                road_purpose,
+                purpose_label,
+                cumulative_passages: prev.as_ref().map(|e| e.cumulative_passages).unwrap_or(0),
+                cumulative_tonnes_passed: prev
+                    .as_ref()
+                    .map(|e| e.cumulative_tonnes_passed)
+                    .unwrap_or(0.0),
             },
         );
+    }
+
+    /// Constructs or upgrades a purposeful road edge between surveyed land settlements/outposts.
+    pub fn build_purpose_road(
+        &mut self,
+        edge_id: EdgeId,
+        infra_class: InfraClassId,
+        purpose: RoadPurposeKind,
+        purpose_label: impl Into<String>,
+        bridge_weight_cap_kg: Option<f64>,
+    ) {
+        let entry = self.edges.entry(edge_id).or_insert(EdgeLogisticsState {
+            edge_id,
+            from_cell: CellId(0),
+            to_cell: CellId(0),
+            infra_class: self.default_infra,
+            bridge_weight_cap_kg: None,
+            washed_out: false,
+            river_edge: false,
+            sea_edge: false,
+            requires_bridge_for_land: false,
+            road_built: false,
+            road_purpose: RoadPurposeKind::UnbuiltWilderness,
+            purpose_label: String::new(),
+            cumulative_passages: 0,
+            cumulative_tonnes_passed: 0.0,
+        });
+        entry.infra_class = infra_class;
+        entry.bridge_weight_cap_kg = bridge_weight_cap_kg;
+        entry.washed_out = false;
+        entry.road_built = purpose != RoadPurposeKind::UnbuiltWilderness;
+        entry.road_purpose = purpose;
+        entry.purpose_label = purpose_label.into();
     }
 
     /// Upgrades an edge's infrastructure tier and optional bridge payload ceiling.
@@ -339,16 +476,28 @@ impl LogisticsNetwork {
     ) {
         let entry = self.edges.entry(edge_id).or_insert(EdgeLogisticsState {
             edge_id,
+            from_cell: CellId(0),
+            to_cell: CellId(0),
             infra_class: self.default_infra,
             bridge_weight_cap_kg: None,
             washed_out: false,
             river_edge: false,
             sea_edge: false,
             requires_bridge_for_land: false,
+            road_built: false,
+            road_purpose: RoadPurposeKind::UnbuiltWilderness,
+            purpose_label: String::new(),
+            cumulative_passages: 0,
+            cumulative_tonnes_passed: 0.0,
         });
         entry.infra_class = infra_class;
         entry.bridge_weight_cap_kg = bridge_weight_cap_kg;
         entry.washed_out = false;
+        entry.road_built = true;
+        if entry.road_purpose == RoadPurposeKind::UnbuiltWilderness {
+            entry.road_purpose = RoadPurposeKind::CharteredArterial;
+            entry.purpose_label = "Engineered Roadway".to_owned();
+        }
     }
 
     /// Marks or clears a bridge/road washout on a specified edge.
@@ -844,6 +993,8 @@ impl LogisticsNetwork {
                 summary.total_spares_worn_kg += consumed;
             }
 
+            let prev_cell = convoy.current_cell;
+            let mut crossed_way_edges: Vec<EdgeId> = Vec::new();
             let mut travel_budget_km = distance_step_km;
             while travel_budget_km > 0.0 && convoy.route_cursor + 1 < convoy.route_waypoints_xyz.len() {
                 let seg_a = convoy.route_waypoints_xyz[convoy.route_cursor];
@@ -851,6 +1002,15 @@ impl LogisticsNetwork {
                 let seg_km = f64::from(great_circle_arc_km(seg_a, seg_b, radius_km)).max(0.001);
                 let rem_km = (seg_km - convoy.progress_on_edge_km).max(0.0);
                 if travel_budget_km >= rem_km {
+                    if !carrier.is_watercraft {
+                        let ca = planet.nearest_sample_cell(seg_a);
+                        let cb = planet.nearest_sample_cell(seg_b);
+                        if ca != cb
+                            && let Some(eid) = planet.cell_edge(ca, cb)
+                        {
+                            crossed_way_edges.push(eid);
+                        }
+                    }
                     convoy.distance_travelled_km += rem_km;
                     travel_budget_km -= rem_km;
                     convoy.progress_on_edge_km = 0.0;
@@ -871,6 +1031,19 @@ impl LogisticsNetwork {
             } else {
                 planet.nearest_sample_cell(convoy.current_unit_xyz)
             };
+
+            if !carrier.is_watercraft {
+                let cargo_tonnes = convoy.cargo_mass_kg / 1000.0;
+                if convoy.current_cell != prev_cell
+                    && let Some(eid) = planet.cell_edge(prev_cell, convoy.current_cell)
+                {
+                    record_overland_edge_passage(edges, eid, cargo_tonnes);
+                } else {
+                    for eid in crossed_way_edges {
+                        record_overland_edge_passage(edges, eid, cargo_tonnes);
+                    }
+                }
+            }
 
             if convoy.route_cursor + 1 >= convoy.route_waypoints_xyz.len() {
                 convoy.current_unit_xyz = convoy.destination_unit_xyz;
@@ -1001,8 +1174,14 @@ impl LogisticsNetwork {
             {
                 return false;
             }
+            let seg_road_built = planet
+                .cell_edge(prev_cell, cur_cell)
+                .and_then(|eid| self.edges.get(&eid))
+                .map(|e| e.road_built)
+                .unwrap_or(false);
             if eval_continuous_land_speed(
                 self.default_infra,
+                seg_road_built,
                 cur_cell,
                 cur_cell,
                 slope,
@@ -1130,6 +1309,8 @@ impl CanonicalSaveablePort for LogisticsNetwork {
         write_u32_le(out, self.edges.len() as u32);
         for e in self.edges.values() {
             write_u32_le(out, e.edge_id.0);
+            write_u32_le(out, e.from_cell.0);
+            write_u32_le(out, e.to_cell.0);
             write_u16_le(out, e.infra_class.0);
             write_u8(out, u8::from(e.bridge_weight_cap_kg.is_some()));
             write_f64_bits(out, e.bridge_weight_cap_kg.unwrap_or(0.0));
@@ -1137,6 +1318,11 @@ impl CanonicalSaveablePort for LogisticsNetwork {
             write_u8(out, u8::from(e.river_edge));
             write_u8(out, u8::from(e.sea_edge));
             write_u8(out, u8::from(e.requires_bridge_for_land));
+            write_u8(out, u8::from(e.road_built));
+            write_u8(out, purpose_to_u8(e.road_purpose));
+            write_str(out, &e.purpose_label);
+            write_u32_le(out, e.cumulative_passages);
+            write_f64_bits(out, e.cumulative_tonnes_passed);
         }
 
         write_u32_le(out, self.convoys.len() as u32);
@@ -1225,6 +1411,8 @@ impl CanonicalSaveablePort for LogisticsNetwork {
         self.edges.clear();
         for _ in 0..edge_count {
             let edge_id = EdgeId(read_u32_le(input)?);
+            let from_cell = CellId(read_u32_le(input)?);
+            let to_cell = CellId(read_u32_le(input)?);
             let infra_class = InfraClassId(read_u16_le(input)?);
             let has_cap = read_u8(input)? != 0;
             let cap = read_f64_bits(input)?;
@@ -1232,16 +1420,28 @@ impl CanonicalSaveablePort for LogisticsNetwork {
             let river_edge = read_u8(input)? != 0;
             let sea_edge = read_u8(input)? != 0;
             let requires_bridge_for_land = read_u8(input)? != 0;
+            let road_built = read_u8(input)? != 0;
+            let road_purpose = u8_to_purpose(read_u8(input)?)?;
+            let purpose_label = read_str(input)?;
+            let cumulative_passages = read_u32_le(input)?;
+            let cumulative_tonnes_passed = read_f64_bits(input)?;
             self.edges.insert(
                 edge_id,
                 EdgeLogisticsState {
                     edge_id,
+                    from_cell,
+                    to_cell,
                     infra_class,
                     bridge_weight_cap_kg: has_cap.then_some(cap),
                     washed_out,
                     river_edge,
                     sea_edge,
                     requires_bridge_for_land,
+                    road_built,
+                    road_purpose,
+                    purpose_label,
+                    cumulative_passages,
+                    cumulative_tonnes_passed,
                 },
             );
         }
@@ -1368,8 +1568,32 @@ impl CanonicalSaveablePort for LogisticsNetwork {
     }
 }
 
+fn record_overland_edge_passage(
+    edges: &mut BTreeMap<EdgeId, EdgeLogisticsState>,
+    edge_id: EdgeId,
+    cargo_tonnes: f64,
+) {
+    let Some(entry) = edges.get_mut(&edge_id) else {
+        return;
+    };
+    if entry.sea_edge {
+        return;
+    }
+    entry.cumulative_passages = entry.cumulative_passages.saturating_add(1);
+    entry.cumulative_tonnes_passed += cargo_tonnes.max(0.0);
+    if !entry.road_built
+        && (entry.cumulative_passages >= 3 || entry.cumulative_tonnes_passed >= 2.5)
+    {
+        entry.road_built = true;
+        entry.road_purpose = RoadPurposeKind::TrafficWornTrack;
+        entry.purpose_label = "Traffic-Worn Overland Track".to_owned();
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn eval_continuous_land_speed(
     infra_id: InfraClassId,
+    road_built: bool,
     u: CellId,
     v: CellId,
     slope: f32,
@@ -1395,6 +1619,7 @@ fn eval_continuous_land_speed(
     let infra_speed_mult = infra
         .map(|i| f64::from(i.speed_multiplier.max(0.25)))
         .unwrap_or(1.0);
+    let wilderness_mult = if road_built { 1.0 } else { 0.82 };
     let mud_shield = infra.map(|i| i.mud_shield_factor).unwrap_or(0.0);
     let effective_mud = (avg_mud * (1.0 - mud_shield)).clamp(0.0, 1.0);
     let mud_mult = f64::from((1.0 - effective_mud * carrier.mud_penalty_factor).clamp(0.18, 1.0));
@@ -1417,6 +1642,7 @@ fn eval_continuous_land_speed(
 
     let speed = f64::from(carrier.base_speed_km_hr.max(0.5))
         * infra_speed_mult
+        * wilderness_mult
         * mud_mult
         * grade_mult
         * flood_mult
@@ -1465,8 +1691,14 @@ fn eval_waypoint_segment_speed(
     let elev_cur = planet.sample_elevation_at_unit_xyz(current_xyz);
     let elev_probe = planet.sample_elevation_at_unit_xyz(probe_xyz);
     let slope = ((f64::from((elev_probe - elev_cur).abs())) / (step_km * 1000.0)).atan() as f32;
+    let road_built_seg = planet
+        .cell_edge(cur_cell, probe_cell)
+        .and_then(|eid| edges.get(&eid))
+        .map(|e| e.road_built)
+        .unwrap_or(false);
     eval_continuous_land_speed(
         default_infra,
+        road_built_seg,
         cur_cell,
         probe_cell,
         slope,
@@ -1498,6 +1730,7 @@ fn eval_edge_speed_with_map(
     let washed_out = edge_state.map(|e| e.washed_out).unwrap_or(false);
     let bridge_cap = edge_state.and_then(|e| e.bridge_weight_cap_kg);
     let requires_bridge = edge_state.map(|e| e.requires_bridge_for_land).unwrap_or(false);
+    let road_built = edge_state.map(|e| e.road_built).unwrap_or(false);
 
     let surf_u = weather.surface(u);
     let surf_v = weather.surface(v);
@@ -1536,7 +1769,33 @@ fn eval_edge_speed_with_map(
         } else {
             1.0
         };
-        return Some((base * infra_mult * wind_mult).max(0.4));
+
+        let mut river_current_km_hr = 0.0_f64;
+        if !sea_edge {
+            let ch_u = planet.cell_river_channel_downstream(u);
+            let ch_v = planet.cell_river_channel_downstream(v);
+            if ch_u == Some(v) {
+                let q = planet.cell_river_discharge_m3_s(u);
+                let vel_mps = planet.cell_river_velocity_mps(u);
+                let slope = planet.cell_slope_rad(edge_id).abs();
+                if q < 25.0 || slope > 0.045 || vel_mps > 3.8 {
+                    return None;
+                }
+                river_current_km_hr = f64::from(vel_mps) * 3.6 * 0.85;
+            } else if ch_v == Some(u) {
+                let q = planet.cell_river_discharge_m3_s(v);
+                let vel_mps = planet.cell_river_velocity_mps(v);
+                let slope = planet.cell_slope_rad(edge_id).abs();
+                if q < 25.0 || slope > 0.045 || vel_mps > 3.8 {
+                    return None;
+                }
+                river_current_km_hr = -(f64::from(vel_mps) * 3.6 * 0.65);
+            }
+        }
+
+        let propelled_km_hr = base * infra_mult * wind_mult;
+        let floor_km_hr = (base * 0.28).max(0.6);
+        return Some((propelled_km_hr + river_current_km_hr).max(floor_km_hr));
     }
 
     if washed_out {
@@ -1551,7 +1810,7 @@ fn eval_edge_speed_with_map(
         return None;
     }
     let slope = planet.cell_slope_rad(edge_id).abs();
-    eval_continuous_land_speed(infra_id, u, v, slope, carrier, weather, registry)
+    eval_continuous_land_speed(infra_id, road_built, u, v, slope, carrier, weather, registry)
 }
 
 fn record_convoy_arrival(

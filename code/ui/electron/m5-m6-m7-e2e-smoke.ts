@@ -104,6 +104,24 @@ export async function runM5M6M7E2ESmoke(
     const closeLod4Count = rt.globe.status.patchLodCounts[4];
     const close3dSample = strideBytes(rt.globe.captureFrameSample(96));
 
+    // 1d. Purposeful starting roads, Q/E yaw rotation, and Controls (?) reference launcher.
+    const hqRoadCount = (snap0?.surveyedRoads ?? []).filter(
+      (r) => r.fromCellId === hqCid || r.toCellId === hqCid,
+    ).length;
+    const roadsAllHavePurpose = (snap0?.surveyedRoads ?? []).every(
+      (r) => Boolean(r.roadPurpose && r.roadPurpose !== "unbuilt_wilderness"),
+    );
+    const headingBeforeYaw = rt.globe.camera.getTelemetry().headingRad;
+    rt.globe.camera.rotateYawByRadians(0.35);
+    rt.globe.stepRender(16);
+    const headingAfterYaw = rt.globe.camera.getTelemetry().headingRad;
+    document.querySelector('[data-open-plugin="controls_reference"]')?.click();
+    await wait(40);
+    const controlsRefText = document.body.textContent ?? "";
+    const hasControlsReferenceWindow =
+      controlsRefText.includes("W / S") && controlsRefText.includes("Q / E");
+    rt.globe.camera.resetNorth(true);
+
     // Restore orbital/continental altitude so background RAF renders stay lightweight during UI tests.
     rt.globe.camera.flyToUnitVector(hqGeom.centerUnit, 0.45, 0, true);
     rt.globe.stepRender(16);
@@ -257,6 +275,11 @@ export async function runM5M6M7E2ESmoke(
       closePitchRad,
       closeLod4Count,
       close3dSample,
+      hqRoadCount,
+      roadsAllHavePurpose,
+      headingBeforeYaw,
+      headingAfterYaw,
+      hasControlsReferenceWindow,
       tradeLegend,
       warfareLegend,
       hasInstTablist: Boolean(instTablist),

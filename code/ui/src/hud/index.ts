@@ -1,6 +1,7 @@
 import {
   DiegeticStoreAccess,
   UiIntentBus,
+  WindowContentPlugin,
   selectClockAndNotifications,
   selectDelegationTree,
   selectHqPresence,
@@ -139,6 +140,7 @@ export function mountCommandHud(
     { pluginId: "institutions_inspector", label: "Institutions" },
     { pluginId: "knowledge_archive", label: "Knowledge" },
     { pluginId: "warfare_command", label: "Warfare" },
+    { pluginId: "controls_reference", label: "Controls (?)" },
   ];
 
   const launcherButtons = new Map<string, HTMLButtonElement>();
@@ -231,5 +233,89 @@ export function mountCommandHud(
     unsubStore();
     unsubBus();
     bar.remove();
+  };
+}
+
+/**
+ * Window listing complete mouse and keyboard navigation controls (`UI-GLB-008`).
+ */
+export function createControlsReferenceWindowPlugin(): WindowContentPlugin {
+  return {
+    pluginId: "controls_reference",
+    defaultTitle: "Controls & Keybindings",
+    minWidth: 440,
+    minHeight: 340,
+    hotkey: "?",
+    mountContent(container) {
+      const root = document.createElement("div");
+      root.className = "ng-responsive-grid";
+
+      const sections: ReadonlyArray<{
+        readonly title: string;
+        readonly rows: ReadonlyArray<readonly [string, string]>;
+      }> = [
+        {
+          title: "Map & Camera Navigation",
+          rows: [
+            ["Left-Drag", "Pan camera smoothly across globe or flat map projection"],
+            ["Right-Drag / Shift+Drag", "Tilt pitch angle (vertical) and rotate camera yaw (horizontal)"],
+            ["Mouse Wheel", "Smooth cursor-targeted zoom with 0 to 45 deg terrain flyover"],
+            ["W / S", "Move camera forward / backward relative to current heading"],
+            ["A / D", "Strafe camera left / right relative to current heading"],
+            ["Q / E", "Rotate camera yaw counter-clockwise (left) / clockwise (right)"],
+            ["Left-Click", "Inspect building, facility outpost, road, river, unit, or settlement"],
+            ["Escape", "Clear active map selection or close focused unpinned window"],
+          ],
+        },
+        {
+          title: "Window Shortcuts",
+          rows: [
+            ["P", "Toggle Observed Physical Ledger"],
+            ["T", "Toggle Multi-Series Trends"],
+            ["O", "Toggle Delegation & Hierarchy Org Tree"],
+            ["I", "Toggle Diegetic Field Inspector"],
+            ["J", "Toggle Courier Dispatches"],
+            ["G", "Toggle Strategic Mandates"],
+            ["B", "Toggle Arbitration & Proposals"],
+            ["Z", "Toggle Personal Attention Zoom"],
+            ["H", "Toggle HQ Relocation Planner"],
+            ["V", "Toggle Notification & Auto-Pause Rules"],
+            ["N", "Toggle Guilds, Prices & Economic Policy"],
+            ["K", "Toggle Empirical Archive & Fragility"],
+            ["F", "Toggle Operational Warfare Command"],
+            ["Y", "Toggle Cartography Skins & Appearance"],
+            ["M", "Toggle Audio Mixer"],
+            ["L", "Toggle Window Layouts"],
+            ["? / F1", "Toggle this Controls & Keybindings Reference"],
+          ],
+        },
+      ];
+
+      for (const sec of sections) {
+        const heading = document.createElement("strong");
+        heading.textContent = sec.title;
+        const table = document.createElement("table");
+        table.className = "ng-ledger-table";
+        const tbody = document.createElement("tbody");
+        for (const [binding, desc] of sec.rows) {
+          const tr = document.createElement("tr");
+          const tdKey = document.createElement("td");
+          const kbd = document.createElement("kbd");
+          kbd.textContent = binding;
+          tdKey.appendChild(kbd);
+          const tdDesc = document.createElement("td");
+          tdDesc.textContent = desc;
+          tr.append(tdKey, tdDesc);
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+        root.append(heading, table);
+      }
+
+      container.replaceChildren(root);
+      return () => {
+        root.remove();
+      };
+    },
   };
 }

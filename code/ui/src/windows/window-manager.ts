@@ -193,7 +193,9 @@ export class DesktopWindowManager implements LayoutPresetPort {
       if (ev.ctrlKey || ev.altKey || ev.metaKey) return;
       const lowerKey = ev.key.toLowerCase();
       for (const plugin of this.registry.listWindowPlugins()) {
-        if (plugin.hotkey && plugin.hotkey.toLowerCase() === lowerKey) {
+        const matchesHotkey = plugin.hotkey && plugin.hotkey.toLowerCase() === lowerKey;
+        const matchesHelpF1 = ev.key === "F1" && plugin.pluginId === "controls_reference";
+        if (matchesHotkey || matchesHelpF1) {
           ev.preventDefault();
           this.togglePluginWindow(plugin.pluginId);
           return;

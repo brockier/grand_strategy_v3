@@ -17,6 +17,7 @@ import {
   selectLedgerRows,
   selectNonStateEconomy,
   selectPopulationRows,
+  selectSurveyedRoads,
   selectTimeSeries,
   selectTrackedConvoys,
   selectWarfare,
@@ -202,7 +203,7 @@ export function createLedgerStubPlugin(): WindowContentPlugin {
     defaultTitle: "Observed Physical Ledger",
     minWidth: 360,
     minHeight: 240,
-    hotkey: "e",
+    hotkey: "p",
     mountContent(container, _instanceKey, spine) {
       const root = document.createElement("div");
       root.className = "ng-responsive-grid";
@@ -1176,13 +1177,11 @@ export function createEntityInspectorWindowPlugin(): WindowContentPlugin {
             extras.appendChild(posture);
           }
         } else if (targetKind === "facility" && Number.isFinite(targetId)) {
-          const fac = selectFacilityRows(spine.store).find((f) => f.facilityId === targetId) ?? selectFacilityRows(spine.store)[0];
-          wireImageWithFallback(img, fallbackPortrait, fallbackPortrait, fac?.processName ?? "Facility");
-          title.textContent = fac ? `${fac.processName} (${fac.settlementName})` : `Facility #${targetId}`;
-          detail.textContent = fac
-            ? `${fac.assignedWorkers} workers · Tool condition ${Math.round(fac.toolCondition01 * 100)}%`
-            : "No facility record found.";
+          const fac = selectFacilityRows(spine.store).find((f) => f.facilityId === targetId);
           if (fac) {
+            wireImageWithFallback(img, fallbackPortrait, fallbackPortrait, fac.processName);
+            title.textContent = `${fac.processName} (${fac.settlementName})`;
+            detail.textContent = `${fac.assignedWorkers} workers · Tool condition ${Math.round(fac.toolCondition01 * 100)}%${fac.weatherHalted ? " · Weather Halted" : ""}`;
             extras.appendChild(
               createProvenanceBadgeElement(document, {
                 currentTick,
@@ -1191,6 +1190,122 @@ export function createEntityInspectorWindowPlugin(): WindowContentPlugin {
                 provenanceLabel: fac.provenanceLabel,
               }),
             );
+            const settBtn = createClickableToken(document, `Inspect ${fac.settlementName}`, () => {
+              spine.bus.emit({
+                kind: "FocusEntityInspector",
+                entityKind: "settlement",
+                entityId: fac.settlementId,
+              });
+            });
+            extras.appendChild(settBtn);
+          } else {
+            const outpostRoad = selectSurveyedRoads(spine.store).find(
+              (r) => 900000 + r.edgeId === targetId,
+            );
+            wireImageWithFallback(img, fallbackPortrait, fallbackPortrait, "Resource Outpost");
+            if (outpostRoad) {
+              const settlementsByCell = new Map(
+                selectKnownSettlements(spine.store).map((s) => [s.cellId, s]),
+              );
+              const srcSett = settlementsByCell.get(outpostRoad.fromCellId);
+              const dstSett = settlementsByCell.get(outpostRoad.toCellId);
+              const outpostCell = srcSett ? outpostRoad.toCellId : outpostRoad.fromCellId;
+              title.textContent = outpostRoad.purposeLabel || `Work Outpost (Cell #${outpostCell})`;
+              detail.textContent = `Served by ${outpostRoad.infraKey} (Edge #${outpostRoad.edgeId}) · Outpost Cell #${outpostCell} · Cumulative traffic: ${outpostRoad.cumulativePassages ?? 0} passages`;
+              extras.appendChild(
+                createClickableToken(document, `Inspect Corridor Edge #${outpostRoad.edgeId}`, () => {
+                  spine.bus.emit({
+                    kind: "FocusEntityInspector",
+                    entityKind: "road",
+                    entityId: outpostRoad.edgeId,
+                  });
+                }),
+              );
+              if (srcSett || dstSett) {
+                const hub = srcSett ?? dstSett!;
+                extras.appendChild(
+                  createClickableToken(document, `Return to ${hub.settlementName}`, () => {
+                    spine.bus.emit({
+                      kind: "FocusEntityInspector",
+                      entityKind: "settlement",
+                      entityId: hub.settlementId,
+                    });
+                  }),
+                );
+              }
+            } else {
+              title.textContent = `Facility #${targetId}`;
+              detail.textContent = "No facility record found.";
+            }
+          }
+        } else if (targetKind === "road" && Number.isFinite(targetId)) {
+          const road = selectSurveyedRoads(spine.store).find((r) => r.edgeId === targetId);
+          const iconUrl = spine.assetResolver?.resolveIcon("colony_precision_tools") ?? "";
+          wireImageWithFallback(img, iconUrl, fallbackPortrait, "Road corridor");
+          if (road) {
+            const purposeText = road.purposeLabel || road.roadPurpose || "Purposeful Corridor";
+            title.textContent = `${purposeText} (${road.infraKey})`;
+            detail.textContent = `Edge #${road.edgeId} · Cells #${road.fromCellId} <-> #${road.toCellId} · Traffic: ${road.cumulativePassages ?? 0} passages (${(road.cumulativeTonnesPassed ?? 0).toFixed(1)} t) · ${road.washedOut ? "Washed Out" : "Passable"}${road.bridgeCapKg ? ` · Bridge Cap ${Math.round(road.bridgeCapKg)} kg` : ""}`;
+            const flyFrom = createClickableToken(document, `Locate Cell #${road.fromCellId}`, () => {
+              spine.bus.emit({ kind: "FlyGlobeToCell", cellId: road.fromCellId });
+            });
+            const flyTo = createClickableToken(document, `Locate Cell #${road.toCellId}`, () => {
+              spine.bus.emit({ kind: "FlyGlobeToCell", cellId: road.toCellId });
+            });
+            extras.append(flyFrom, flyTo);
+          } else {
+            title.textContent = `Road Edge #${targetId}`;
+            detail.textContent = "No surveyed road corridor telemetry found for this edge.";
+          }
+        } else if (targetKind === "river" && Number.isFinite(targetId)) {
+          const cells = selectKnownCells(spine.store);
+          const cell = cells.find((c) => c.cellId === targetId);
+          const iconUrl = spine.assetResolver?.resolveIcon("colony_precision_tools") ?? "";
+          wireImageWithFallback(img, iconUrl, fallbackPortrait, "River channel");
+          if (cell && (cell.tier === "surveyed" || cell.tier === "stale")) {
+            const dsId =
+              cell.riverChannelDownstreamCellId !== undefined
+                ? cell.riverChannelDownstreamCellId
+                : (cell.riverDownstreamCellId ?? null);
+            const dsCell = dsId !== null ? cells.find((c) => c.cellId === dsId) : undefined;
+            const terminusLabel =
+              dsId === null
+                ? "Inland Basin Lake Terminus"
+                : dsCell && dsCell.tier !== "unexplored"
+                  ? dsCell.isOcean || dsCell.elevationM < 0
+                    ? `Sea Coast Outlet (Cell #${dsId})`
+                    : dsCell.isLake
+                      ? `Inland Lake Basin (Cell #${dsId})`
+                      : `Downstream Confluence (Cell #${dsId})`
+                  : `Downstream Cell #${dsId}`;
+            const q = cell.riverDischargeM3S ?? 0;
+            const vel = cell.riverVelocityMps ?? 0;
+            const kw = cell.hydroPotentialKw ?? 0;
+            const hydroText = kw >= 1000 ? `${(kw / 1000).toFixed(2)} MW` : `${Math.round(kw)} kW`;
+            const baseBargeKmH = 6.2;
+            const downKmH = (baseBargeKmH + vel * 3.6 * 0.85).toFixed(1);
+            const upKmH = Math.max(1.7, baseBargeKmH - vel * 3.6 * 0.65).toFixed(1);
+            title.textContent = `Perennial River Reach (Cell #${cell.cellId})`;
+            detail.textContent = `Flow: Cell #${cell.cellId} -> ${terminusLabel} | Discharge: ${q.toFixed(1)} m3/s | Current: ${vel.toFixed(2)} m/s | Barge Speeds: ${downKmH} km/h downstream / ${upKmH} km/h upstream | Hydro Potential: ${hydroText} | Strahler Order ${cell.strahlerOrder ?? 1}`;
+            extras.appendChild(
+              createProvenanceBadgeElement(document, {
+                currentTick,
+                observedTick: cell.observedTick,
+                confidence01: cell.confidence01,
+                provenanceLabel: cell.provenanceLabel,
+                isLiveSight: cell.tier === "surveyed" ? cell.isLiveHqSight : false,
+              }),
+            );
+            if (dsId !== null) {
+              extras.appendChild(
+                createClickableToken(document, `Follow Flow Downstream (#${dsId})`, () => {
+                  spine.bus.emit({ kind: "FlyGlobeToCell", cellId: dsId });
+                }),
+              );
+            }
+          } else {
+            title.textContent = `River Reach (Cell #${targetId})`;
+            detail.textContent = "River reach lies beyond live survey reports.";
           }
         } else if (targetKind === "cell" && Number.isFinite(targetId)) {
           const cell = selectKnownCells(spine.store).find((c) => c.cellId === targetId);
@@ -1199,7 +1314,8 @@ export function createEntityInspectorWindowPlugin(): WindowContentPlugin {
             title.textContent = `Unexplored Territory (Cell #${targetId})`;
             detail.textContent = "No expedition survey report has reached HQ for this cell.";
           } else {
-            title.textContent = `${cell.tier.toUpperCase()} Survey — Cell #${cell.cellId}`;
+            const lakeTag = cell.tier !== "rumored" && cell.isLake ? " · Inland Lake Basin" : "";
+            title.textContent = `${cell.tier.toUpperCase()} Survey — Cell #${cell.cellId}${lakeTag}`;
             detail.textContent = `Elevation: ${Math.round(cell.elevationM)}m | Confidence: ${Math.round(cell.confidence01 * 100)}%`;
             extras.appendChild(
               createProvenanceBadgeElement(document, {
@@ -1243,6 +1359,52 @@ export function createEntityInspectorWindowPlugin(): WindowContentPlugin {
               }),
             );
             appendDepositEstimatesSection(document, extras, cell, currentTick);
+          }
+
+          const settlementIdFilter = found?.settlementId;
+          const localFacs = selectFacilityRows(spine.store).filter(
+            (f) => settlementIdFilter === undefined || f.settlementId === settlementIdFilter,
+          );
+          if (localFacs.length > 0) {
+            const facHeading = document.createElement("strong");
+            facHeading.textContent = "Workshops & Infrastructure";
+            const facRow = document.createElement("div");
+            facRow.className = "ng-hud-cluster";
+            for (const f of localFacs.slice(0, 6)) {
+              facRow.appendChild(
+                createClickableToken(document, `${f.processName} (${f.assignedWorkers}w)`, () => {
+                  spine.bus.emit({
+                    kind: "FocusEntityInspector",
+                    entityKind: "facility",
+                    entityId: f.facilityId,
+                  });
+                }),
+              );
+            }
+            extras.append(facHeading, facRow);
+          }
+
+          const connectedRoads = selectSurveyedRoads(spine.store).filter(
+            (r) => r.fromCellId === cellId || r.toCellId === cellId,
+          );
+          if (connectedRoads.length > 0) {
+            const roadHeading = document.createElement("strong");
+            roadHeading.textContent = "Connected Roads";
+            const roadRow = document.createElement("div");
+            roadRow.className = "ng-hud-cluster";
+            for (const r of connectedRoads) {
+              const label = r.purposeLabel ? `${r.purposeLabel} (${r.infraKey})` : `${r.infraKey} #${r.edgeId}`;
+              roadRow.appendChild(
+                createClickableToken(document, label, () => {
+                  spine.bus.emit({
+                    kind: "FocusEntityInspector",
+                    entityKind: "road",
+                    entityId: r.edgeId,
+                  });
+                }),
+              );
+            }
+            extras.append(roadHeading, roadRow);
           }
 
           const rowsHere = selectLedgerRows(spine.store, found?.settlementId);

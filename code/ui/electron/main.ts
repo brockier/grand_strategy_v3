@@ -324,6 +324,7 @@ function readSkinManifestBundle(skinsDir: string, skinId: string) {
     peakSnowRgb: hexToRgbTuple(gp.peak_snow_hex, [244, 239, 228]),
     riverWaterRgb: hexToRgbTuple(gp.river_water_hex, [54, 108, 133]),
     roadOchreRgb: hexToRgbTuple(gp.road_ochre_hex, [166, 89, 40]),
+    roadStoneRgb: hexToRgbTuple(gp.road_stone_hex, [122, 125, 130]),
     settlementMarkerRgb: hexToRgbTuple(gp.settlement_marker_hex, [139, 46, 34]),
     contourInkRgb: hexToRgbTuple(gp.contour_ink_hex, [59, 44, 29]),
     compassRoseRgb: hexToRgbTuple(gp.compass_rose_hex, [110, 85, 57]),

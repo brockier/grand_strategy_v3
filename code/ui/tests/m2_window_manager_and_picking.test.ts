@@ -159,7 +159,7 @@ describe("M2 Desktop Window Manager, Docking, Layout Serialization & Chrome-Occl
     const firstId = manager.listFrames()[0].frameId;
 
     // Hotkey ignored while typing inside search input
-    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "e", bubbles: true }));
+    dom.window.document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "p", bubbles: true }));
     const ledgerId = manager.listFrames()[1].frameId;
     const filterInput = dom.window.document.querySelector<HTMLInputElement>(`#${ledgerId} [data-ledger-filter='true']`)!;
     filterInput.focus();

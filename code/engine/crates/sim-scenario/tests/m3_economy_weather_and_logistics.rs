@@ -3,10 +3,11 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+use player_view::KnownCellDto;
 use sim_clock::ClockRunMode;
 use sim_data::load_mod_bundle;
 use sim_economy::EconomyLedger;
-use sim_logistics::{LogisticsNetwork, UnifiedTransitLaunch};
+use sim_logistics::{LogisticsNetwork, RoadPurposeKind, UnifiedTransitLaunch};
 use sim_scenario::{resolve_scenario_pack_stack, ScenarioWorld};
 use sim_spine::{
     ActorId, CellId, ModRegistryPort, PhysicalLedgerPort, PlanetGeometryPort, ProcessId,
@@ -958,4 +959,162 @@ fn unified_router_conserves_cargo_in_transit_without_instant_teleportation() {
             < 1e-4
     );
     assert!(world.economy.conservation_error_kg() <= 1e-4);
+}
+
+// @req ENG-LOG-007
+#[test]
+fn purpose_driven_roads_organic_worn_tracks_and_river_current_barge_asymmetry() {
+    let reg = load_unexplained_bundle();
+    let mut world = ScenarioWorld::from_registry(&reg, 42);
+    let snap = world.compile_diegetic_snapshot(&reg);
+
+    // 1. Starting settlement must have only purposeful resource/outpost access roads, never 6 indiscriminate spoke trails.
+    let hq_cell = snap.hq_presence.cell_id;
+    let built_edges: Vec<_> = snap
+        .surveyed_roads
+        .iter()
+        .filter(|r| r.from_cell_id == hq_cell || r.to_cell_id == hq_cell)
+        .collect();
+    assert!(
+        !built_edges.is_empty() && built_edges.len() <= 3,
+        "starting settlement must avoid spoke dead-end trails; got {} adjacent roads",
+        built_edges.len()
+    );
+    assert!(
+        snap.surveyed_roads
+            .iter()
+            .all(|r| !r.road_purpose.is_empty() && r.road_purpose != "unbuilt_wilderness")
+    );
+
+    // Unexplored cells must never leak hydrology discharge or velocity fields.
+    assert!(snap.known_cells.iter().any(|c| matches!(c, KnownCellDto::Unexplored { .. })));
+
+    // 2. Built road lowers travel friction relative to unbuilt open wilderness, and 3 overland passages wear a track.
+    let porter_id = reg
+        .carrier_id_by_key("foot_porter_column")
+        .expect("foot_porter_column");
+    let porter_def = reg.carrier_def(porter_id).expect("porter_def");
+    let foot_trail = reg.infra_id_by_key("foot_trail").expect("foot_trail");
+    let grain = reg.commodity_id_by_key("raw_grain").expect("raw_grain");
+    let dry = MockWeatherSurface {
+        override_surface: calm_dry_surface(),
+    };
+    let hq_sid = world.economy.hq_settlement().unwrap();
+
+    let mut unbuilt_pair = None;
+    let hq_cid = CellId(hq_cell);
+    for &nbr in world.planet.cell_neighbors(hq_cid) {
+        if !world.planet.is_ocean_cell(nbr)
+            && let Some(eid) = world.planet.cell_edge(hq_cid, nbr)
+            && world.planet.cell_slope_rad(eid).abs() <= porter_def.max_grade_rad
+            && world
+                .logistics
+                .edge_state(eid)
+                .is_some_and(|st| !st.road_built && !st.sea_edge && !st.requires_bridge_for_land)
+        {
+            unbuilt_pair = Some((hq_cid, nbr, eid));
+            break;
+        }
+    }
+    let (u, v, wild_eid) = unbuilt_pair.expect("unbuilt wilderness land edge near HQ");
+    let wild_speed = world
+        .logistics
+        .evaluate_edge_speed_km_hr(u, v, porter_def, 200.0, &world.planet, &dry, &reg)
+        .expect("wilderness speed");
+
+    let mut scratch_log = LogisticsNetwork::from_planet_and_registry(&world.planet, &reg);
+    scratch_log.build_purpose_road(
+        wild_eid,
+        foot_trail,
+        RoadPurposeKind::ResourceOrPortAccess,
+        "Built Test Corridor",
+        None,
+    );
+    let built_speed = scratch_log
+        .evaluate_edge_speed_km_hr(u, v, porter_def, 200.0, &world.planet, &dry, &reg)
+        .expect("built trail speed");
+    assert!(
+        built_speed > wild_speed,
+        "built road ({built_speed}) must travel faster than unbuilt wilderness ({wild_speed})"
+    );
+
+    // 3. Repeated overland transits across unbuilt wilderness edge organically wear a TrafficWornTrack.
+    let mut trial_log = LogisticsNetwork::from_planet_and_registry(&world.planet, &reg);
+    for _ in 0..3 {
+        let _ = trial_log.launch_unified_transit(
+            UnifiedTransitLaunch {
+                label: "porter_wear_test".to_owned(),
+                channel: TransitChannelKind::FreightCargo,
+                origin_settlement: hq_sid,
+                destination_settlement: None,
+                origin_cell: u,
+                destination_cell: v,
+                owner: ActorId(1),
+                carrier_class: porter_id,
+                cargo_commodity: Some(grain),
+                cargo_mass_kg: 400.0,
+                cargo_purity_01: 1.0,
+                fuel_loaded_kg: 250.0,
+                spare_parts_loaded_kg: 50.0,
+                current_tick: Tick(0),
+                is_hq_move: false,
+                dispatch_id: None,
+                sender: None,
+                mandate_payload_id: None,
+                subject: "wear_probe".to_owned(),
+            },
+            &world.planet,
+            &dry,
+            &reg,
+        );
+    }
+    for t in 1..600_u64 {
+        trial_log.step_hourly(Tick(t), &world.planet, &dry, &reg);
+        if trial_log.edge_state(wild_eid).is_some_and(|e| e.road_built) {
+            break;
+        }
+    }
+    let worn_state = trial_log.edge_state(wild_eid).expect("worn edge state");
+    assert!(
+        worn_state.road_built && worn_state.road_purpose == RoadPurposeKind::TrafficWornTrack,
+        "repeated transit across wilderness must promote edge to TrafficWornTrack (passages={}, built={})",
+        worn_state.cumulative_passages,
+        worn_state.road_built
+    );
+
+    // 4. Directional river barge speed asymmetry: downstream exceeds upstream on perennial river reach.
+    let barge_id = reg
+        .carrier_id_by_key("river_cargo_barge")
+        .expect("river_cargo_barge");
+    let barge_def = reg.carrier_def(barge_id).expect("barge_def");
+    let mut river_edge_pair = None;
+    for raw in 0..world.planet.cell_count() {
+        let cu = CellId(raw);
+        if world.planet.is_ocean_cell(cu) {
+            continue;
+        }
+        if let Some(cv) = world.planet.cell_river_channel_downstream(cu)
+            && !world.planet.is_ocean_cell(cv)
+            && world.planet.cell_river_discharge_m3_s(cu) >= 25.0
+            && world.planet.cell_river_velocity_mps(cu) <= 3.8
+            && let Some(eid) = world.planet.cell_edge(cu, cv)
+            && world.planet.cell_slope_rad(eid).abs() <= 0.045
+        {
+            river_edge_pair = Some((cu, cv));
+            break;
+        }
+    }
+    let (ru, rv) = river_edge_pair.expect("navigable perennial river edge on planet");
+    let down_speed = world
+        .logistics
+        .evaluate_edge_speed_km_hr(ru, rv, barge_def, 1000.0, &world.planet, &dry, &reg)
+        .expect("downstream barge speed");
+    let up_speed = world
+        .logistics
+        .evaluate_edge_speed_km_hr(rv, ru, barge_def, 1000.0, &world.planet, &dry, &reg)
+        .expect("upstream barge speed");
+    assert!(
+        down_speed > up_speed * 1.15,
+        "downstream barge ({down_speed:.2} km/h) must meaningfully exceed upstream ({up_speed:.2} km/h)"
+    );
 }

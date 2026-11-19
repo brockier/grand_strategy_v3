@@ -37,6 +37,7 @@ import { createDispatchInboxStubPlugin } from "./dispatches";
 import {
   createArbitrationWindowPlugin,
   createAttentionZoomWindowPlugin,
+  createControlsReferenceWindowPlugin,
   createHqRelocationPlannerWindowPlugin,
   createMandateComposerWindowPlugin,
   createNotificationMatrixWindowPlugin,
@@ -147,6 +148,7 @@ async function bootstrapShell(): Promise<void> {
   registry.registerWindowPlugin(createSkinSwitcherWindowPlugin(skinManager));
   registry.registerWindowPlugin(createAudioSettingsWindowPlugin(audioEngine));
   registry.registerWindowPlugin(createLayoutPresetsWindowPlugin());
+  registry.registerWindowPlugin(createControlsReferenceWindowPlugin());
 
   const windowManager = new DesktopWindowManager(
     appRoot,

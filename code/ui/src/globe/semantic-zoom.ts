@@ -3,6 +3,7 @@ import {
   add3,
   DiegeticSnapshot,
   GlobePalette,
+  GlobeRayHit,
   GoldbergCellGeometry,
   GoldbergTopologyData,
   greatCircleRadians,
@@ -348,6 +349,7 @@ export class SettlementDetailClusterGroup {
       yawRad: number,
       skipOnOcean = true,
       useZeroSeaLevel = false,
+      pickHit?: GlobeRayHit,
     ): THREE.Mesh | null => {
       const [east, north] = tangentBasis(anchorUnit);
       const displacedUnit = norm3(
@@ -373,6 +375,9 @@ export class SettlementDetailClusterGroup {
       mesh.position.copy(pose.position);
       mesh.quaternion.copy(pose.quaternion);
       mesh.scale.set(sx, sy, sz);
+      if (pickHit) {
+        mesh.userData.pickHit = pickHit;
+      }
       this.group.add(mesh);
       return mesh;
     };
@@ -388,6 +393,7 @@ export class SettlementDetailClusterGroup {
       roofH: number,
       yawRad: number,
       wallMat: THREE.Material,
+      pickHit?: GlobeRayHit,
     ) => {
       const plinthH = 0.0022 * scaleFactor;
       const deckY = 0.0004 * scaleFactor;
@@ -405,6 +411,9 @@ export class SettlementDetailClusterGroup {
         d * 1.24,
         plinthCenterY,
         yawRad,
+        true,
+        false,
+        pickHit,
       );
       if (!plinth) return;
       placeMesh(
@@ -419,6 +428,9 @@ export class SettlementDetailClusterGroup {
         d,
         wallBase + h * 0.5,
         yawRad,
+        true,
+        false,
+        pickHit,
       );
       if (roofH > 0) {
         placeMesh(
@@ -433,6 +445,9 @@ export class SettlementDetailClusterGroup {
           d * 1.15,
           wallBase + h + roofH * 0.5,
           yawRad,
+          true,
+          false,
+          pickHit,
         );
       }
     };
@@ -451,6 +466,13 @@ export class SettlementDetailClusterGroup {
       const popScale =
         Math.max(0.8, Math.min(1.65, Math.cbrt(Math.max(40, popTotal) / 160))) * scaleFactor;
 
+      const settlementPick: GlobeRayHit = {
+        hitKind: "settlement",
+        cellId: cell.cellId,
+        settlementId: settlement.settlementId,
+        label: settlement.isHq ? `${settlement.settlementName} (HQ)` : settlement.settlementName,
+      };
+
       // 1. Grounded Central Civic Hall / HQ Citadel
       addBuilding(
         cell.centerUnit,
@@ -463,6 +485,7 @@ export class SettlementDetailClusterGroup {
         0.0028 * popScale,
         0.2,
         this.keepMat,
+        settlementPick,
       );
       if (settlement.isHq) {
         addBuilding(
@@ -476,6 +499,7 @@ export class SettlementDetailClusterGroup {
           0.0032 * popScale,
           0.2,
           this.keepMat,
+          settlementPick,
         );
         if (fullDetail) {
           for (let sIdx = 0; sIdx < 6; sIdx += 1) {
@@ -493,6 +517,9 @@ export class SettlementDetailClusterGroup {
               0.0009 * popScale,
               0.0008 * popScale,
               -ang + Math.PI * 0.5,
+              true,
+              false,
+              settlementPick,
             );
           }
         }
@@ -509,9 +536,16 @@ export class SettlementDetailClusterGroup {
         const rad = 0.0076 * popScale;
         const fx = Math.cos(ang) * rad;
         const fn = Math.sin(ang) * rad;
-        const keyLower = `${fac.facilityKey} ${fac.facilityName}`.toLowerCase();
+        const keyLower = `${fac.processKey} ${fac.processName}`.toLowerCase();
         const isSmelter = /smelt|blast|hearth|forge|foundry|kiln/.test(keyLower);
         const isMill = /waterwheel|mill|pinion|lathe|bore|saw/.test(keyLower);
+        const facPick: GlobeRayHit = {
+          hitKind: "facility",
+          cellId: cell.cellId,
+          facilityId: fac.facilityId,
+          settlementId: settlement.settlementId,
+          label: `${fac.processName} (${settlement.settlementName})`,
+        };
 
         addBuilding(
           cell.centerUnit,
@@ -524,6 +558,7 @@ export class SettlementDetailClusterGroup {
           0.0014 * scaleFactor,
           -ang,
           this.timberWallMat,
+          facPick,
         );
         if (isSmelter && fullDetail) {
           placeMesh(
@@ -538,6 +573,9 @@ export class SettlementDetailClusterGroup {
             0.0007 * scaleFactor,
             0.0024 * scaleFactor,
             0,
+            true,
+            false,
+            facPick,
           );
         } else if (isMill && fullDetail) {
           const wheel = placeMesh(
@@ -552,6 +590,9 @@ export class SettlementDetailClusterGroup {
             0.0014 * scaleFactor,
             0.0011 * scaleFactor,
             -ang,
+            true,
+            false,
+            facPick,
           );
           if (wheel) {
             wheel.quaternion.multiply(
@@ -584,6 +625,7 @@ export class SettlementDetailClusterGroup {
           0.0011 * scaleFactor,
           -ang,
           hIdx % 2 === 0 ? this.keepMat : this.timberWallMat,
+          settlementPick,
         );
       }
 
@@ -704,6 +746,61 @@ export class SettlementDetailClusterGroup {
       }
     }
 
+    // 5b. Resource / quarry / timber-mill outposts anchored at non-settlement endpoints of access roads
+    const renderedOutpostCells = new Set<number>();
+    for (const road of snapshot.surveyedRoads ?? []) {
+      if (road.roadPurpose !== "resource_or_port_access") continue;
+      const endpointCellId = !settledCellIds.has(road.toCellId)
+        ? road.toCellId
+        : !settledCellIds.has(road.fromCellId)
+          ? road.fromCellId
+          : null;
+      if (endpointCellId === null || renderedOutpostCells.has(endpointCellId)) continue;
+      const epCell = cellMap.get(endpointCellId);
+      if (!epCell) continue;
+      renderedOutpostCells.add(endpointCellId);
+      builtClusters += 1;
+
+      const outpostPick: GlobeRayHit = {
+        hitKind: "facility",
+        cellId: endpointCellId,
+        facilityId: 900000 + road.edgeId,
+        label: road.purposeLabel || `Outpost (Edge ${road.edgeId})`,
+      };
+      const isQuarry = (road.purposeLabel ?? "").toLowerCase().includes("quarry");
+      addBuilding(
+        epCell.centerUnit,
+        endpointCellId,
+        0,
+        0,
+        0.0034 * scaleFactor,
+        0.0028 * scaleFactor,
+        0.0026 * scaleFactor,
+        isQuarry ? 0 : 0.0016 * scaleFactor,
+        0.4,
+        isQuarry ? this.foundationMat : this.timberWallMat,
+        outpostPick,
+      );
+      if (isQuarry) {
+        placeMesh(
+          this.unitCylGeom,
+          this.metalMat,
+          epCell.centerUnit,
+          endpointCellId,
+          0.0022 * scaleFactor,
+          0.0012 * scaleFactor,
+          0.0009 * scaleFactor,
+          0.0046 * scaleFactor,
+          0.0009 * scaleFactor,
+          0.0023 * scaleFactor,
+          0,
+          true,
+          false,
+          outpostPick,
+        );
+      }
+    }
+
     // 6. Grounded Military Tent Encampments & Earthwork Parapet Berms (`fullDetail`)
     if (fullDetail) {
       for (const formation of snapshot.warfare?.formations ?? []) {
@@ -715,6 +812,12 @@ export class SettlementDetailClusterGroup {
             formation.currentUnitXyz[2],
           ],
         );
+        const formPick: GlobeRayHit = {
+          hitKind: "formation",
+          cellId: formation.currentCellId,
+          formationId: formation.formationId,
+          label: `${formation.label} (${formation.commanderName})`,
+        };
         // Command pavilion tent
         placeMesh(
           this.unitTentGeom,
@@ -728,6 +831,9 @@ export class SettlementDetailClusterGroup {
           0.0026,
           0.0011,
           0.3,
+          true,
+          false,
+          formPick,
         );
         const tentRows = Math.min(6, Math.max(3, Math.round(formation.personnelCount / 90)));
         for (let r = 0; r < tentRows; r += 1) {
@@ -743,6 +849,9 @@ export class SettlementDetailClusterGroup {
             0.0019,
             0.0008,
             0.15,
+            true,
+            false,
+            formPick,
           );
         }
         // Defensive earthwork parapet berms around encampment perimeter
@@ -760,6 +869,9 @@ export class SettlementDetailClusterGroup {
             0.0008,
             0.0002,
             -ang + Math.PI * 0.5,
+            true,
+            false,
+            formPick,
           );
         }
       }

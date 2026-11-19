@@ -291,6 +291,79 @@ export class GlobeOrbitalCamera {
   }
 
   /**
+   * Rotates camera heading yaw around the focus normal (`+deltaYawRad` = left / CCW, `-` = right / CW) (`UI-GLB-008`).
+   */
+  rotateYawByRadians(deltaYawRad: number): void {
+    this.cancelFlyTo();
+    if (!Number.isFinite(deltaYawRad) || Math.abs(deltaYawRad) < 1e-9) {
+      return;
+    }
+    const focusAxis = new THREE.Vector3(0, 0, 1).applyQuaternion(this.focusQuat).normalize();
+    const qYaw = new THREE.Quaternion().setFromAxisAngle(focusAxis, deltaYawRad);
+    this.focusQuat.premultiply(qYaw).normalize();
+    this.syncCameraTransform();
+  }
+
+  /**
+   * Integrates held WASDQE heading-relative movement and yaw rotation cleanly over `deltaMs` (`UI-GLB-008`).
+   */
+  stepKeyboardNavigation(
+    forwardInput: number,
+    rightInput: number,
+    yawInput: number,
+    deltaMs: number,
+  ): boolean {
+    if (forwardInput === 0 && rightInput === 0 && yawInput === 0) {
+      return false;
+    }
+    const dt = clamp(deltaMs, 0, 100) / 1000;
+    if (dt <= 0) {
+      return false;
+    }
+
+    this.cancelFlyTo();
+    this.targetAltitudeNorm = this.altitudeNorm;
+    this.zoomCursorTargetUnit = null;
+
+    if (yawInput !== 0 && this.projectionMode === "globe") {
+      const focusAxis = new THREE.Vector3(0, 0, 1).applyQuaternion(this.focusQuat).normalize();
+      const qYaw = new THREE.Quaternion().setFromAxisAngle(focusAxis, yawInput * 1.65 * dt);
+      this.focusQuat.premultiply(qYaw).normalize();
+    }
+
+    if (forwardInput !== 0 || rightInput !== 0) {
+      const mag = Math.hypot(forwardInput, rightInput) || 1;
+      const nf = forwardInput / mag;
+      const nr = rightInput / mag;
+
+      if (this.projectionMode !== "globe") {
+        const flatSpeed = (0.16 + 1.35 * this.altitudeNorm) * dt;
+        this.flatPanXY[0] = clamp(this.flatPanXY[0] + nr * flatSpeed, -1.42, 1.42);
+        this.flatPanXY[1] = clamp(this.flatPanXY[1] + nf * flatSpeed, -1.42, 1.42);
+        const unproj = unprojectFlat2DToUnit(
+          this.flatPanXY[0],
+          this.flatPanXY[1],
+          this.projectionMode,
+          this.projectionOriginUnit,
+        );
+        if (unproj) {
+          this.alignFocusUnitPreservingUp(unproj);
+        }
+      } else {
+        const panRad = (0.048 + 0.92 * this.altitudeNorm) * dt;
+        const rightAxis = new THREE.Vector3(1, 0, 0).applyQuaternion(this.focusQuat).normalize();
+        const upAxis = new THREE.Vector3(0, 1, 0).applyQuaternion(this.focusQuat).normalize();
+        const qFwd = new THREE.Quaternion().setFromAxisAngle(rightAxis, -nf * panRad);
+        const qSide = new THREE.Quaternion().setFromAxisAngle(upAxis, nr * panRad);
+        this.focusQuat.premultiply(qSide).premultiply(qFwd).normalize();
+      }
+    }
+
+    this.syncCameraTransform();
+    return true;
+  }
+
+  /**
    * Queues an inertially smoothed wheel zoom impulse steered toward an optional world unit coordinate.
    */
   zoomSmoothByWheelDelta(deltaAltitudeNorm: number, cursorTargetUnit: Vec3 | null = null): void {

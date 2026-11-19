@@ -95,6 +95,7 @@ function defaultNeutralPalette(): GlobePalette {
 
 function encodeBiomeByte(cell: KnownCellDto): number {
   if (cell.tier === "unexplored") return 0;
+  if ("isLake" in cell && cell.isLake) return 248;
   if (cell.tier === "stale") {
     return cell.elevationM < 0 ? 32 : 80;
   }
@@ -667,9 +668,9 @@ void main() {
 
   // Strict epistemic barrier: purely unexplored regions never leak terrain data.
   if (kSum < 0.35) {
-    if (hoverRing > 0.05 || selectRing > 0.05) {
-      vec3 ringCol = mix(vec3(0.86, 0.72, 0.42), uContourInkRgb, uParchmentMode);
-      unmappedColor = mix(unmappedColor, ringCol, max(hoverRing * 0.55, selectRing * 0.75));
+    if (hoverRing > 0.05) {
+      vec3 ringCol = mix(vec3(0.76, 0.80, 0.84), uContourInkRgb, uParchmentMode);
+      unmappedColor = mix(unmappedColor, ringCol, hoverRing * 0.42);
     }
     fragColor = vec4(unmappedColor, 1.0);
     return;
@@ -751,6 +752,8 @@ void main() {
 
   float effectiveElevM = baseElevM + (coastMacro + coastDetail - fjordCuts) * coastBand + microRidgeM;
   bool isOceanPixel = effectiveElevM < 0.0;
+  float lakeWeight = step(0.94, d0.b) * w0 + step(0.94, d1.b) * w1 + step(0.94, d2.b) * w2;
+  bool isLakePixel = !isOceanPixel && lakeWeight > 0.46;
 
   // World-space surface basis and screen-space elevation derivative projected into world tangent space
   // so 3D mountain & hillside lighting remains locked to geography at all pitch angles (0..45 deg).
@@ -803,8 +806,8 @@ void main() {
   float reliefNdl = clamp(dot(reliefWorldNorm, sunDir), 0.0, 1.0);
 
   vec3 satRgb;
-  if (isOceanPixel) {
-    float depthM = max(0.0, -effectiveElevM);
+  if (isOceanPixel || isLakePixel) {
+    float depthM = isLakePixel ? 24.0 : max(0.0, -effectiveElevM);
     vec3 surfLittoral = vec3(0.075, 0.245, 0.275);
     vec3 surfShelf = vec3(0.028, 0.118, 0.198);
     vec3 surfAbyss = vec3(0.012, 0.042, 0.102);
@@ -813,14 +816,22 @@ void main() {
     float abyssT = smoothstep(160.0, 2200.0, depthM);
     vec3 waterRgb = mix(surfLittoral, surfShelf, shelfT);
     waterRgb = mix(waterRgb, surfAbyss, abyssT);
+    if (isLakePixel) {
+      float lakeCenter = smoothstep(0.46, 0.94, lakeWeight);
+      waterRgb = mix(vec3(0.068, 0.235, 0.295), vec3(0.032, 0.138, 0.218), lakeCenter);
+    }
 
     // Coastal shallow river-mouth silt plume when continental discharge feeds shelf waters.
-    float mouthMask = (1.0 - smoothstep(0.0, 95.0, depthM)) * smoothstep(1.2, 3.2, strahler + rainNorm * 0.8);
+    float mouthMask = isLakePixel
+      ? 0.0
+      : (1.0 - smoothstep(0.0, 95.0, depthM)) * smoothstep(1.2, 3.2, strahler + rainNorm * 0.8);
     vec3 siltCol = vec3(0.165, 0.265, 0.235);
     waterRgb = mix(waterRgb, siltCol, mouthMask * 0.52);
 
     // Close-zoom shoreline surf-foam breakers in shallow littoral waters (0..14m).
-    float surfBand = (1.0 - smoothstep(0.5, 14.0, depthM)) * smoothstep(0.04, 0.25, landFrac);
+    float surfBand = isLakePixel
+      ? 0.0
+      : (1.0 - smoothstep(0.5, 14.0, depthM)) * smoothstep(0.04, 0.25, landFrac);
     float breakerLine = smoothstep(0.42, 0.78, sin(depthM * 1.15 + vnoise3(unitS * 260.0) * 5.2));
     waterRgb = mix(waterRgb, vec3(0.76, 0.84, 0.88), surfBand * breakerLine * closeDetail01 * 0.65);
 
@@ -905,16 +916,16 @@ void main() {
   // Optional selectable Antique Parchment Cartographic Lens (uParchmentMode >= 0.5).
   vec3 mapPaper = uUnexploredVellumRgb * (0.94 + 0.11 * grainLum);
   vec3 chartLandTint = mix(uLandLowRgb, uLandMidRgb, smoothstep(0.0, 2600.0, max(0.0, effectiveElevM)));
-  vec3 parchmentRgb = isOceanPixel
-    ? mix(mapPaper, uOceanShallowRgb, 0.45)
+  vec3 parchmentRgb = (isOceanPixel || isLakePixel)
+    ? mix(mapPaper, isLakePixel ? uRiverWaterRgb : uOceanShallowRgb, 0.45)
     : mix(mapPaper, chartLandTint, 0.34);
 
   float elevSteps = max(0.0, effectiveElevM / 360.0);
   float isolineDist = abs(fract(elevSteps) - 0.5);
   float fw = max(0.02, fwidth(elevSteps));
-  float contourLine = isOceanPixel ? 0.0 : (1.0 - smoothstep(0.03, 0.03 + fw * 1.4, isolineDist));
+  float contourLine = (isOceanPixel || isLakePixel) ? 0.0 : (1.0 - smoothstep(0.03, 0.03 + fw * 1.4, isolineDist));
   float coastLine = 1.0 - smoothstep(8.0, 34.0, abs(effectiveElevM));
-  float hatchMask = isOceanPixel ? 0.0 : smoothstep(700.0, 2600.0, effectiveElevM) * hatchInk * 0.65;
+  float hatchMask = (isOceanPixel || isLakePixel) ? 0.0 : smoothstep(700.0, 2600.0, effectiveElevM) * hatchInk * 0.65;
   parchmentRgb = mix(parchmentRgb, uContourInkRgb, clamp(contourLine * 0.55 + coastLine * 0.85 + hatchMask, 0.0, 0.9));
   parchmentRgb = mix(parchmentRgb, uCompassRoseRgb, 0.16 * grat);
 
@@ -949,14 +960,14 @@ void main() {
   finalRgb = mix(unmappedColor, finalRgb, fogReveal);
   finalRgb = mix(finalRgb, cloudWispColor, cloudMask * wispPattern * (0.48 - 0.25 * uParchmentMode));
 
-  // Hover and selection circular reticles.
+  // Subtle hover and selection indicators (refined palette-derived tones, never persistent yellow blotches).
   if (hoverRing > 0.05) {
-    vec3 hCol = mix(vec3(0.95, 0.78, 0.42), uSettlementMarkerRgb, uParchmentMode);
-    finalRgb = mix(finalRgb, hCol, hoverRing * (0.60 + 0.20 * hatchInk));
+    vec3 hCol = mix(vec3(0.76, 0.80, 0.84), uSettlementMarkerRgb, uParchmentMode);
+    finalRgb = mix(finalRgb, hCol, hoverRing * (0.42 + 0.15 * hatchInk));
   }
   if (selectRing > 0.05) {
-    vec3 sCol = mix(vec3(0.98, 0.88, 0.54), uCompassRoseRgb, uParchmentMode);
-    finalRgb = mix(finalRgb, sCol, selectRing * 0.78);
+    vec3 sCol = mix(mix(uCompassRoseRgb, uRiverWaterRgb, 0.35), uCompassRoseRgb, uParchmentMode);
+    finalRgb = mix(finalRgb, sCol, selectRing * 0.45);
   }
 
   fragColor = vec4(finalRgb, 1.0);

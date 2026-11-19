@@ -42,10 +42,15 @@ pub struct CellTerrainData {
     pub plate_id: PlateId,
     pub rock_strata: RockStrataClass, // OceanicBasalt | IgneousOrogenic | VolcanicArc | MetamorphicShield | SedimentaryBasin | AlluvialPlain
     pub surface_soil: SoilClass,
-    pub river_downstream: Option<CellId>,
+    pub river_downstream: Option<CellId>, // General watershed drainage link across all land cells
     pub watershed_id: WatershedId,
     pub drainage_area_km2: f32,
     pub strahler_order: u8,
+    pub is_lake: bool,
+    pub river_channel_downstream: Option<CellId>, // Directed acyclic downstream perennial river channel link
+    pub river_discharge_m3_s: f32,
+    pub river_velocity_mps: f32,
+    pub hydro_potential_kw: f32,
     pub base_climate_precip_mm_yr: f32,
     pub aridity_index_01: f32,
     pub soil_fertility_01: f32,
@@ -78,7 +83,7 @@ All stages run deterministically from `ChaCha8Rng::seed_from_u64(world_seed)` us
 1. **Welded Spherical Manifold Construction (`ENG-GEO-001.1`):** Generate subdivided unit icosahedron triangles at frequency `m` with `10 * m^2 + 2` vertices and `20 * m^2` outward CCW triangles, sort sample neighbors counter-clockwise, verify Euler characteristic `V - E + F == 2`, and expose inverse-angular / barycentric terrain interpolation `sample_elevation_at_unit_xyz(u)` alongside `O(m)` hill-climbing `nearest_sample_cell(u)`.
 2. **Domain-Warped Anisotropic Ridged Orogeny & Continental Shelves (`ENG-GEO-002`, `ENG-GEO-007`):** Sample `K` plate seeds via geodesic farthest-point sampling, flood-assign plates with noise-perturbed boundaries, assign continental versus oceanic crust + Euler pole rotation vectors, compute convergent boundary stress (`dot(relative_vel, boundary_normal)`), add domain-warped 5-octave ridged multifractal uplift (`(1 - |n(u + w(u))|)^2.2`) to form curved cordilleras, shape two-tier continental-shelf (`-15m .. -180m`) versus abyssal-basin bathymetry, and carve high-latitude glacial fjord/skerry troughs along cold coastal belts (`|lat| > 46 deg`).
 3. **Wind Gyres & Orographic Precipitation (`ENG-GEO-004`):** Compute latitudinal Hadley/Ferrel/Polar prevailing wind vectors rotated by Coriolis deflection; march moisture parcels downwind across cell steps, precipitating moisture up windward slopes and leaving realistic rain shadows on leeward slopes.
-4. **Priority-Flood Acyclic Watersheds, Valley Incision & Strahler Order (`ENG-GEO-004`, `ENG-GEO-007`):** Execute Barnes priority-flood depression resolution from ocean coast cells inward across land elevation so every land cell receives a strictly non-increasing downhill `river_downstream: Option<CellId>` pointer (guaranteeing an acyclic DAG terminating at sea or endorheic salt basins), accumulate `drainage_area_km2`, compute hierarchical integer `strahler_order` (`1..7`), and incise fluvial valleys monotonically without breaking downhill flow.
+4. **Priority-Flood Acyclic Watersheds, Volumetric River Runoff, Inland Lakes & Terminus Closure (`ENG-GEO-004`, `ENG-GEO-007`, `ENG-GEO-008`):** Execute Barnes priority-flood depression resolution from ocean coast cells inward across land elevation so every land cell receives a strictly non-increasing downhill `river_downstream: Option<CellId>` pointer (guaranteeing an acyclic DAG terminating at sea), accumulate `drainage_area_km2`, compute hierarchical integer `strahler_order` (`1..7`), and incise fluvial valleys monotonically without breaking downhill flow. On top of the baseline drainage DAG, accumulate net climate runoff (`effective_precip - evap` over `cell_area_km2 * 1e6 / 31_536_000`) in topological downstream order to populate `river_discharge_m3_s`, derive channel Manning-approximation flow speed `river_velocity_mps` and reach drop power `hydro_potential_kw`, classify pooled basin sinks whose rim overflow is unresolved or wet basins above threshold as `is_lake = true`, and prune/extend `river_channel_downstream` so every perennial river cell (`river_discharge_m3_s >= 18.0 m3/s`) connects downstream strictly into another perennial river confluence, an `is_lake` cell, or an ocean coast cell.
 5. **Continuous Biophysical Indices & Strata Deposits (`ENG-GEO-003`, `ENG-GEO-007`):** Derive `aridity_index_01` from precipitation versus temperature-driven potential evapotranspiration and `soil_fertility_01` from parent `RockStrataClass`, drainage, moisture, and slope; sample subsurface deposits conditioned on geological strata.
 6. **Bounded Procedural Material Roll (`ENG-GEO-005`):** Generate world-specific materials, fluxes, fuels, crops, fauna, and pathogens using rejection-bounded physical curves so mass conservation (`output_metal <= ore_mass * purity`) and thermodynamic efficiency limits (`heat_released <= fuel_enthalpy`) can never be violated.
 7. **Circular Geodesic HQ Horizon (`ENG-EPI-002`):** `player-view::observe_hq_halo` traverses `VecDeque` breadth-first rings bounded by true geodesic `great_circle_km` radius (`hq_sight_radius_cells = 4` by default on `m = 24`) so explored horizons form natural circles rather than 6-sided graph spokes.

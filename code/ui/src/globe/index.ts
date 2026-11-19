@@ -23,7 +23,11 @@ import { FeatureOverlayRenderSummary, GlobeFeatureOverlayGroup, MapLabelAnchor }
 import { createShaderTerrainSurfaceSampler, ShaderTerrainSurfaceSampler } from "./hydrology-ribbons";
 import { GlobePatchLodManager } from "./lod-patches";
 import { buildGoldbergGlobeGeometry, GoldbergMeshBuild, unitToLatLonDegrees, verifyGoldbergManifold } from "./mesh";
-import { classifySemanticZoomTier, SemanticZoomTier } from "./semantic-zoom";
+import {
+  classifySemanticZoomTier,
+  computeDeclusteredEntityOffsets,
+  SemanticZoomTier,
+} from "./semantic-zoom";
 import { createGlobeShaderController, GlobeShaderController } from "./shaders";
 
 export { buildGoldbergGlobeGeometry, unitToLatLonDegrees, verifyGoldbergManifold } from "./mesh";
@@ -142,6 +146,35 @@ export async function initializeGlobeViewport(
   const features = new GlobeFeatureOverlayGroup(options.initialPalette);
   const patchLod = new GlobePatchLodManager(topology, shaderCtrl.material);
 
+  const selectionRingMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(
+      ...(options.initialPalette?.peakSnowRgb ?? [244, 239, 228]).map((c) => c / 255) as [
+        number,
+        number,
+        number,
+      ],
+    ).lerp(
+      new THREE.Color(
+        ...(options.initialPalette?.compassRoseRgb ?? [110, 85, 57]).map((c) => c / 255) as [
+          number,
+          number,
+          number,
+        ],
+      ),
+      0.38,
+    ),
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.85,
+    depthTest: false,
+  });
+  const selectionRingMesh = new THREE.Mesh(
+    new THREE.RingGeometry(0.0075, 0.0105, 28),
+    selectionRingMat,
+  );
+  selectionRingMesh.visible = false;
+  selectionRingMesh.renderOrder = 10;
+
   let hoveredCellId: number | null = null;
   let selectedCellId: number | null = null;
   let hoveredUnitXyz: Vec3 | null = null;
@@ -194,6 +227,7 @@ export async function initializeGlobeViewport(
     scene.add(dirLight);
     scene.add(patchLod.group);
     scene.add(features.group);
+    scene.add(selectionRingMesh);
 
     renderer.compile(scene, orbitalCamera.camera);
     shaderCompiled = true;
@@ -245,9 +279,49 @@ export async function initializeGlobeViewport(
     const origin = raycaster.ray.origin;
     const dir = raycaster.ray.direction;
 
-    let hitUnit: Vec3;
     const projMode = orbitalCamera.getProjectionMode();
-    if (projMode !== "globe" && orbitalCamera.getProjectionMorph() >= 0.5) {
+    const isFlatView = projMode !== "globe" && orbitalCamera.getProjectionMorph() >= 0.5;
+    const altNorm = orbitalCamera.getAltitudeNorm();
+
+    // 1. Direct 3D mesh raycast against visible structures, facilities, settlements, convoys & formations (`UI-MAP-009`).
+    features.group.updateMatrixWorld(true);
+    const featureHits = raycaster.intersectObjects(features.group.children, true);
+    for (const inter of featureHits) {
+      if (inter.distance <= 0.004) continue;
+      let curObj: THREE.Object3D | null = inter.object;
+      let baseHit: GlobeRayHit | undefined;
+      while (curObj) {
+        if (curObj.userData?.pickHit) {
+          baseHit = curObj.userData.pickHit as GlobeRayHit;
+          break;
+        }
+        curObj = curObj.parent;
+      }
+      if (!baseHit) continue;
+      if (!isFlatView) {
+        const ptNorm = inter.point.clone().normalize();
+        const toCam = orbitalCamera.camera.position.clone().sub(inter.point);
+        if (ptNorm.dot(toCam) <= -0.02) continue;
+      }
+      const uVec: Vec3 = isFlatView
+        ? unprojectFlat2DToUnit(
+            inter.point.x,
+            inter.point.y,
+            projMode,
+            orbitalCamera.getProjectionOriginUnit(),
+          ) ?? [0, 0, 1]
+        : norm3([inter.point.x, inter.point.y, inter.point.z]);
+      const { latDeg, lonDeg } = unitToLatLonDegrees(uVec);
+      return {
+        ...baseHit,
+        unitXyz: uVec,
+        latDeg,
+        lonDeg,
+      };
+    }
+
+    let hitUnit: Vec3;
+    if (isFlatView) {
       if (Math.abs(dir.z) < 1e-6) return null;
       const tPlane = -origin.z / dir.z;
       if (tPlane < 0) return null;
@@ -276,7 +350,6 @@ export async function initializeGlobeViewport(
         let prevT = tEnter;
         let marchCellHint = lastFocusCellHint;
         let foundUnit: Vec3 | null = null;
-        const altNorm = orbitalCamera.getAltitudeNorm();
 
         for (let i = 0; i <= steps; i += 1) {
           const t = tEnter + ((tExit - tEnter) * i) / steps;
@@ -335,22 +408,25 @@ export async function initializeGlobeViewport(
     const nearestCellId = findNearestCellId(hitUnit);
     const snap = currentSnapshot ?? store.getSnapshot();
     const spacingRad = 2.1 / Math.sqrt(Math.max(topology.cellCount, 10) / 10);
+    const zoomScale = Math.max(0.14, Math.min(1.0, 0.12 + 0.88 * altNorm));
 
     if (snap) {
-      // 1. Tracked convoys
+      const declustered = computeDeclusteredEntityOffsets(snap, meshBuild.cellById, altNorm);
+
+      // 2. Tracked convoys matched tightly at declustered coordinates (never hijacking whole cell)
       for (const convoy of snap.trackedConvoys) {
         const cCell = meshBuild.cellById.get(convoy.projectedCellId);
-        const cPos: Vec3 | null = convoy.currentUnitXyz
-          ? [convoy.currentUnitXyz[0], convoy.currentUnitXyz[1], convoy.currentUnitXyz[2]]
-          : cCell?.centerUnit ?? null;
+        const dec = declustered.convoys.get(convoy.convoyId);
+        const cPos: Vec3 | null =
+          dec?.displayUnit ??
+          (convoy.currentUnitXyz
+            ? [convoy.currentUnitXyz[0], convoy.currentUnitXyz[1], convoy.currentUnitXyz[2]]
+            : cCell?.centerUnit ?? null);
         if (!cPos) continue;
-        if (
-          greatCircleRadians(hitUnit, cPos) < spacingRad * 0.45 ||
-          convoy.projectedCellId === nearestCellId
-        ) {
+        if (greatCircleRadians(hitUnit, cPos) < spacingRad * 0.22 * zoomScale) {
           return {
             hitKind: "convoy",
-            cellId: nearestCellId,
+            cellId: convoy.projectedCellId,
             convoyId: convoy.convoyId,
             label: `${convoy.label} (${convoy.status})`,
             unitXyz: hitUnit,
@@ -360,16 +436,15 @@ export async function initializeGlobeViewport(
         }
       }
 
-      // 2. Check declustered formation anchors vs direct settlement plinth hits
-      const labelAnchors = features.getMapLabelAnchors();
+      // 3. Declustered military formations matched tightly at rendered marker coordinate
       for (const formation of snap.warfare?.formations ?? []) {
-        const anchor = labelAnchors.find(
-          (a) => a.kind === "formation" && a.entityId === formation.formationId,
-        );
-        const fPos: Vec3 = anchor
-          ? anchor.unit
-          : [formation.currentUnitXyz[0], formation.currentUnitXyz[1], formation.currentUnitXyz[2]];
-        if (greatCircleRadians(hitUnit, fPos) < spacingRad * 0.35) {
+        const dec = declustered.formations.get(formation.formationId);
+        const fPos: Vec3 = dec?.displayUnit ?? [
+          formation.currentUnitXyz[0],
+          formation.currentUnitXyz[1],
+          formation.currentUnitXyz[2],
+        ];
+        if (greatCircleRadians(hitUnit, fPos) < spacingRad * 0.22 * zoomScale) {
           return {
             hitKind: "formation",
             cellId: formation.currentCellId,
@@ -382,14 +457,11 @@ export async function initializeGlobeViewport(
         }
       }
 
-      // 3. Surveyed settlements
+      // 4. Surveyed settlements matched at zoom-scaled beacon radius
       for (const settlement of snap.knownSettlements ?? []) {
         const sCell = meshBuild.cellById.get(settlement.cellId);
         if (!sCell) continue;
-        if (
-          settlement.cellId === nearestCellId ||
-          greatCircleRadians(hitUnit, sCell.centerUnit) < spacingRad * 0.45
-        ) {
+        if (greatCircleRadians(hitUnit, sCell.centerUnit) < spacingRad * 0.28 * zoomScale) {
           return {
             hitKind: "settlement",
             cellId: settlement.cellId,
@@ -402,29 +474,14 @@ export async function initializeGlobeViewport(
         }
       }
 
-      // Fallback formation match by cell if not co-located with a settlement
-      for (const formation of snap.warfare?.formations ?? []) {
-        if (formation.currentCellId === nearestCellId) {
-          return {
-            hitKind: "formation",
-            cellId: formation.currentCellId,
-            formationId: formation.formationId,
-            label: `${formation.label} (${formation.commanderName})`,
-            unitXyz: hitUnit,
-            latDeg,
-            lonDeg,
-          };
-        }
-      }
-
-      // 4. Surveyed roads
+      // 5. Surveyed constructed / traffic-worn roads
       for (const road of snap.surveyedRoads ?? []) {
         const aCell = meshBuild.cellById.get(road.fromCellId);
         const bCell = meshBuild.cellById.get(road.toCellId);
         if (!aCell || !bCell) continue;
         if (
           pointToSphericalSegmentDist(hitUnit, aCell.centerUnit, bCell.centerUnit) <
-          spacingRad * 0.28
+          spacingRad * 0.18 * zoomScale
         ) {
           return {
             hitKind: "road",
@@ -432,7 +489,9 @@ export async function initializeGlobeViewport(
             edgeId: road.edgeId,
             fromCellId: road.fromCellId,
             toCellId: road.toCellId,
-            label: `${road.infraKey} (Edge ${road.edgeId})`,
+            roadPurpose: road.roadPurpose,
+            purposeLabel: road.purposeLabel,
+            label: road.purposeLabel ? `${road.infraKey} — ${road.purposeLabel}` : `${road.infraKey} (Edge ${road.edgeId})`,
             unitXyz: hitUnit,
             latDeg,
             lonDeg,
@@ -440,23 +499,34 @@ export async function initializeGlobeViewport(
         }
       }
 
-      // 5. Surveyed rivers
+      // 6. Surveyed & Stale perennial rivers
       for (const cell of snap.knownCells) {
-        if (cell.tier !== "surveyed") continue;
-        if (cell.riverDownstreamCellId === null || cell.riverDownstreamCellId === undefined) continue;
+        if (cell.tier !== "surveyed" && cell.tier !== "stale") continue;
+        if (cell.isOcean || cell.elevationM < 0) continue;
+        const dsId =
+          cell.riverChannelDownstreamCellId !== undefined
+            ? cell.riverChannelDownstreamCellId
+            : (cell.riverDownstreamCellId ?? null);
+        if (dsId === null || dsId === undefined) continue;
         const aCell = meshBuild.cellById.get(cell.cellId);
-        const bCell = meshBuild.cellById.get(cell.riverDownstreamCellId);
+        const bCell = meshBuild.cellById.get(dsId);
         if (!aCell || !bCell) continue;
         if (
           pointToSphericalSegmentDist(hitUnit, aCell.centerUnit, bCell.centerUnit) <
-          spacingRad * 0.25
+          spacingRad * 0.18 * zoomScale
         ) {
           return {
             hitKind: "river",
             cellId: cell.cellId,
-            toCellId: cell.riverDownstreamCellId,
+            toCellId: dsId,
             flowNorm01: cell.riverFlowNorm01 ?? 0.5,
-            label: `River Course (Cell ${cell.cellId})`,
+            dischargeM3S: cell.riverDischargeM3S,
+            velocityMps: cell.riverVelocityMps,
+            hydroPotentialKw: cell.hydroPotentialKw,
+            label:
+              cell.riverDischargeM3S !== undefined
+                ? `River Course (${Math.round(cell.riverDischargeM3S)} m3/s -> Cell ${dsId})`
+                : `River Course (Cell ${cell.cellId} -> ${dsId})`,
             unitXyz: hitUnit,
             latDeg,
             lonDeg,
@@ -464,7 +534,7 @@ export async function initializeGlobeViewport(
         }
       }
 
-      // 6. Fallback cell respecting Unexplored epistemic air-gap
+      // 7. Fallback cell respecting Unexplored epistemic air-gap
       const known = snap.knownCells.find((k) => k.cellId === nearestCellId);
       if (!known || known.tier === "unexplored") {
         return {
@@ -583,6 +653,44 @@ export async function initializeGlobeViewport(
     },
   };
 
+  let activeSelectionHit: GlobeRayHit | null = null;
+  const zUpAxis = new THREE.Vector3(0, 0, 1);
+
+  const syncSelectionRingMesh = () => {
+    if (!activeSelectionHit || activeSelectionHit.hitKind === "cell") {
+      selectionRingMesh.visible = false;
+      return;
+    }
+    const fallbackCell = meshBuild.cellById.get(activeSelectionHit.cellId);
+    const uVec: Vec3 | null = activeSelectionHit.unitXyz
+      ? [activeSelectionHit.unitXyz[0], activeSelectionHit.unitXyz[1], activeSelectionHit.unitXyz[2]]
+      : fallbackCell?.centerUnit ?? null;
+    if (!uVec) {
+      selectionRingMesh.visible = false;
+      return;
+    }
+    const altNorm = orbitalCamera.getAltitudeNorm();
+    const flatMode = orbitalCamera.getProjectionMode() !== "globe";
+    const relief = terrainSampler
+      ? terrainSampler.sample(uVec, activeSelectionHit.cellId, activeSelectionHit.cellId, altNorm).vertexReliefHeight
+      : 0;
+    const lift = (flatMode ? relief * 0.65 : relief) + 0.0055;
+    selectionRingMesh.position.copy(projectFeaturePoint(uVec, lift));
+    const surfNorm = flatMode ? zUpAxis : new THREE.Vector3(uVec[0], uVec[1], uVec[2]).normalize();
+    selectionRingMesh.quaternion.setFromUnitVectors(zUpAxis, surfNorm);
+    const baseRingScale =
+      activeSelectionHit.hitKind === "settlement"
+        ? 1.35
+        : activeSelectionHit.hitKind === "facility"
+          ? 0.55
+          : 0.85;
+    const densityScale = Math.sqrt(Math.max(1, topology.cellCount) / 642);
+    const ringScale =
+      baseRingScale * Math.max(0.28, (0.55 + 0.45 * altNorm) / Math.max(1, densityScale * 0.55));
+    selectionRingMesh.scale.set(ringScale, ringScale, 1);
+    selectionRingMesh.visible = true;
+  };
+
   renderOnceImpl = () => {
     const altNorm = orbitalCamera.getAltitudeNorm();
     const blend = orbitalCamera.getCartographicBlend();
@@ -592,6 +700,7 @@ export async function initializeGlobeViewport(
     const focusUnit = orbitalCamera.getFocusUnit();
 
     patchLod.updateForCamera(focusUnit, altNorm, projMorph);
+    syncSelectionRingMesh();
     shaderCtrl.setCartographicState(
       blend,
       sunDir,
@@ -628,6 +737,20 @@ export async function initializeGlobeViewport(
     });
   };
 
+  const heldNavKeys = new Set<string>();
+  const isNavEditableTarget = (el: Element | null): boolean => {
+    if (!el || !(el instanceof HTMLElement)) return false;
+    const tag = el.tagName.toUpperCase();
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
+  };
+
+  const readNavAxesFromKeys = (): { forward: number; right: number; yaw: number } => {
+    const forward = (heldNavKeys.has("w") ? 1 : 0) - (heldNavKeys.has("s") ? 1 : 0);
+    const right = (heldNavKeys.has("d") ? 1 : 0) - (heldNavKeys.has("a") ? 1 : 0);
+    const yaw = (heldNavKeys.has("q") ? 1 : 0) - (heldNavKeys.has("e") ? 1 : 0);
+    return { forward, right, yaw };
+  };
+
   const stepRender = (dtMs?: number) => {
     const now = typeof performance !== "undefined" ? performance.now() : Date.now();
     const delta = dtMs ?? Math.max(0.1, now - lastFrameTs);
@@ -636,7 +759,9 @@ export async function initializeGlobeViewport(
     frameTimes.push(delta);
     if (frameTimes.length > 120) frameTimes.shift();
 
-    const camActive = orbitalCamera.stepAnimation(delta);
+    const { forward, right, yaw } = readNavAxesFromKeys();
+    const keyActive = orbitalCamera.stepKeyboardNavigation(forward, right, yaw, delta);
+    const camActive = orbitalCamera.stepAnimation(delta) || keyActive;
     renderOnce();
     if (camActive) {
       emitTelemetry();
@@ -686,6 +811,7 @@ export async function initializeGlobeViewport(
     lastY = ev.clientY;
     if (dragButton === 2 || ev.shiftKey) {
       orbitalCamera.tiltByPixels(dy);
+      orbitalCamera.rotateYawByRadians(-dx * 0.0055);
     } else {
       orbitalCamera.panByPixels(dx, dy, canvas.clientHeight || 720);
     }
@@ -731,6 +857,33 @@ export async function initializeGlobeViewport(
   const onContextMenu = (ev: MouseEvent) => {
     ev.preventDefault();
   };
+
+  const onNavKeyDown = (ev: KeyboardEvent) => {
+    if (ev.key === "Escape") {
+      bus.emit({ kind: "SelectMapFeature", hit: null });
+      return;
+    }
+    if (ev.ctrlKey || ev.altKey || ev.metaKey) return;
+    const ownerDoc = canvas.ownerDocument;
+    if (isNavEditableTarget(ownerDoc?.activeElement ?? null)) return;
+    const k = ev.key.toLowerCase();
+    if (k === "w" || k === "a" || k === "s" || k === "d" || k === "q" || k === "e") {
+      heldNavKeys.add(k);
+    }
+  };
+
+  const onNavKeyUp = (ev: KeyboardEvent) => {
+    heldNavKeys.delete(ev.key.toLowerCase());
+  };
+
+  const clearNavKeys = () => {
+    heldNavKeys.clear();
+  };
+
+  const winRef = canvas.ownerDocument?.defaultView ?? (typeof window !== "undefined" ? window : null);
+  winRef?.addEventListener("keydown", onNavKeyDown);
+  winRef?.addEventListener("keyup", onNavKeyUp);
+  winRef?.addEventListener("blur", clearNavKeys);
 
   canvas.addEventListener("pointerdown", onPointerDown);
   canvas.addEventListener("pointermove", onPointerMove);
@@ -794,12 +947,15 @@ export async function initializeGlobeViewport(
           : null;
       renderOnce();
     } else if (intent.kind === "SelectMapFeature") {
-      selectedCellId = intent.hit?.cellId ?? null;
-      selectedUnitXyz = intent.hit?.unitXyz
-        ? [intent.hit.unitXyz[0], intent.hit.unitXyz[1], intent.hit.unitXyz[2]]
-        : selectedCellId !== null
-          ? meshBuild.cellById.get(selectedCellId)?.centerUnit ?? null
-          : null;
+      activeSelectionHit = intent.hit;
+      if (!intent.hit || intent.hit.hitKind === "cell") {
+        // Clear surface reticle & selection ring so clicking empty terrain/ocean leaves zero lingering yellow circle.
+        selectedCellId = null;
+        selectedUnitXyz = null;
+      } else {
+        selectedCellId = intent.hit.cellId;
+        selectedUnitXyz = null;
+      }
       renderOnce();
     }
   });
@@ -941,6 +1097,9 @@ export async function initializeGlobeViewport(
         cancelAnimationFrame(rafHandle);
       }
       unsubBus();
+      winRef?.removeEventListener("keydown", onNavKeyDown);
+      winRef?.removeEventListener("keyup", onNavKeyUp);
+      winRef?.removeEventListener("blur", clearNavKeys);
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", clearPointer);
@@ -948,6 +1107,8 @@ export async function initializeGlobeViewport(
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("contextmenu", onContextMenu);
       meshBuild.geometry.dispose();
+      selectionRingMesh.geometry.dispose();
+      selectionRingMat.dispose();
       patchLod.dispose();
       shaderCtrl.dispose();
       features.dispose();

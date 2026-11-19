@@ -28,30 +28,33 @@
 - Builds base indexed `THREE.BufferGeometry` directly from `PlanetGeometryPort` topology transferred via `DiegeticStore::selectGlobeTopology()` (`m = 24`, `5,762` sample vertices, `11,520` outward-wound spherical triangles, Euler `V - E + F = 2`, zero hex/pentagon seams).
 - **Frustum-Culled Spherical Patch LOD (`lod-patches.ts`):** Splits the globe into 20 icosahedral sector patches cached across 5 subdivision levels (`LOD 0` = `1x`, `LOD 1` = `4x`, `LOD 2` = `16x`, `LOD 3` = `64x`, `LOD 4` = `256x` triangles near focus at low altitude via `SUBDIV_PER_LOD = [1, 2, 4, 8, 16]`) with continuous `aCornerCells` + interpolated `aBarycentric` weights and skirt rim vertices to prevent inter-LOD cracks.
 - **No Voronoi Hex Boundaries:** Nearest-vertex winner selection is eliminated; every pixel interpolates elevation, climate, wetness, fertility, strata, and river plumes smoothly with sub-cell fractal coastal noise (`coastalWarp`) before testing land-vs-water (`h > 0`).
-- Smooth circular cartographic reticles (`dot(normalize(vSpherePos), uHoveredUnitPos)`) mark hovered and selected continuous coordinates across both 3D and 2D views via 3D terrain ray-marched picking.
+- Smooth circular cartographic reticles (`dot(normalize(vSpherePos), uHoveredUnitPos)`) mark hovered continuous coordinates, while empty clicks never leave stale yellow rings and explicit feature selection highlights clear on `Escape`.
 
-### 2.2 Quaternion Orbital Camera + Inertial Cursor-Zoom, Auto-Pitch & 2D Projections (`UI-GLB-002`, `UI-GLB-007`)
+### 2.2 Quaternion Orbital Camera, `WASDQE` Navigation, Yaw Rotation & 2D Projections (`UI-GLB-002`, `UI-GLB-007`, `UI-GLB-008`)
 
 ```typescript
 interface GlobeCameraState {
   focusUnitNormal: THREE.Vector3;     // Unit vector pointing to camera focus on sphere
-  northTangent: THREE.Vector3;        // Orthonormal heading vector
+  northTangent: THREE.Vector3;        // Orthonormal heading vector rotated by Q/E & yaw drag
   altitudeRadius: number;             // Logarithmic zoom range [1.12 .. 3.60]
   targetAltitudeNorm: number;         // Damped wheel-zoom destination in [0 .. 1]
   zoomCursorTargetUnit: Vec3 | null;  // Anchor unit coordinate under mouse cursor during zoom-in
   fovDeg: number;                     // Natural wide perspective 44 deg -> 38 deg below altNorm 0.28
   autoPitchRad: number;               // Smooth 0 deg (>= 0.45) -> 45 deg (<= 0.02) close-up tilt
-  manualPitchOffsetRad: number;       // Right-drag / Shift-drag pitch override, cleared by resetNorth()
+  manualPitchOffsetRad: number;       // Vertical Right-Drag / Shift-Left-Drag pitch offset
   projectionMode: "globe" | "equal_area" | "mercator";
   projectionMorph01: number;          // Smooth 0 <-> 1 transition tween
   activeFlyTween: FlyTweenState | null;
 }
 ```
 
+- Horizontal `Right-Drag` / `Shift+Left-Drag` and held `Q`/`E` rotate `northTangent` smoothly around `focusUnitNormal` (`Q` counter-clockwise, `E` clockwise).
+- Held `W`/`A`/`S`/`D` pan along camera-heading forward/left/backward/right orthogonal tangents without colliding with floating window shortcuts (`Ledger: P`, `Dispatches: J`, `Warfare: F`, `Alerts: V`, `Skins: Y`, `Controls (?): ? / F1`).
+
 ### 2.3 Dual Double-Buffered GPU Upload State (`UI-GLB-005`)
 
 Snapshot updates write updated cell bytes into two off-screen double-buffered `128x128` `RGBA8` staging textures:
-- `uCellDataTex`: `[elevationByte, wetnessByte, biomeCodeByte, epistemicAlphaByte]` (strictly `[0, 0, 0, 0]` on `Unexplored`).
+- `uCellDataTex`: `[elevationByte, wetnessByte, biomeCodeByte, epistemicAlphaByte]` (`biomeCodeByte` encodes lake cells cleanly for inland water shading; strictly `[0, 0, 0, 0]` on `Unexplored`).
 - `uBiophysicalTex`: `[tempByte, aridityByte, packedStrataFertilityByte, packedStrahlerPlumeByte]` (strictly `[0, 0, 0, 0]` on `Unexplored`).
 
 ---

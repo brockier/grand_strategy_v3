@@ -9,14 +9,19 @@ import {
   GoldbergCellGeometry,
   KnownCellDto,
   ObservedWeatherDto,
+  PluginRegistry,
+  UiIntent,
   UiIntentBus,
   generateGoldbergTopology,
   greatCircleRadians,
   isValidDiegeticSnapshot,
+  norm3,
   projectUnitToFlat2D,
+  slerpUnitVec3,
   unprojectFlat2DToUnit,
 } from "../src/spine";
 import {
+  GlobeFeatureOverlayGroup,
   GlobeOrbitalCamera,
   GlobePatchLodManager,
   SettlementDetailClusterGroup,
@@ -29,6 +34,18 @@ import {
   buildHydrologyRibbonMesh,
   createShaderTerrainSurfaceSampler,
 } from "../src/globe/hydrology-ribbons";
+import { createDispatchInboxStubPlugin } from "../src/dispatches";
+import {
+  createControlsReferenceWindowPlugin,
+  createNotificationMatrixWindowPlugin,
+  createWarfareCommandWindowPlugin,
+  mountCommandHud,
+} from "../src/hud";
+import {
+  createEntityInspectorWindowPlugin,
+  createLedgerStubPlugin,
+} from "../src/views";
+import { DesktopWindowManager } from "../src/windows";
 
 const M2_FIXTURE_PATH = path.resolve(__dirname, "fixtures/colony_m2_snapshot.json");
 const M2_SNAPSHOTS = JSON.parse(fs.readFileSync(M2_FIXTURE_PATH, "utf8")) as DiegeticSnapshot[];
@@ -595,6 +612,358 @@ describe("Photorealistic Planet Presentation, Multi-Tier Semantic Zoom LOD, De-C
       expect(viewport.camera.getTelemetry().pitchRad).toBeGreaterThan(0.65);
       const hit = viewport.layerHost.pickGlobeAtNdc(0, 0);
       expect(hit?.cellId).toBe(targetCellId);
+    } finally {
+      viewport.dispose();
+      dom.window.close();
+      (globalThis as unknown as { document: unknown }).document = prevDoc;
+      (globalThis as unknown as { window: unknown }).window = prevWin;
+      (globalThis as unknown as { HTMLElement: unknown }).HTMLElement = prevHtml;
+    }
+  });
+
+  // @req UI-GLB-008
+  it("supports heading-relative WASDQE camera controls, pointer yaw rotation, non-colliding window shortcuts, and Controls reference (UI-GLB-008)", () => {
+    const cam = new GlobeOrbitalCamera(16 / 9, 0.25);
+    cam.flyToUnitVector([0, 0, 1], 0.25, 0, true);
+    const startHeading = cam.getTelemetry().headingRad;
+    expect(Math.abs(startHeading)).toBeLessThan(0.05);
+
+    cam.rotateYawByRadians(0.45);
+    expect(cam.getTelemetry().headingRad).toBeLessThan(-0.35);
+    cam.rotateYawByRadians(-0.90);
+    expect(cam.getTelemetry().headingRad).toBeGreaterThan(0.35);
+    cam.resetNorth(true);
+    expect(Math.abs(cam.getTelemetry().headingRad)).toBeLessThan(0.05);
+
+    // Heading-relative WASDQE motion
+    cam.stepKeyboardNavigation(1, 0, 0, 100);
+    expect(cam.getFocusUnit()[1]).toBeGreaterThan(0.02);
+    cam.stepKeyboardNavigation(-1, 0, 0, 100);
+    cam.stepKeyboardNavigation(0, 1, 0, 100);
+    expect(cam.getFocusUnit()[0]).toBeGreaterThan(0.02);
+    cam.flyToUnitVector([0, 0, 1], 0.25, 0, true);
+    cam.stepKeyboardNavigation(0, 0, 1, 100);
+    expect(cam.getTelemetry().headingRad).toBeLessThan(-0.10);
+
+    const dom = new JSDOM(
+      `<!DOCTYPE html><html><body><div id="app-shell"></div><div id="desktop-win-host"></div></body></html>`,
+      { url: "http://localhost/" },
+    );
+    const prevDoc = (globalThis as unknown as { document: unknown }).document;
+    const prevWin = (globalThis as unknown as { window: unknown }).window;
+    const prevHtml = (globalThis as unknown as { HTMLElement: unknown }).HTMLElement;
+    (globalThis as unknown as { document: unknown }).document = dom.window.document;
+    (globalThis as unknown as { window: unknown }).window = dom.window;
+    (globalThis as unknown as { HTMLElement: unknown }).HTMLElement = dom.window.HTMLElement;
+
+    try {
+      const store = new DiegeticStore();
+      store.ingestSnapshot(CANONICAL_M3_M4);
+      const bus = new UiIntentBus();
+      const registry = new PluginRegistry();
+      registry.registerWindowPlugin(createLedgerStubPlugin());
+      registry.registerWindowPlugin(createDispatchInboxStubPlugin());
+      registry.registerWindowPlugin(createWarfareCommandWindowPlugin());
+      registry.registerWindowPlugin(createNotificationMatrixWindowPlugin());
+      registry.registerWindowPlugin(createEntityInspectorWindowPlugin());
+      registry.registerWindowPlugin(createControlsReferenceWindowPlugin());
+
+      const winHost = dom.window.document.getElementById("desktop-win-host")!;
+      const appShell = dom.window.document.getElementById("app-shell")!;
+      const hudDispose = mountCommandHud(appShell, store, bus);
+      const manager = new DesktopWindowManager(winHost, registry, { store, bus });
+
+      // Pressing W, A, S, D, Q, E must never trigger or toggle floating windows.
+      for (const key of ["w", "a", "s", "d", "q", "e"]) {
+        dom.window.document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key, bubbles: true }));
+      }
+      expect(manager.listFrames()).toHaveLength(0);
+
+      // Clicking HUD Controls (?) button opens the Controls & Keybindings window.
+      const controlsBtn = appShell.querySelector<HTMLButtonElement>('[data-open-plugin="controls_reference"]');
+      expect(controlsBtn).not.toBeNull();
+      controlsBtn!.click();
+      expect(manager.listFrames().some((f) => f.tabs[0].pluginId === "controls_reference")).toBe(true);
+      expect(winHost.textContent).toContain("W / S");
+      expect(winHost.textContent).toContain("Q / E");
+
+      // Pressing Escape closes the unpinned Controls window cleanly; F1 re-opens it.
+      dom.window.document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      expect(manager.listFrames()).toHaveLength(0);
+      dom.window.document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "F1", bubbles: true }));
+      expect(manager.listFrames().some((f) => f.tabs[0].pluginId === "controls_reference")).toBe(true);
+
+      manager.dispose();
+      hudDispose();
+    } finally {
+      dom.window.close();
+      (globalThis as unknown as { document: unknown }).document = prevDoc;
+      (globalThis as unknown as { window: unknown }).window = prevWin;
+      (globalThis as unknown as { HTMLElement: unknown }).HTMLElement = prevHtml;
+    }
+  });
+
+  // @req UI-MAP-009
+  it("resolves settlements, facilities, stone-grey purpose roads, contiguous flow rivers, and clean selection clearing (UI-MAP-009)", async () => {
+    const topo = generateGoldbergTopology(3);
+    const cellMap = new Map<number, GoldbergCellGeometry>();
+    for (const c of topo.cells) cellMap.set(c.cellId, c);
+
+    const hqId = 0;
+    const roadOutpostId = topo.cells[hqId].neighbors[0];
+    const riverMidId = topo.cells[hqId].neighbors[1];
+    const seaId =
+      topo.cells[riverMidId].neighbors.find((n) => n !== hqId && n !== roadOutpostId) ??
+      topo.cells[riverMidId].neighbors[0];
+    const farId = topo.cells.find((c) => c.cellId !== hqId && c.cellId !== roadOutpostId && c.cellId !== riverMidId && c.cellId !== seaId)!.cellId;
+
+    const knownCells: KnownCellDto[] = [
+      {
+        tier: "surveyed",
+        cellId: hqId,
+        observedTick: 12,
+        isLiveHqSight: true,
+        elevationM: 120,
+        confidence01: 1.0,
+        provenanceLabel: "Direct Observation",
+        biomeKey: "temperate_forest",
+        isOcean: false,
+        riverDownstreamCellId: riverMidId,
+        riverChannelDownstreamCellId: riverMidId,
+        riverDischargeM3S: 140,
+        riverVelocityMps: 1.4,
+        hydroPotentialKw: 8400,
+        strahlerOrder: 2,
+      },
+      {
+        tier: "surveyed",
+        cellId: roadOutpostId,
+        observedTick: 12,
+        isLiveHqSight: true,
+        elevationM: 280,
+        confidence01: 1.0,
+        provenanceLabel: "Direct Observation",
+        biomeKey: "temperate_grassland",
+        isOcean: false,
+        riverDownstreamCellId: hqId,
+        riverChannelDownstreamCellId: null,
+        riverDischargeM3S: 12,
+        strahlerOrder: 1,
+      },
+      {
+        tier: "stale",
+        cellId: riverMidId,
+        observedTick: 4,
+        lastLiveTick: 4,
+        elevationM: 55,
+        confidence01: 0.8,
+        provenanceLabel: "Stale Survey",
+        biomeKey: "temperate_forest",
+        isOcean: false,
+        riverDownstreamCellId: seaId,
+        riverChannelDownstreamCellId: seaId,
+        riverDischargeM3S: 260,
+        riverVelocityMps: 1.8,
+        hydroPotentialKw: 12400,
+        strahlerOrder: 3,
+      },
+      {
+        tier: "surveyed",
+        cellId: seaId,
+        observedTick: 12,
+        isLiveHqSight: false,
+        elevationM: -180,
+        confidence01: 1.0,
+        provenanceLabel: "Coastal Sounding",
+        biomeKey: "shallow_sea",
+        isOcean: true,
+        strahlerOrder: 0,
+      },
+      {
+        tier: "unexplored",
+        cellId: farId,
+      },
+    ];
+    for (const nbr of [...topo.cells[hqId].neighbors, ...topo.cells[riverMidId].neighbors]) {
+      if (!knownCells.some((k) => k.cellId === nbr)) {
+        knownCells.push({
+          tier: "surveyed",
+          cellId: nbr,
+          observedTick: 12,
+          isLiveHqSight: true,
+          elevationM: 110,
+          confidence01: 1.0,
+          provenanceLabel: "Survey",
+          biomeKey: "temperate_grassland",
+          isOcean: false,
+          strahlerOrder: 1,
+        });
+      }
+    }
+
+    const base = CANONICAL_M3_M4;
+    const testSnap: DiegeticSnapshot = {
+      ...base,
+      globeTopology: { subdivision: 3, cellCount: topo.cellCount },
+      hqPresence: { ...base.hqPresence, cellId: hqId, settlementName: "Haven Landing" },
+      knownSettlements: [{ settlementId: 0, settlementName: "Haven Landing", cellId: hqId, isHq: true }],
+      knownCells,
+      surveyedRoads: [
+        {
+          edgeId: 77,
+          fromCellId: hqId,
+          toCellId: roadOutpostId,
+          infraKey: "foot_trail",
+          roadPurpose: "resource_or_port_access",
+          purposeLabel: "Haven -> Quarry Outpost",
+          cumulativePassages: 5,
+          cumulativeTonnesPassed: 8.2,
+        },
+      ],
+      facilityRows: [
+        {
+          facilityId: 101,
+          settlementId: 0,
+          settlementName: "Haven Landing",
+          processKey: "copper_smelter",
+          processName: "Copper Smelter Hearth",
+          assignedWorkers: 12,
+          toolCondition01: 0.9,
+          weatherHalted: false,
+          shaftWater01: 0,
+          observedTick: 12,
+          provenanceLabel: "Direct Observation",
+        },
+      ],
+      warfare: base.warfare
+        ? {
+            ...base.warfare,
+            formations: base.warfare.formations.slice(0, 1).map((f) => ({
+              ...f,
+              currentCellId: hqId,
+              currentUnitXyz: topo.cells[hqId].centerUnit,
+              targetCellId: hqId,
+              targetUnitXyz: topo.cells[hqId].centerUnit,
+            })),
+          }
+        : undefined,
+    };
+
+    // Contiguous river ribbon renders single trunk across surveyed -> stale -> sea with chevron mesh.
+    const mat = new THREE.MeshStandardMaterial();
+    const chevMat = new THREE.MeshStandardMaterial();
+    const projectPoint = (unit: readonly [number, number, number], lift: number) =>
+      new THREE.Vector3(unit[0], unit[1], unit[2]).normalize().multiplyScalar(1 + lift);
+    const ribbon = buildHydrologyRibbonMesh(
+      testSnap,
+      topo,
+      cellMap,
+      new Map<number, ObservedWeatherDto>(),
+      0.2,
+      mat,
+      projectPoint,
+      false,
+      undefined,
+      chevMat,
+    );
+    expect(ribbon.renderedRiverCount).toBe(1);
+    expect(ribbon.chevronMesh).not.toBeNull();
+    ribbon.mesh?.geometry.dispose();
+    ribbon.chevronMesh?.geometry.dispose();
+
+    const overlay = new GlobeFeatureOverlayGroup({
+      oceanShallowRgb: [135, 163, 173],
+      oceanDeepRgb: [61, 89, 102],
+      landLowRgb: [115, 138, 87],
+      landMidRgb: [176, 162, 116],
+      landHighRgb: [140, 114, 88],
+      peakSnowRgb: [244, 239, 228],
+      riverWaterRgb: [54, 108, 133],
+      roadOchreRgb: [166, 89, 40],
+      roadStoneRgb: [122, 125, 130],
+      settlementMarkerRgb: [139, 46, 34],
+      contourInkRgb: [59, 44, 29],
+      compassRoseRgb: [110, 85, 57],
+      unexploredVellumRgb: [230, 216, 185],
+      parchmentGrainTextureUrl: "",
+      hatchPatternTextureUrl: "",
+      terrainBiomeTextureUrl: "",
+    });
+    expect(overlay).toBeDefined();
+    overlay.dispose();
+
+    const dom = new JSDOM(
+      `<!DOCTYPE html><html><body><div id="app-shell"></div><div id="win-host"></div></body></html>`,
+      { url: "http://localhost/" },
+    );
+    const prevDoc = (globalThis as unknown as { document: unknown }).document;
+    const prevWin = (globalThis as unknown as { window: unknown }).window;
+    const prevHtml = (globalThis as unknown as { HTMLElement: unknown }).HTMLElement;
+    (globalThis as unknown as { document: unknown }).document = dom.window.document;
+    (globalThis as unknown as { window: unknown }).window = dom.window;
+    (globalThis as unknown as { HTMLElement: unknown }).HTMLElement = dom.window.HTMLElement;
+
+    const canvas = dom.window.document.createElement("canvas");
+    Object.defineProperty(canvas, "clientWidth", { value: 1280 });
+    Object.defineProperty(canvas, "clientHeight", { value: 720 });
+    canvas.getContext = (() => null) as unknown as typeof canvas.getContext;
+    dom.window.document.getElementById("app-shell")!.appendChild(canvas);
+
+    const store = new DiegeticStore();
+    store.ingestSnapshot(testSnap);
+    const bus = new UiIntentBus();
+    const emitted: UiIntent[] = [];
+    bus.subscribe((i) => emitted.push(i));
+
+    const viewport = await initializeGlobeViewport(canvas, store, bus, []);
+    try {
+      // Aim directly at settlement center even though formation is co-located on cell 0 -> must resolve settlement/building, never hijacked by formation!
+      viewport.camera.flyToUnitVector(topo.cells[hqId].centerUnit, 0.12, 0, true);
+      viewport.stepRender(16);
+      const centerHit = viewport.layerHost.pickGlobeAtNdc(0, 0);
+      expect(centerHit?.hitKind).not.toBe("formation");
+      expect(["settlement", "facility"]).toContain(centerHit?.hitKind);
+
+      // Aim directly at road midpoint -> resolves "road" with purpose label!
+      const roadMid = norm3(slerpUnitVec3(topo.cells[hqId].centerUnit, topo.cells[roadOutpostId].centerUnit, 0.5));
+      viewport.camera.flyToUnitVector(roadMid, 0.12, 0, true);
+      viewport.stepRender(16);
+      const roadHit = viewport.layerHost.pickGlobeAtNdc(0, 0);
+      expect(roadHit?.hitKind).toBe("road");
+      if (roadHit?.hitKind === "road") {
+        expect(roadHit.edgeId).toBe(77);
+        expect(roadHit.purposeLabel).toBe("Haven -> Quarry Outpost");
+      }
+
+      // Aim directly at river reach midpoint -> resolves "river" with volumetric m3/s metadata!
+      const riverMid = norm3(slerpUnitVec3(topo.cells[hqId].centerUnit, topo.cells[riverMidId].centerUnit, 0.5));
+      viewport.camera.flyToUnitVector(riverMid, 0.12, 0, true);
+      viewport.stepRender(16);
+      const riverHit = viewport.layerHost.pickGlobeAtNdc(0, 0);
+      expect(riverHit?.hitKind).toBe("river");
+      if (riverHit?.hitKind === "river") {
+        expect(riverHit.dischargeM3S).toBe(140);
+        expect(riverHit.velocityMps).toBeCloseTo(1.4, 2);
+      }
+
+      // Pressing Escape clears active map selection cleanly.
+      bus.emit({ kind: "SelectMapFeature", hit: roadHit! });
+      dom.window.document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      const lastSel = [...emitted].reverse().find((e) => e.kind === "SelectMapFeature");
+      expect(lastSel?.kind === "SelectMapFeature" ? lastSel.hit : undefined).toBeNull();
+
+      // Dedicated Entity Inspector views render road, river, and resource-outpost facility records.
+      const reg = new PluginRegistry();
+      reg.registerWindowPlugin(createEntityInspectorWindowPlugin());
+      const winHost = dom.window.document.getElementById("win-host")!;
+      const wm = new DesktopWindowManager(winHost, reg, { store, bus });
+      bus.emit({ kind: "FocusEntityInspector", entityKind: "road", entityId: 77 });
+      expect(winHost.textContent).toContain("Haven -> Quarry Outpost");
+      bus.emit({ kind: "FocusEntityInspector", entityKind: "river", entityId: hqId });
+      expect(winHost.textContent).toContain("140.0 m3/s");
+      bus.emit({ kind: "FocusEntityInspector", entityKind: "facility", entityId: 900077 });
+      expect(winHost.textContent).toContain("Haven -> Quarry Outpost");
+      wm.dispose();
     } finally {
       viewport.dispose();
       dom.window.close();

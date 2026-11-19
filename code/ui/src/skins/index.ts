@@ -164,7 +164,7 @@ export function createSkinSwitcherWindowPlugin(skinManager: SkinManager): Window
     defaultTitle: "Cartography Skins & Appearance",
     minWidth: 320,
     minHeight: 220,
-    hotkey: "k",
+    hotkey: "y",
     mountContent(container, _instanceKey, spine) {
       const wrap = document.createElement("div");
       wrap.className = "ng-responsive-grid";

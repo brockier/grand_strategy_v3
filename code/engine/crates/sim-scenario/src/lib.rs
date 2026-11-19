@@ -4,7 +4,7 @@
 //! `sim-economy`, `sim-logistics`, `sim-pop`, `sim-command`, `sim-core`, and `player-view`
 //! exclusively behind `sim-spine` ports (`ENG-CLK-004`..`006`, `ENG-SCN-001`..`004`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -23,7 +23,7 @@ use sim_clock::{
 use sim_command::CommandHierarchy;
 use sim_core::SimWorld;
 use sim_economy::EconomyLedger;
-use sim_logistics::{LogisticsNetwork, UnifiedTransitLaunch};
+use sim_logistics::{LogisticsNetwork, RoadPurposeKind, UnifiedTransitLaunch};
 use sim_planet::GeneratedPlanet;
 use sim_plug_private_eco::PrivateEconomyPlugin;
 use sim_plug_research::KnowledgeEvolutionPlugin;
@@ -235,30 +235,70 @@ impl ScenarioWorld {
                 let regional_radius = grid_scale.saturating_mul(2).max(2);
                 economy.set_hq_sight_radius_cells(regional_radius);
                 let hq = economy.hq_cell();
-                // Pre-seed regional road infrastructure & stale surveys across expanded perimeter (`ENG-SCN-001`).
+                // Pre-seed regional arterial highways & stale surveys across expanded perimeter (`ENG-SCN-001`, `ENG-LOG-007`).
                 let metalled = registry.infra_id_by_key("metalled_road");
                 let mut ring = BTreeMap::new();
+                let mut parent = BTreeMap::new();
                 ring.insert(hq, 0u8);
-                let mut frontier = std::collections::VecDeque::from([hq]);
+                let mut frontier = VecDeque::from([hq]);
                 while let Some(cur) = frontier.pop_front() {
                     let dist = ring[&cur];
                     if dist >= regional_radius.saturating_add(1) {
                         continue;
                     }
                     for &nb in planet.cell_neighbors(cur) {
-                        if let Some(eid) = planet.cell_edge(cur, nb)
-                            && let Some(m_id) = metalled
-                            && !planet.is_ocean_cell(cur)
-                            && !planet.is_ocean_cell(nb)
-                        {
-                            logistics.upgrade_edge_infra(eid, m_id, None);
-                        }
                         if let std::collections::btree_map::Entry::Vacant(e) = ring.entry(nb) {
                             e.insert(dist + 1);
+                            parent.insert(nb, cur);
                             frontier.push_back(nb);
                         }
                     }
                 }
+
+                if let Some(m_id) = metalled {
+                    let hq_ll = planet.cell_lat_lon_rad(hq);
+                    let sector_targets: [Option<CellId>; 3] = [None; 3];
+                    let mut chosen = sector_targets;
+                    let mut best_scores = [f32::MIN; 3];
+                    for (&cid, &dist) in &ring {
+                        if dist < regional_radius.min(2) || dist > regional_radius || planet.is_ocean_cell(cid) {
+                            continue;
+                        }
+                        let ll = planet.cell_lat_lon_rad(cid);
+                        let dy = ll[0] - hq_ll[0];
+                        let dx = (ll[1] - hq_ll[1]) * hq_ll[0].cos().max(0.2);
+                        let mut ang = dy.atan2(dx);
+                        if ang < 0.0 {
+                            ang += std::f32::consts::TAU;
+                        }
+                        let sector = ((ang / std::f32::consts::TAU * 3.0) as usize).min(2);
+                        let elev = planet.cell_elevation_m(cid);
+                        let score = (f32::from(dist) * 200.0) - (elev - 220.0).abs() * 0.25;
+                        if score > best_scores[sector] {
+                            best_scores[sector] = score;
+                            chosen[sector] = Some(cid);
+                        }
+                    }
+                    for target_opt in chosen {
+                        let Some(mut cur) = target_opt else { continue };
+                        while let Some(&prev) = parent.get(&cur) {
+                            if !planet.is_ocean_cell(prev)
+                                && !planet.is_ocean_cell(cur)
+                                && let Some(eid) = planet.cell_edge(prev, cur)
+                            {
+                                logistics.build_purpose_road(
+                                    eid,
+                                    m_id,
+                                    RoadPurposeKind::CharteredArterial,
+                                    "Provincial Charter Arterial",
+                                    None,
+                                );
+                            }
+                            cur = prev;
+                        }
+                    }
+                }
+
                 for (cid, dist) in ring {
                     if dist >= 2 && !planet.is_ocean_cell(cid) {
                         archive.seed_historical_stale_cell(
@@ -271,6 +311,8 @@ impl ScenarioWorld {
                 }
             }
         }
+
+        seed_purposeful_corridor_roads(&planet, &economy, registry, &mut logistics, archetype);
 
         let _ = archive.observe_hq_halo(Tick(0), &planet, &economy);
         Self::record_daily_time_series(Tick(0), registry, &economy, &pop, &command, &mut archive);
@@ -1979,12 +2021,17 @@ impl ScenarioWorld {
                     eid.get(),
                     EdgeViewInput {
                         edge_id: eid.get(),
-                        from_cell_id: 0,
-                        to_cell_id: 0,
+                        from_cell_id: st.from_cell.get(),
+                        to_cell_id: st.to_cell.get(),
                         infra_key: infra.key.clone(),
                         washed_out: st.washed_out,
                         river_edge: st.river_edge,
                         bridge_cap_kg: st.bridge_weight_cap_kg,
+                        road_built: st.road_built,
+                        road_purpose: st.road_purpose.as_str().to_owned(),
+                        purpose_label: st.purpose_label.clone(),
+                        cumulative_passages: st.cumulative_passages,
+                        cumulative_tonnes_passed: st.cumulative_tonnes_passed,
                     },
                 );
             }
@@ -2194,6 +2241,151 @@ fn select_temperate_coastal_landing(planet: &GeneratedPlanet) -> CellId {
         }
     }
     best_cell
+}
+
+/// Seeds purposeful roads connecting settlements to settlements and nearby resource/mill outposts (`ENG-LOG-007`).
+fn seed_purposeful_corridor_roads(
+    planet: &GeneratedPlanet,
+    economy: &EconomyLedger,
+    registry: &dyn ModRegistryPort,
+    logistics: &mut LogisticsNetwork,
+    archetype: ScenarioArchetypeKind,
+) {
+    let trail_id = registry
+        .infra_id_by_key("foot_trail")
+        .unwrap_or(sim_spine::InfraClassId(0));
+    let arterial_id = if archetype == ScenarioArchetypeKind::EmergentDawn {
+        trail_id
+    } else {
+        registry.infra_id_by_key("metalled_road").unwrap_or(trail_id)
+    };
+
+    let settlements = economy.settlements();
+    for i in 0..settlements.len() {
+        for j in (i + 1)..settlements.len() {
+            let start = settlements[i].cell_id;
+            let goal = settlements[j].cell_id;
+            if start == goal || planet.is_ocean_cell(start) || planet.is_ocean_cell(goal) {
+                continue;
+            }
+            let mut parent: BTreeMap<CellId, CellId> = BTreeMap::new();
+            let mut dist: BTreeMap<CellId, u8> = BTreeMap::from([(start, 0)]);
+            let mut queue = VecDeque::from([start]);
+            let mut found = false;
+            while let Some(cur) = queue.pop_front() {
+                if cur == goal {
+                    found = true;
+                    break;
+                }
+                let d = dist[&cur];
+                if d >= 16 {
+                    continue;
+                }
+                for &nb in planet.cell_neighbors(cur) {
+                    if planet.is_ocean_cell(nb) || dist.contains_key(&nb) {
+                        continue;
+                    }
+                    dist.insert(nb, d + 1);
+                    parent.insert(nb, cur);
+                    queue.push_back(nb);
+                }
+            }
+            if found {
+                let label = format!(
+                    "{} <-> {} Corridor",
+                    settlements[i].display_name, settlements[j].display_name
+                );
+                let mut cur = goal;
+                while let Some(&prev) = parent.get(&cur) {
+                    if let Some(eid) = planet.cell_edge(prev, cur) {
+                        logistics.build_purpose_road(
+                            eid,
+                            arterial_id,
+                            RoadPurposeKind::SettlementToSettlement,
+                            label.clone(),
+                            None,
+                        );
+                    }
+                    cur = prev;
+                }
+            }
+        }
+    }
+
+    // For every settlement, link up to two adjacent/near-by productive land cells (quarry & timber/mill outpost).
+    for s in settlements {
+        let origin = s.cell_id;
+        if planet.is_ocean_cell(origin) {
+            continue;
+        }
+        let mut parent: BTreeMap<CellId, CellId> = BTreeMap::new();
+        let mut dist: BTreeMap<CellId, u8> = BTreeMap::from([(origin, 0)]);
+        let mut queue = VecDeque::from([origin]);
+        let mut quarry_pick: Option<(CellId, f32)> = None;
+        let mut timber_pick: Option<(CellId, f32)> = None;
+
+        while let Some(cur) = queue.pop_front() {
+            let d = dist[&cur];
+            if d >= 2 {
+                continue;
+            }
+            for &nb in planet.cell_neighbors(cur) {
+                if planet.is_ocean_cell(nb) || dist.contains_key(&nb) {
+                    continue;
+                }
+                dist.insert(nb, d + 1);
+                parent.insert(nb, cur);
+                queue.push_back(nb);
+
+                let elev = planet.cell_elevation_m(nb).max(0.0);
+                let strata = planet.cell_strata_code(nb);
+                let rock_bonus = if matches!(strata, 1 | 2 | 3) { 260.0 } else { 0.0 };
+                let hop_penalty = if d == 0 { 0.0 } else { -120.0 };
+                let q_score = elev.min(1200.0) + rock_bonus + hop_penalty;
+                if quarry_pick.is_none_or(|(_, best)| q_score > best) {
+                    quarry_pick = Some((nb, q_score));
+                }
+
+                let fert = planet.cell_soil_fertility_01(nb);
+                let river_bonus = if planet.cell_river_channel_downstream(nb).is_some() {
+                    0.55
+                } else {
+                    0.0
+                };
+                let t_score = fert + river_bonus + hop_penalty * 0.001;
+                if timber_pick.is_none_or(|(_, best)| t_score > best) {
+                    timber_pick = Some((nb, t_score));
+                }
+            }
+        }
+
+        let mut build_outpost_path = |target: CellId, label: String| {
+            let mut cur = target;
+            while let Some(&prev) = parent.get(&cur) {
+                if let Some(eid) = planet.cell_edge(prev, cur)
+                    && !logistics.edge_state(eid).is_some_and(|e| e.road_built)
+                {
+                    logistics.build_purpose_road(
+                        eid,
+                        trail_id,
+                        RoadPurposeKind::ResourceOrPortAccess,
+                        label.clone(),
+                        None,
+                    );
+                }
+                cur = prev;
+            }
+        };
+
+        if let Some((q_cell, _)) = quarry_pick {
+            build_outpost_path(q_cell, format!("{} -> Quarry Outpost", s.display_name));
+        }
+        if let Some((t_cell, _)) = timber_pick
+            && Some(t_cell) != quarry_pick.map(|(c, _)| c)
+        {
+            build_outpost_path(t_cell, format!("{} -> Timber & Mill Outpost", s.display_name));
+        }
+    }
 }
 
 fn apply_clock_command(clock: &mut SimulationClock, cmd: &SpinePlayerCommand) {

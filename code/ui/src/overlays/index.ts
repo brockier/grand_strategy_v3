@@ -594,6 +594,18 @@ function formatHoverTooltipText(hit: GlobeRayHit, snapshot: DiegeticSnapshot | n
       : "";
   if (!snapshot) return `${hit.label}${coordSuffix}`;
   const currentTick = snapshot.clockAndNotifications.tick;
+  if (hit.hitKind === "facility") {
+    return `${hit.label} — Infrastructure Facility${coordSuffix}`;
+  }
+  if (hit.hitKind === "road") {
+    const purposeText = hit.purposeLabel ? ` · ${hit.purposeLabel}` : "";
+    return `${hit.label}${purposeText}${coordSuffix}`;
+  }
+  if (hit.hitKind === "river") {
+    const qText = hit.dischargeM3S !== undefined ? ` · ${Math.round(hit.dischargeM3S)} m3/s` : "";
+    const vText = hit.velocityMps !== undefined ? ` @ ${hit.velocityMps.toFixed(2)} m/s` : "";
+    return `${hit.label}${qText}${vText} (Flow -> Cell #${hit.toCellId})${coordSuffix}`;
+  }
   if (hit.hitKind === "formation") {
     const formation = snapshot.warfare?.formations.find((f) => f.formationId === hit.formationId);
     if (formation) {
@@ -728,6 +740,12 @@ export class OcclusionAwareCellPicker implements MapLayerPlugin {
           entityKind: "settlement",
           entityId: hit.settlementId,
         });
+      } else if (hit.hitKind === "facility") {
+        bus.emit({
+          kind: "FocusEntityInspector",
+          entityKind: "facility",
+          entityId: hit.facilityId,
+        });
       } else if (hit.hitKind === "convoy") {
         bus.emit({
           kind: "FocusEntityInspector",
@@ -740,7 +758,19 @@ export class OcclusionAwareCellPicker implements MapLayerPlugin {
           entityKind: "formation",
           entityId: hit.formationId,
         });
-      } else if (hit.hitKind === "cell" || hit.hitKind === "river" || hit.hitKind === "road") {
+      } else if (hit.hitKind === "road") {
+        bus.emit({
+          kind: "FocusEntityInspector",
+          entityKind: "road",
+          entityId: hit.edgeId,
+        });
+      } else if (hit.hitKind === "river") {
+        bus.emit({
+          kind: "FocusEntityInspector",
+          entityKind: "river",
+          entityId: hit.cellId,
+        });
+      } else if (hit.hitKind === "cell") {
         bus.emit({
           kind: "FocusEntityInspector",
           entityKind: "cell",

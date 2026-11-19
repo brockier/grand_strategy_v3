@@ -26,9 +26,22 @@
 ### 2.1 Edge Infrastructure & Transit Entity Model
 
 ```rust
+pub enum RoadPurposeKind {
+    UnbuiltWilderness,
+    SettlementToSettlement,
+    ResourceOrPortAccess,
+    CharteredArterial,
+    TrafficWornTrack,
+}
+
 pub struct EdgeInfraState {
     pub edge_id: EdgeId,
     pub infra_class: InfraClassId,
+    pub road_built: bool,
+    pub road_purpose: RoadPurposeKind,
+    pub purpose_label: String,
+    pub cumulative_passages: u32,
+    pub cumulative_tonnes_passed: f64,
     pub condition_01: f32,
     pub bridge_intact: bool,
     pub bridge_max_tonnes: f32,
@@ -76,9 +89,10 @@ For any candidate edge `(u, v)` and `CarrierDef`:
    - Reject land carriers crossing deep water unless `bridge_intact && convoy_tonnage <= bridge_max_tonnes` or `ice_thickness_m >= carrier.min_ice_thickness_m`.
    - Reject river barges when `ice_thickness_m >= 0.15` or `flood_stage_01 > carrier.max_safe_flood`.
    - Reject mountain passes when `snow_depth_m > carrier.max_snow_clearance_m`.
-2. **Effective Speed & Continuous Arc Equation (`ENG-LOG-002`, `ENG-LOG-002.1`):**
-   `speed_kmh = base_speed * slope_penalty(heading_slope, carrier) * mud_penalty(mud_index_01) * congestion_penalty * wind_sailing_factor(bearing, wind_vec)`
-   where `congestion_penalty` queries `NonStateEconomyPlugPort`. Each step integrates `step_km = speed_kmh * dt_hours`, advances `distance_travelled_km` along road/river splines or any-angle string-pulled great-circle arcs, updates `current_unit_xyz` via `slerp`, and syncs `current_cell = planet.nearest_sample_cell(current_unit_xyz)`.
+2. **Effective Speed & Continuous Arc Equation (`ENG-LOG-002`, `ENG-LOG-002.1`, `ENG-LOG-007`):**
+   `speed_kmh = base_speed * road_bonus * slope_penalty(heading_slope, carrier) * mud_penalty(mud_index_01) * congestion_penalty * wind_sailing_factor(bearing, wind_vec)`
+   where unbuilt open wilderness receives no constructed-road multiplier (`1.0x`), constructed `foot_trail` (`road_built = true`) confers a `1.15x` travel bonus alongside upgraded timber/macadam/rail surfaces, and repeated overland passages organically wear unbuilt tracks into `TrafficWornTrack` roads once `cumulative_passages >= 3 || cumulative_tonnes_passed >= 2.5`. Watercraft moving along navigable perennial rivers (`river_discharge_m3_s >= 25.0 m3/s` and gentle slope) add downstream river current (`river_velocity_mps * 3.6 km/h`) when moving `u -> channel_downstream` or subtract against current when sailing upstream (floored at safe headway). Each step integrates `step_km = speed_kmh * dt_hours`, advances `distance_travelled_km` along road/river splines or any-angle string-pulled great-circle arcs, updates `current_unit_xyz` via `slerp`, and syncs `current_cell = planet.nearest_sample_cell(current_unit_xyz)`.
+   `player-view` emits strictly `road_built == true` edges with explicit `road_purpose` metadata (seeded strictly on real inter-settlement corridors, quarry/logging/port links, chartered arterials, and worn tracks—never dead-end hub spokes).
 3. **Breakdown & Hazard Rolls:** Deterministic `PhaseRng` evaluates axle/wheel or hull failure probability scaled by `mud_index_01`, road wear, and excess weight, consuming carried spare parts or stranding the convoy.
 
 ### 3.2 Route Fodder & Fuel Consumption (`ENG-LOG-001`, `ENG-LOG-004`)

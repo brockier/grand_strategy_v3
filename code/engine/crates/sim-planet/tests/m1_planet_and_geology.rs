@@ -479,3 +479,67 @@ fn high_res_planet_generates_continental_shelves_strahler_rivers_and_biophysical
     assert!(slice.is_empty());
     assert_eq!(decoded.blake3_digest(), planet.blake3_digest());
 }
+
+// @req ENG-GEO-008
+#[test]
+fn perennial_rivers_conserve_volumetric_flow_form_lakes_and_terminate_in_river_lake_or_sea() {
+    let cfg = default_planet_cfg(24);
+    let mut observed_lakes = 0usize;
+    let mut observed_perennial = 0usize;
+    let mut observed_hydro_sites = 0usize;
+
+    for seed in [42_u64, 7_u64, 1337_u64] {
+        let planet = GeneratedPlanet::generate(seed, &cfg);
+        let n = planet.cell_count();
+        for idx in 0..n {
+            let cid = CellId(idx);
+            let q = planet.cell_river_discharge_m3_s(cid);
+            assert!(q.is_finite() && q >= 0.0);
+
+            if planet.is_ocean_cell(cid) {
+                assert!(!planet.cell_is_lake(cid));
+                assert!(planet.cell_river_channel_downstream(cid).is_none());
+                assert_eq!(q, 0.0);
+                continue;
+            }
+
+            if let Some(ds) = planet.cell_river_channel_downstream(cid) {
+                observed_perennial += 1;
+                let vel = planet.cell_river_velocity_mps(cid);
+                let kw = planet.cell_hydro_potential_kw(cid);
+                assert!(vel > 0.0 && vel.is_finite(), "perennial channel must have positive flow speed");
+                assert!(kw >= 0.0 && kw.is_finite(), "hydro potential must be finite non-negative");
+                if kw > 1.0 {
+                    observed_hydro_sites += 1;
+                }
+                assert!(q >= 18.0, "perennial channel must maintain physical discharge");
+
+                // Every perennial river edge must terminate in ocean, lake, or another perennial river confluence.
+                let terminates_validly = planet.is_ocean_cell(ds)
+                    || planet.cell_is_lake(ds)
+                    || planet.cell_river_channel_downstream(ds).is_some();
+                assert!(
+                    terminates_validly,
+                    "perennial river cell {idx} -> {} terminated mid-land without sea, lake, or confluence",
+                    ds.get()
+                );
+
+                // Volumetric discharge accumulates strictly downstream along land channels.
+                if !planet.is_ocean_cell(ds) {
+                    let q_ds = planet.cell_river_discharge_m3_s(ds);
+                    assert!(
+                        q_ds + 1e-3 >= q,
+                        "downstream discharge must conserve and accumulate flow ({q_ds} < {q})"
+                    );
+                }
+            }
+            if planet.cell_is_lake(cid) {
+                observed_lakes += 1;
+            }
+        }
+    }
+
+    assert!(observed_perennial > 200, "expected substantial perennial channels across 3 seeds");
+    assert!(observed_hydro_sites > 100, "expected positive hydroelectric reach drops");
+    assert!(observed_lakes >= 1, "expected inland lakes in interior basins across m=24 planets");
+}

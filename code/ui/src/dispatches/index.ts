@@ -53,7 +53,7 @@ export function createDispatchInboxStubPlugin(): WindowContentPlugin {
     defaultTitle: "Courier Dispatches",
     minWidth: 400,
     minHeight: 280,
-    hotkey: "d",
+    hotkey: "j",
     mountContent(container, _instanceKey, spine) {
       const root = document.createElement("div");
       root.className = "ng-responsive-grid";

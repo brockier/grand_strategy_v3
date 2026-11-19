@@ -185,6 +185,15 @@ Every requirement block carries one of four normative lifecycle statuses:
 - **Requirement:** The map viewport SHALL support seamless GPU vertex morphing and analytical camera/picking parity between the primary 3D spherical `globe`, 2D `equal_area` (Lambert Azimuthal Equal-Area centered on focus coordinates), and 2D `mercator` projections via explicit HUD/toolbar controls.
 - **Acceptance Criteria:** Mathematical round-trip tests and live Electron E2E captures verify accurate `projectUnitToFlat2D` / `unprojectFlat2DToUnit` round-trips, distinct WebGL2 pixel output per projection mode, and accurate `pickGlobeAtNdc` resolution in both 3D and 2D modes.
 
+### UI-GLB-008: Heading-Relative `WASDQE` Navigation, Pointer Yaw Rotation & Discoverable Controls Overlay
+- **ID:** `UI-GLB-008`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Window-Playwright`
+- **Lineage:** `Origin`
+- **Requirement:** The globe viewport SHALL support smooth heading-relative panning via `W/A/S/D` (`W` forward along camera heading, `S` backward, `A` left, `D` right), yaw rotation via `Q/E` (`Q` counter-clockwise, `E` clockwise) and horizontal secondary mouse drag (`Right-Drag` or `Shift+Left-Drag`), conflict-free floating window shortcut bindings without colliding with `WASDQE`, and an explicit HUD `Controls (?)` button (`?` / `F1`) displaying the complete mouse and keyboard control mapping.
+- **Acceptance Criteria:** Automated camera and UI tests verify camera `northTangent` yaw rotation under `Q/E` and secondary horizontal drag, heading-relative spherical panning under `W/A/S/D` without triggering docked windows, deconflicted non-colliding window hotkeys, and opening of the Controls reference window from the HUD launcher or `?` key.
+
 ---
 
 ## 5. Diegetic Map Overlays, Fog-of-War & Weather Visuals (`UI-MAP`)
@@ -305,6 +314,15 @@ Every requirement block carries one of four normative lifecycle statuses:
 - **Lineage:** `Origin`
 - **Requirement:** Map features SHALL render rivers as curved meandering triangle-strip ribbons scaled by `strahlerOrder` and `floodStage01` (clipped strictly inside the explored fog horizon so rivers never overshoot into `unexplored` space), render roads along matching terrain-hugging curves, radially de-cluster co-located settlements, convoys, and military formations with leader ticks and lit 3D materials, and project zoom-tiered settlement, formation, and watershed labels without obscuring pointer picking.
 - **Acceptance Criteria:** Geometry and DOM tests assert zero river vertices in unexplored cells, curved triangle-strip river meshes (`drawTriangles`), non-zero radial separation between settlements and co-located formations, and pointer-transparent DOM label elements synced to visible features.
+
+### UI-MAP-009: Zoom-Scaled 3D Infrastructure Picking, Contiguous Flow Rivers, Grey Purpose Roads & Clean Selection Feedback
+- **ID:** `UI-MAP-009`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Unit-Vitest`
+- **Lineage:** `Origin`
+- **Requirement:** Map picking SHALL combine 3D feature-mesh raycasting (`features.group.children`) with zoom-proportional hit radii so buildings, resource facilities, settlements, stone-grey constructed roads, perennial rivers (with flow direction chevrons, volumetric `m3/s` discharge, inland lakes, and contiguous trunk splines), convoys, and formations are individually selectable without co-located formations hijacking clicks, opening dedicated Inspector detail views while rendering a fitted selection highlight that clears on `Escape` or empty terrain/ocean clicks.
+- **Acceptance Criteria:** Picking, geometry, and skin tests assert individual resolution of co-located settlement structures, facility buildings, grey `roadStoneRgb` roads, contiguous flow-annotated `River` chains, convoys, and formations; valid Inspector inspection views for `road`, `river`, and `facility` targets; subtle fitted highlight removal upon `Escape`; and zero painted persistent yellow circles left on empty terrain clicks.
 
 ---
 

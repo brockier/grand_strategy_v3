@@ -35,12 +35,14 @@ describe("Option B & Milestones M5-M7 Live Chromium Electron End-to-End Integrat
   // @req UI-GLB-001.1
   // @req UI-GLB-006
   // @req UI-GLB-007
+  // @req UI-GLB-008
   // @req UI-MAP-005.1
   // @req UI-MAP-006.1
   // @req UI-MAP-006.2
   // @req UI-MAP-007.1
   // @req UI-MAP-007.2
   // @req UI-MAP-008
+  // @req UI-MAP-009
   // @req UI-DAT-006.1
   // @req UI-DAT-006.2
   // @req UI-DAT-007.1
@@ -96,6 +98,11 @@ describe("Option B & Milestones M5-M7 Live Chromium Electron End-to-End Integrat
       closePitchRad: number;
       closeLod4Count: number;
       close3dSample: number[];
+      hqRoadCount: number;
+      roadsAllHavePurpose: boolean;
+      headingBeforeYaw: number;
+      headingAfterYaw: number;
+      hasControlsReferenceWindow: boolean;
       tradeLegend: string;
       warfareLegend: string;
       hasInstTablist: boolean;
@@ -147,6 +154,11 @@ describe("Option B & Milestones M5-M7 Live Chromium Electron End-to-End Integrat
     expect(result.closeLod4Count).toBeGreaterThan(0);
     expect(result.close3dSample.length).toBeGreaterThanOrEqual(800);
     expect(countChangedBytes(result.terrainSample, result.close3dSample)).toBeGreaterThan(0);
+    expect(result.hqRoadCount).toBeGreaterThanOrEqual(1);
+    expect(result.hqRoadCount).toBeLessThanOrEqual(4);
+    expect(result.roadsAllHavePurpose).toBe(true);
+    expect(Math.abs(result.headingAfterYaw - result.headingBeforeYaw)).toBeGreaterThan(0.2);
+    expect(result.hasControlsReferenceWindow).toBe(true);
 
     expect(result.tradeLegend.length).toBeGreaterThan(0);
     expect(result.warfareLegend).toContain("Theaters");

@@ -216,6 +216,11 @@ pub struct GeneratedPlanet {
     pub watershed_ids: Vec<sim_spine::WatershedId>,
     pub drainage_area_km2: Vec<f32>,
     pub strahler_order: Vec<u8>,
+    pub is_lake: Vec<bool>,
+    pub river_channel_downstream: Vec<Option<CellId>>,
+    pub river_discharge_m3_s: Vec<f32>,
+    pub river_velocity_mps: Vec<f32>,
+    pub hydro_potential_kw: Vec<f32>,
     pub topo_sorted_land_cells: Vec<CellId>,
     pub deposits: Vec<HiddenDepositView>,
     pub cell_deposit_ranges: Vec<(usize, usize)>,
@@ -492,6 +497,7 @@ impl GeneratedPlanet {
 
         // 4. Barnes (2014) Priority-Flood depression resolution -> strict cycle-free downhill river DAG (`ENG-GEO-004`).
         let mut elevation_m = raw_elev;
+        let mut pit_fill_m = vec![0.0_f32; n];
         let mut river_downstream: Vec<Option<CellId>> = vec![None; n];
         let mut visited = vec![false; n];
         let mut heap: BinaryHeap<Reverse<(OrdF32, u32)>> = BinaryHeap::new();
@@ -521,6 +527,7 @@ impl GeneratedPlanet {
                 if !is_ocean[nb_idx] {
                     river_downstream[nb_idx] = Some(u);
                     if elevation_m[nb_idx] < cur_h + 0.05 {
+                        pit_fill_m[nb_idx] = (cur_h + 0.05) - elevation_m[nb_idx];
                         elevation_m[nb_idx] = cur_h + 0.05;
                     }
                 }
@@ -826,6 +833,27 @@ impl GeneratedPlanet {
             soil_fertility_01.push(fertility);
         }
 
+        let (
+            is_lake,
+            river_channel_downstream,
+            river_discharge_m3_s,
+            river_velocity_mps,
+            hydro_potential_kw,
+        ) = compute_volumetric_hydrology(
+            &topology,
+            &elevation_m,
+            cfg.base_sea_level_m,
+            &is_ocean,
+            ocean_count,
+            &pit_fill_m,
+            &river_downstream,
+            &topo_sorted_land_cells,
+            &strahler_order,
+            &drainage_area_km2,
+            &base_precip_mm_yr,
+            &mean_annual_temp_c,
+        );
+
         Self {
             world_seed,
             config: cfg.clone(),
@@ -848,6 +876,11 @@ impl GeneratedPlanet {
             watershed_ids,
             drainage_area_km2,
             strahler_order,
+            is_lake,
+            river_channel_downstream,
+            river_discharge_m3_s,
+            river_velocity_mps,
+            hydro_potential_kw,
             topo_sorted_land_cells,
             deposits,
             cell_deposit_ranges,
@@ -1230,6 +1263,42 @@ impl PlanetGeometryPort for GeneratedPlanet {
             .map(|s| s as u8)
             .unwrap_or(4)
     }
+
+    fn cell_is_lake(&self, cell: CellId) -> bool {
+        self.is_lake.get(cell.get() as usize).copied().unwrap_or(false)
+    }
+
+    fn cell_river_channel_downstream(&self, cell: CellId) -> Option<CellId> {
+        self.river_channel_downstream
+            .get(cell.get() as usize)
+            .copied()
+            .flatten()
+    }
+
+    fn cell_is_perennial_river(&self, cell: CellId) -> bool {
+        self.cell_river_channel_downstream(cell).is_some()
+    }
+
+    fn cell_river_discharge_m3_s(&self, cell: CellId) -> f32 {
+        self.river_discharge_m3_s
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    fn cell_river_velocity_mps(&self, cell: CellId) -> f32 {
+        self.river_velocity_mps
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    fn cell_hydro_potential_kw(&self, cell: CellId) -> f32 {
+        self.hydro_potential_kw
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(0.0)
+    }
 }
 
 impl SubsurfaceDepositTruthPort for GeneratedPlanet {
@@ -1279,6 +1348,14 @@ impl CanonicalSaveablePort for GeneratedPlanet {
             }
             write_f32_bits(out, self.drainage_area_km2[idx]);
             write_u8(out, self.strahler_order[idx]);
+            write_u8(out, u8::from(self.is_lake[idx]));
+            match self.river_channel_downstream[idx] {
+                None => write_u32_le(out, u32::MAX),
+                Some(ds) => write_u32_le(out, ds.get()),
+            }
+            write_f32_bits(out, self.river_discharge_m3_s[idx]);
+            write_f32_bits(out, self.river_velocity_mps[idx]);
+            write_f32_bits(out, self.hydro_potential_kw[idx]);
         }
         write_u32_le(out, self.edge_slope_rad.len() as u32);
         for &s in &self.edge_slope_rad {
@@ -1329,6 +1406,11 @@ impl CanonicalSaveablePort for GeneratedPlanet {
         let mut river_downstream = Vec::with_capacity(n);
         let mut drainage_area_km2 = Vec::with_capacity(n);
         let mut strahler_order = Vec::with_capacity(n);
+        let mut is_lake = Vec::with_capacity(n);
+        let mut river_channel_downstream = Vec::with_capacity(n);
+        let mut river_discharge_m3_s = Vec::with_capacity(n);
+        let mut river_velocity_mps = Vec::with_capacity(n);
+        let mut hydro_potential_kw = Vec::with_capacity(n);
 
         for _ in 0..n {
             elevation_m.push(read_f32_bits(input)?);
@@ -1360,6 +1442,16 @@ impl CanonicalSaveablePort for GeneratedPlanet {
             });
             drainage_area_km2.push(read_f32_bits(input)?);
             strahler_order.push(read_u8(input)?);
+            is_lake.push(read_u8(input)? != 0);
+            let ch_raw = read_u32_le(input)?;
+            river_channel_downstream.push(if ch_raw == u32::MAX {
+                None
+            } else {
+                Some(CellId(ch_raw))
+            });
+            river_discharge_m3_s.push(read_f32_bits(input)?);
+            river_velocity_mps.push(read_f32_bits(input)?);
+            hydro_potential_kw.push(read_f32_bits(input)?);
         }
 
         let edge_count = read_u32_le(input)? as usize;
@@ -1432,6 +1524,11 @@ impl CanonicalSaveablePort for GeneratedPlanet {
             watershed_ids,
             drainage_area_km2,
             strahler_order,
+            is_lake,
+            river_channel_downstream,
+            river_discharge_m3_s,
+            river_velocity_mps,
+            hydro_potential_kw,
             topo_sorted_land_cells,
             deposits,
             cell_deposit_ranges,
@@ -1473,6 +1570,146 @@ fn compute_watershed_ids(
         out[idx] = wid;
     }
     out
+}
+
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn compute_volumetric_hydrology(
+    topology: &GoldbergTopology,
+    elevation_m: &[f32],
+    base_sea_level_m: f32,
+    is_ocean: &[bool],
+    ocean_count: usize,
+    pit_fill_m: &[f32],
+    river_downstream: &[Option<CellId>],
+    topo_sorted_land_cells: &[CellId],
+    strahler_order: &[u8],
+    drainage_area_km2: &[f32],
+    base_precip_mm_yr: &[f32],
+    mean_annual_temp_c: &[f32],
+) -> (Vec<bool>, Vec<Option<CellId>>, Vec<f32>, Vec<f32>, Vec<f32>) {
+    let n = elevation_m.len();
+    let mut river_discharge_m3_s = vec![0.0_f32; n];
+
+    // 1. Accumulate physical net climate runoff downstream along acyclic topological DAG.
+    for &cid in topo_sorted_land_cells {
+        let idx = cid.get() as usize;
+        let temp = mean_annual_temp_c[idx].max(0.0);
+        let evap_mm = 260.0 + 24.0 * temp + 0.04 * temp * temp * temp;
+        let excess_mm = (base_precip_mm_yr[idx] - 0.58 * evap_mm)
+            .max(base_precip_mm_yr[idx] * 0.04)
+            .max(1.0);
+        // Volumetric rate: mm/yr (= 1e-3 m/yr) * km^2 (= 1e6 m^2) / 31_536_000 s/yr.
+        let q_local = topology.cell_area_km2[idx] * excess_mm * (1000.0 / 31_536_000.0);
+        river_discharge_m3_s[idx] += q_local;
+        if let Some(ds) = river_downstream[idx] {
+            let ds_idx = ds.get() as usize;
+            if ds_idx < n && !is_ocean[ds_idx] {
+                river_discharge_m3_s[ds_idx] += river_discharge_m3_s[idx];
+            }
+        }
+    }
+
+    // 2. Classify Priority-Flood topographic depression basins with catchment inflow as inland lakes.
+    let max_drainage_idx = drainage_area_km2
+        .iter()
+        .enumerate()
+        .filter(|&(i, _)| !is_ocean[i])
+        .max_by(|a, b| a.1.total_cmp(b.1))
+        .map(|(i, _)| i);
+
+    let mut is_lake = vec![false; n];
+    for idx in 0..n {
+        if is_ocean[idx] {
+            continue;
+        }
+        let has_catchment_inflow = drainage_area_km2[idx] >= topology.cell_area_km2[idx] * 1.9;
+        let ds_is_land = river_downstream[idx].is_some_and(|ds| !is_ocean[ds.get() as usize]);
+        if (pit_fill_m[idx] >= 6.0 && base_precip_mm_yr[idx] >= 250.0 && has_catchment_inflow && ds_is_land)
+            || (ocean_count == 0 && max_drainage_idx == Some(idx))
+        {
+            is_lake[idx] = true;
+        }
+    }
+
+    // Endorheic terminal lakes evaporate modest inflow locally instead of draining out through dry basins.
+    let mut is_terminal_lake = vec![false; n];
+    for idx in 0..n {
+        if !is_lake[idx] {
+            continue;
+        }
+        let closed_world_sink = ocean_count == 0 && river_downstream[idx].is_none();
+        let arid_terminal = river_downstream[idx]
+            .is_some_and(|ds| !is_ocean[ds.get() as usize] && !is_lake[ds.get() as usize])
+            && base_precip_mm_yr[idx] < 520.0
+            && river_discharge_m3_s[idx] < 4500.0;
+        if closed_world_sink || arid_terminal {
+            is_terminal_lake[idx] = true;
+        }
+    }
+
+    // 3. Seed perennial channel cells and propagate closure downstream to lake or sea terminus.
+    let mut is_perennial = vec![false; n];
+    for &cid in topo_sorted_land_cells {
+        let idx = cid.get() as usize;
+        if (strahler_order[idx] >= 2 && river_discharge_m3_s[idx] >= 18.0)
+            || (is_lake[idx] && !is_terminal_lake[idx] && river_discharge_m3_s[idx] >= 18.0)
+        {
+            is_perennial[idx] = true;
+        }
+        if is_perennial[idx]
+            && !is_terminal_lake[idx]
+            && let Some(ds) = river_downstream[idx]
+        {
+            let ds_idx = ds.get() as usize;
+            if ds_idx < n && !is_ocean[ds_idx] && !is_terminal_lake[ds_idx] {
+                is_perennial[ds_idx] = true;
+            }
+        }
+    }
+
+    let mut river_channel_downstream = vec![None; n];
+    let mut river_velocity_mps = vec![0.0_f32; n];
+    let mut hydro_potential_kw = vec![0.0_f32; n];
+
+    for idx in 0..n {
+        if !is_perennial[idx] {
+            continue;
+        }
+        let Some(ds) = river_downstream[idx] else {
+            continue;
+        };
+        let ds_idx = ds.get() as usize;
+        if ds_idx >= n {
+            continue;
+        }
+        river_channel_downstream[idx] = Some(ds);
+
+        let arc_m = (topology.great_circle_km(CellId(idx as u32), ds) * 1000.0).max(1000.0);
+        let ds_elev = if is_ocean[ds_idx] {
+            base_sea_level_m
+        } else {
+            elevation_m[ds_idx]
+        };
+        let dh_m = (elevation_m[idx] - ds_elev).max(0.25);
+        let slope = (dh_m / arc_m).clamp(0.00005, 0.08);
+        let q = river_discharge_m3_s[idx].max(18.0);
+        let vel = ((0.45 + 0.55 * (q / 500.0).powf(0.18)) * (slope / 0.0012).powf(0.32))
+            .clamp(0.35, 4.8);
+        let usable_head_m = dh_m.min(180.0);
+        // Power P = eta * rho * g * Q * H in kW (eta = 0.72, rho*g = 9.81 kN/m^3).
+        let kw = (0.72 * 9.81 * q * usable_head_m).max(0.0);
+
+        river_velocity_mps[idx] = vel;
+        hydro_potential_kw[idx] = kw;
+    }
+
+    (
+        is_lake,
+        river_channel_downstream,
+        river_discharge_m3_s,
+        river_velocity_mps,
+        hydro_potential_kw,
+    )
 }
 
 fn write_planet_gen_config(out: &mut Vec<u8>, cfg: &PlanetGenConfigView) {

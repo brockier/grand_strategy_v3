@@ -6,7 +6,15 @@ import {
   ValidatedPlayerCommand,
 } from "./contracts";
 
-export type EntityKind = "settlement" | "character" | "convoy" | "facility" | "cell" | "formation";
+export type EntityKind =
+  | "settlement"
+  | "character"
+  | "convoy"
+  | "facility"
+  | "cell"
+  | "formation"
+  | "road"
+  | "river";
 
 export type UiIntent =
   | { readonly kind: "FlyGlobeToCell"; readonly cellId: number; readonly zoomAltitude?: number }
@@ -37,7 +45,7 @@ export type UiIntent =
       readonly clientX: number;
       readonly clientY: number;
     }
-  | { readonly kind: "SelectMapFeature"; readonly hit: GlobeRayHit }
+  | { readonly kind: "SelectMapFeature"; readonly hit: GlobeRayHit | null }
   | { readonly kind: "ApplyWindowLayoutPreset"; readonly presetName: string }
   | { readonly kind: "SaveWindowLayoutPreset"; readonly presetName: string }
   | { readonly kind: "DispatchSimCommand"; readonly command: ValidatedPlayerCommand };

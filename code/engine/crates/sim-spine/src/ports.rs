@@ -604,6 +604,30 @@ pub trait PlanetGeometryPort: Send + Sync {
     fn cell_strata_code(&self, _cell: CellId) -> u8 {
         4
     }
+
+    fn cell_is_lake(&self, _cell: CellId) -> bool {
+        false
+    }
+
+    fn cell_river_channel_downstream(&self, _cell: CellId) -> Option<CellId> {
+        None
+    }
+
+    fn cell_is_perennial_river(&self, cell: CellId) -> bool {
+        self.cell_river_channel_downstream(cell).is_some()
+    }
+
+    fn cell_river_discharge_m3_s(&self, _cell: CellId) -> f32 {
+        0.0
+    }
+
+    fn cell_river_velocity_mps(&self, _cell: CellId) -> f32 {
+        0.0
+    }
+
+    fn cell_hydro_potential_kw(&self, _cell: CellId) -> f32 {
+        0.0
+    }
 }
 
 /// Normalizes a 3D direction vector to the unit sphere.

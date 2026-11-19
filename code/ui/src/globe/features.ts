@@ -2,6 +2,7 @@ import * as THREE from "three";
 import {
   DiegeticSnapshot,
   GlobePalette,
+  GlobeRayHit,
   GoldbergCellGeometry,
   GoldbergTopologyData,
   greatCircleRadians,
@@ -103,6 +104,7 @@ export class GlobeFeatureOverlayGroup {
   private windVectorMat: THREE.LineBasicMaterial;
   private leaderTickMat: THREE.LineBasicMaterial;
   private settlementMat: THREE.MeshStandardMaterial;
+  private flowChevronMat: THREE.MeshStandardMaterial;
   private hqRingMat: THREE.MeshStandardMaterial;
   private contourRingMat: THREE.MeshStandardMaterial;
   private convoyConfirmedMat: THREE.MeshStandardMaterial;
@@ -165,9 +167,21 @@ export class GlobeFeatureOverlayGroup {
       polygonOffsetFactor: -2,
       polygonOffsetUnits: -2,
     });
+    this.flowChevronMat = new THREE.MeshStandardMaterial({
+      color: rgbToThreeColor(palette?.peakSnowRgb ?? [244, 239, 228]).lerp(
+        rgbToThreeColor(palette?.riverWaterRgb ?? [54, 108, 133]),
+        0.32,
+      ),
+      roughness: 0.25,
+      metalness: 0.1,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -3,
+      polygonOffsetUnits: -3,
+    });
     this.roadMat = new THREE.MeshStandardMaterial({
-      color: rgbToThreeColor(palette?.roadOchreRgb ?? [166, 89, 40]),
-      roughness: 0.86,
+      color: rgbToThreeColor(palette?.roadStoneRgb ?? [122, 125, 130]),
+      roughness: 0.88,
       metalness: 0.04,
       side: THREE.DoubleSide,
       polygonOffset: true,
@@ -300,7 +314,10 @@ export class GlobeFeatureOverlayGroup {
   setPalette(palette: GlobePalette): void {
     this.detailClusters.setPalette(palette);
     this.riverMat.color.copy(rgbToThreeColor(palette.riverWaterRgb));
-    this.roadMat.color.copy(rgbToThreeColor(palette.roadOchreRgb));
+    this.flowChevronMat.color
+      .copy(rgbToThreeColor(palette.peakSnowRgb))
+      .lerp(rgbToThreeColor(palette.riverWaterRgb), 0.32);
+    this.roadMat.color.copy(rgbToThreeColor(palette.roadStoneRgb ?? [122, 125, 130]));
     this.dashedRouteMat.color.copy(rgbToThreeColor(palette.roadOchreRgb));
     this.previewRouteMat.color.copy(rgbToThreeColor(palette.settlementMarkerRgb));
     this.windVectorMat.color.copy(rgbToThreeColor(palette.contourInkRgb));
@@ -421,7 +438,7 @@ export class GlobeFeatureOverlayGroup {
     const yUp = new THREE.Vector3(0, 1, 0);
     const zUp = new THREE.Vector3(0, 0, 1);
 
-    // 1. Fog-clipped tapering meandering river ribbons (`UI-GLB-006`, `UI-MAP-003`, `UI-MAP-004`).
+    // 1. Fog-clipped tapering meandering river ribbons + flow chevrons (`UI-GLB-006`, `UI-MAP-008`, `UI-MAP-009`).
     const riverBuild = buildHydrologyRibbonMesh(
       snapshot,
       topology,
@@ -432,9 +449,13 @@ export class GlobeFeatureOverlayGroup {
       projectPoint,
       flatMode,
       surfaceSampler,
+      this.flowChevronMat,
     );
     if (riverBuild.mesh) {
       this.group.add(riverBuild.mesh);
+    }
+    if (riverBuild.chevronMesh) {
+      this.group.add(riverBuild.chevronMesh);
     }
 
     // 2. Curved intact road ribbons & dashed washed-out segments.
@@ -501,6 +522,13 @@ export class GlobeFeatureOverlayGroup {
         projectPoint(cell.centerUnit, gLift + (this.lastSemanticTier === "settlement" ? 0.0085 : 0.0055)),
       );
       plinth.quaternion.copy(quat);
+      const settlementHit: GlobeRayHit = {
+        hitKind: "settlement",
+        cellId: settlement.cellId,
+        settlementId: settlement.settlementId,
+        label: settlement.isHq ? `${settlement.settlementName} (HQ)` : settlement.settlementName,
+      };
+      plinth.userData.pickHit = settlementHit;
       this.group.add(plinth);
 
       if (settlement.isHq && this.lastSemanticTier !== "settlement") {
@@ -510,6 +538,7 @@ export class GlobeFeatureOverlayGroup {
         );
         spire.position.copy(projectPoint(cell.centerUnit, gLift + 0.006 + 0.008 * markerScale));
         spire.quaternion.copy(quat);
+        spire.userData.pickHit = settlementHit;
         this.group.add(spire);
       }
 
@@ -623,6 +652,12 @@ export class GlobeFeatureOverlayGroup {
       const up = surfaceNormalFor(convoyUnit);
       const quat = new THREE.Quaternion().setFromUnitVectors(yUp, up);
 
+      const convoyHit: GlobeRayHit = {
+        hitKind: "convoy",
+        cellId: convoy.projectedCellId,
+        convoyId: convoy.convoyId,
+        label: `${convoy.label} (${convoy.status})`,
+      };
       if (statusLower.includes("lost") || statusLower.includes("missing")) {
         lostConvoyCount += 1;
         const pCenter = pos;
@@ -640,6 +675,7 @@ export class GlobeFeatureOverlayGroup {
         );
         marker.position.copy(pos);
         marker.quaternion.copy(quat);
+        marker.userData.pickHit = convoyHit;
         this.group.add(marker);
       } else if (statusLower.includes("confirmed") || statusLower.includes("live")) {
         confirmedConvoyCount += 1;
@@ -649,6 +685,7 @@ export class GlobeFeatureOverlayGroup {
         );
         marker.position.copy(pos);
         marker.quaternion.copy(quat);
+        marker.userData.pickHit = convoyHit;
         this.group.add(marker);
       } else {
         projectedConvoyCount += 1;
@@ -658,6 +695,7 @@ export class GlobeFeatureOverlayGroup {
         );
         marker.position.copy(pos);
         marker.quaternion.copy(quat);
+        marker.userData.pickHit = convoyHit;
         this.group.add(marker);
       }
 
@@ -889,12 +927,19 @@ export class GlobeFeatureOverlayGroup {
         const fMat = isFresh ? this.formationFreshMat : this.formationStaleMat;
         const fLift = terrainHeightAt(fUnit, formation.currentCellId);
 
+        const formationHit: GlobeRayHit = {
+          hitKind: "formation",
+          cellId: formation.currentCellId,
+          formationId: formation.formationId,
+          label: `${formation.label} (${formation.commanderName})`,
+        };
         const baseBlock = new THREE.Mesh(
           new THREE.BoxGeometry(0.014 * markerScale, 0.005 * markerScale, 0.009 * markerScale),
           fMat,
         );
         baseBlock.position.copy(projectPoint(fUnit, fLift + 0.0065));
         baseBlock.quaternion.copy(quat);
+        baseBlock.userData.pickHit = formationHit;
         this.group.add(baseBlock);
 
         const banner = new THREE.Mesh(
@@ -903,6 +948,7 @@ export class GlobeFeatureOverlayGroup {
         );
         banner.position.copy(projectPoint(fUnit, fLift + 0.0065 + 0.007 * markerScale));
         banner.quaternion.copy(quat);
+        banner.userData.pickHit = formationHit;
         this.group.add(banner);
 
         this.labelAnchors.push({
@@ -1029,6 +1075,7 @@ export class GlobeFeatureOverlayGroup {
     this.clearFeatureMeshes();
     this.detailClusters.dispose();
     this.riverMat.dispose();
+    this.flowChevronMat.dispose();
     this.roadMat.dispose();
     this.dashedRouteMat.dispose();
     this.previewRouteMat.dispose();

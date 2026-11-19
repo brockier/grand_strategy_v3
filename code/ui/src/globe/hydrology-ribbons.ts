@@ -546,13 +546,60 @@ function appendRibbonStrip(
 
 export interface RiverRibbonBuildResult {
   readonly mesh: THREE.Mesh | null;
+  readonly chevronMesh: THREE.Mesh | null;
   readonly renderedRiverCount: number;
   readonly floodedRiverCount: number;
 }
 
+function catmullRomPointOnSphere(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, t: number): Vec3 {
+  const t2 = t * t;
+  const t3 = t2 * t;
+  const evalAxis = (a: number, b: number, c: number, d: number) =>
+    0.5 *
+    (2 * b +
+      (-a + c) * t +
+      (2 * a - 5 * b + 4 * c - d) * t2 +
+      (-a + 3 * b - 3 * c + d) * t3);
+  return norm3([
+    evalAxis(p0[0], p1[0], p2[0], p3[0]),
+    evalAxis(p0[1], p1[1], p2[1], p3[1]),
+    evalAxis(p0[2], p1[2], p2[2], p3[2]),
+  ]);
+}
+
+function appendFlowChevron(
+  positions: number[],
+  normals: number[],
+  uvs: number[],
+  indices: number[],
+  center: THREE.Vector3,
+  tangent: THREE.Vector3,
+  up: THREE.Vector3,
+  size: number,
+): void {
+  const side = new THREE.Vector3().crossVectors(up, tangent);
+  if (side.lengthSq() < 1e-12) return;
+  side.normalize();
+
+  const lifted = center.clone().addScaledVector(up, size * 0.14);
+  const tip = lifted.clone().addScaledVector(tangent, size * 1.15);
+  const notch = lifted.clone().addScaledVector(tangent, size * 0.12);
+  const leftWing = lifted.clone().addScaledVector(tangent, -size * 0.72).addScaledVector(side, size * 0.85);
+  const rightWing = lifted.clone().addScaledVector(tangent, -size * 0.72).addScaledVector(side, -size * 0.85);
+
+  const base = positions.length / 3;
+  for (const v of [tip, leftWing, notch, rightWing]) {
+    positions.push(v.x, v.y, v.z);
+    normals.push(up.x, up.y, up.z);
+    uvs.push(0.5, 0.5);
+  }
+  indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+}
+
 /**
- * Constructs single tapered, meandering triangle-strip river ribbons strictly inside surveyed land,
- * clipping cleanly at unexplored horizons and land/sea shorelines (`UI-GLB-006`, `UI-MAP-003`, `UI-MAP-004`, `UI-MAP-008`).
+ * Constructs contiguous C1 Catmull-Rom meandering river ribbons across surveyed & stale land cells,
+ * snapping tributaries seamlessly into trunk confluences, terminating strictly at sea shorelines, inland lakes,
+ * or unexplored fog horizons, and emitting downstream flow chevrons (`UI-GLB-006`, `UI-MAP-008`, `UI-MAP-009`).
  */
 export function buildHydrologyRibbonMesh(
   snapshot: DiegeticSnapshot,
@@ -564,6 +611,7 @@ export function buildHydrologyRibbonMesh(
   projectPoint: SurfacePointProjector,
   flatMode: boolean,
   existingSampler?: ShaderTerrainSurfaceSampler,
+  chevronMaterial?: THREE.Material,
 ): RiverRibbonBuildResult {
   const knownById = new Map<number, KnownCellDto>();
   for (const c of snapshot.knownCells) {
@@ -577,60 +625,257 @@ export function buildHydrologyRibbonMesh(
   const uvs: number[] = [];
   const indices: number[] = [];
 
+  const chevPos: number[] = [];
+  const chevNorm: number[] = [];
+  const chevUv: number[] = [];
+  const chevIdx: number[] = [];
+
   let renderedRiverCount = 0;
   let floodedRiverCount = 0;
   const densityScale = Math.sqrt(Math.max(1, topology.cellCount) / 642);
   const zoomWidthScale = Math.max(0.28, 0.55 + 0.45 * altitudeNorm) / Math.max(1, densityScale * 0.68);
   const flatScale = flatMode ? 0.65 : 1.0;
 
+  // Resolve directed channel graph over known non-ocean land cells.
+  const dsMap = new Map<number, number>();
+  const incomingMap = new Map<number, number[]>();
+
   for (const cell of snapshot.knownCells) {
-    if (cell.tier !== "surveyed") continue;
+    if (cell.tier !== "surveyed" && cell.tier !== "stale") continue;
     if (cell.isOcean || cell.elevationM < 0) continue;
-    if (cell.riverDownstreamCellId === null || cell.riverDownstreamCellId === undefined) continue;
 
-    const src = cellMap.get(cell.cellId);
-    const dstGeom = cellMap.get(cell.riverDownstreamCellId);
-    if (!src || !dstGeom) continue;
-
-    const dstId = cell.riverDownstreamCellId;
-    const dstKnown = knownById.get(dstId);
-    const dstIsOcean = Boolean(dstKnown && dstKnown.tier !== "unexplored" && (dstKnown.isOcean || dstKnown.elevationM < 0));
-    const truncatedAtFog = !dstKnown || dstKnown.tier === "unexplored" || (dstKnown.tier === "rumored" && !dstIsOcean);
+    const dsId =
+      cell.riverChannelDownstreamCellId !== undefined
+        ? cell.riverChannelDownstreamCellId
+        : (cell.riverDownstreamCellId ?? null);
+    if (dsId === null || dsId === cell.cellId) continue;
+    if (!cellMap.has(cell.cellId) || !cellMap.has(dsId)) continue;
 
     const obsW = weatherByCell.get(cell.cellId);
     const floodStage = obsW?.floodStage01 ?? 0;
-
     const strahler = cell.strahlerOrder ?? 1;
     const flowNorm = cell.riverFlowNorm01 ?? 0.35;
-    if (altitudeNorm > 0.72 && strahler <= 1 && flowNorm < 0.25 && floodStage <= 0.25) {
+    const hasEngineChannel = cell.riverChannelDownstreamCellId !== undefined;
+    if (
+      !hasEngineChannel &&
+      altitudeNorm > 0.72 &&
+      strahler <= 1 &&
+      flowNorm < 0.25 &&
+      floodStage <= 0.25
+    ) {
       continue;
     }
 
-    const segCount = dstIsOcean ? 16 : altitudeNorm < 0.28 ? 12 : 8;
-    const { points, widthsNorm } = buildMeanderingSpine(
-      src.centerUnit,
-      dstGeom.centerUnit,
-      cell.cellId,
-      dstId,
-      truncatedAtFog,
-      segCount,
-    );
+    dsMap.set(cell.cellId, dsId);
+    const prevList = incomingMap.get(dsId) ?? [];
+    prevList.push(cell.cellId);
+    incomingMap.set(dsId, prevList);
+  }
 
-    const baseHalfW =
-      (0.0012 + Math.min(4, strahler) * 0.00055 + flowNorm * 0.00085) *
+  // Ensure downstream continuation visibility closure in legacy fixtures if upstream trunk is visible.
+  const scoreForMainstem = (cid: number): number => {
+    const k = knownById.get(cid);
+    if (!k || k.tier === "unexplored" || k.tier === "rumored") return 0;
+    return (k.riverDischargeM3S ?? 0) + (k.strahlerOrder ?? 1) * 100 + (k.riverFlowNorm01 ?? 0) * 50;
+  };
+
+  // Pick one primary trunk upstream predecessor per node so mainstems form unbroken chains.
+  const primaryPred = new Map<number, number>();
+  for (const [dst, preds] of incomingMap.entries()) {
+    preds.sort((a, b) => scoreForMainstem(b) - scoreForMainstem(a) || a - b);
+    primaryPred.set(dst, preds[0]);
+  }
+
+  // Collect every chain start: source headwaters or secondary tributary heads.
+  const chainStarts: number[] = [];
+  for (const src of dsMap.keys()) {
+    const preds = incomingMap.get(src) ?? [];
+    if (preds.length === 0) {
+      chainStarts.push(src);
+    }
+    const dst = dsMap.get(src)!;
+    if (primaryPred.get(dst) !== src) {
+      // Branch junction: src terminates cleanly at dst if not already started; ensure secondary branches start cleanly.
+    }
+  }
+  chainStarts.sort((a, b) => a - b);
+
+  // Decompose all directed edges into vertex-disjoint trunk + tributary polylines sharing confluence nodes.
+  const visitedEdges = new Set<string>();
+  const chains: number[][] = [];
+
+  const traceChainFrom = (start: number) => {
+    const chain: number[] = [start];
+    let cur = start;
+    const seenNodes = new Set<number>([start]);
+    while (dsMap.has(cur)) {
+      const next = dsMap.get(cur)!;
+      const eKey = `${cur}->${next}`;
+      if (visitedEdges.has(eKey)) break;
+      visitedEdges.add(eKey);
+      chain.push(next);
+      if (seenNodes.has(next)) break;
+      seenNodes.add(next);
+      if (primaryPred.get(next) !== cur) {
+        break;
+      }
+      cur = next;
+    }
+    if (chain.length >= 2) {
+      chains.push(chain);
+    }
+  };
+
+  // Trace all primary headwaters first, then any remaining non-headwater primary stems in cycles/branches.
+  for (const s of chainStarts) {
+    traceChainFrom(s);
+  }
+  for (const s of Array.from(dsMap.keys()).sort((a, b) => a - b)) {
+    const dst = dsMap.get(s)!;
+    if (!visitedEdges.has(`${s}->${dst}`)) {
+      traceChainFrom(s);
+    }
+  }
+
+  const halfWidthForCell = (cellId: number): { readonly hw: number; readonly flooded: boolean } => {
+    const k = knownById.get(cellId);
+    const obsW = weatherByCell.get(cellId);
+    const floodStage = obsW?.floodStage01 ?? 0;
+    const strahler = k && (k.tier === "surveyed" || k.tier === "stale") ? (k.strahlerOrder ?? 1) : 1;
+    const flowNorm = k && (k.tier === "surveyed" || k.tier === "stale") ? (k.riverFlowNorm01 ?? 0.35) : 0.35;
+    const q = k && (k.tier === "surveyed" || k.tier === "stale") ? (k.riverDischargeM3S ?? 0) : 0;
+    const qFactor = q > 0 ? Math.min(2.6, Math.log1p(q / 25) * 0.55) : flowNorm;
+    const hw =
+      (0.00095 + Math.min(4, strahler) * 0.00042 + qFactor * 0.00072) *
       (1 + floodStage * 0.85) *
       zoomWidthScale;
+    return { hw, flooded: floodStage > 0.25 };
+  };
+
+  for (const chain of chains) {
+    interface SampleNode {
+      readonly u: Vec3;
+      readonly hintA: number;
+      readonly hintB: number;
+      readonly baseHw: number;
+      readonly wNorm: number;
+      readonly dstIsOcean: boolean;
+    }
+
+    const knotPoints: Vec3[] = [];
+    const knotMeta: Array<{
+      readonly srcId: number;
+      readonly dstId: number;
+      readonly baseHw: number;
+      readonly wNorm: number;
+      readonly dstIsOcean: boolean;
+    }> = [];
+
+    for (let eIdx = 0; eIdx + 1 < chain.length; eIdx += 1) {
+      const uId = chain[eIdx];
+      const vId = chain[eIdx + 1];
+      const uGeom = cellMap.get(uId)!;
+      const vGeom = cellMap.get(vId)!;
+      const vKnown = knownById.get(vId);
+      const vIsOcean = Boolean(vKnown && vKnown.tier !== "unexplored" && (vKnown.isOcean || vKnown.elevationM < 0));
+      const vIsLake = Boolean(vKnown && (vKnown.tier === "surveyed" || vKnown.tier === "stale") && vKnown.isLake);
+      const truncatedAtFog = !vKnown || vKnown.tier === "unexplored" || (vKnown.tier === "rumored" && !vIsOcean);
+
+      const uInfo = halfWidthForCell(uId);
+      if (uInfo.flooded) floodedRiverCount += 1;
+
+      const uPt = uGeom.centerUnit;
+      const dir = sub3(vGeom.centerUnit, uPt);
+      const segLen = Math.hypot(dir[0], dir[1], dir[2]);
+      const [east, north] = tangentBasis(uPt);
+      const chordDir = segLen > 1e-6 ? scale3(dir, 1 / segLen) : east;
+      const latRaw = cross3(uPt, chordDir);
+      const latLen = Math.hypot(latRaw[0], latRaw[1], latRaw[2]);
+      const lateral = latLen > 1e-6 ? scale3(latRaw, 1 / latLen) : north;
+      const amp = Math.min(0.018, segLen * 0.20) * (truncatedAtFog ? 0.55 : 1.0);
+      const offMid = deterministicSignedNoise(uId, vId, 17) * amp;
+
+      if (eIdx === 0) {
+        knotPoints.push(uPt);
+        knotMeta.push({
+          srcId: uId,
+          dstId: vId,
+          baseHw: uInfo.hw,
+          wNorm: 1.0,
+          dstIsOcean: vIsOcean,
+        });
+      }
+
+      if (truncatedAtFog) {
+        const qPt = norm3(add3(slerpUnitVec3(uPt, vGeom.centerUnit, 0.21), scale3(lateral, offMid * 0.45)));
+        const fogEnd = slerpUnitVec3(uPt, vGeom.centerUnit, 0.42);
+        knotPoints.push(qPt, fogEnd);
+        knotMeta.push(
+          { srcId: uId, dstId: vId, baseHw: uInfo.hw, wNorm: 0.52, dstIsOcean: false },
+          { srcId: uId, dstId: vId, baseHw: uInfo.hw, wNorm: 0.05, dstIsOcean: false },
+        );
+        break;
+      }
+
+      const midPt = norm3(add3(slerpUnitVec3(uPt, vGeom.centerUnit, 0.5), scale3(lateral, offMid)));
+      const vHw = dsMap.has(vId) || vIsLake ? halfWidthForCell(vId).hw : uInfo.hw * 1.08;
+      const midHw = 0.5 * (uInfo.hw + vHw);
+      knotPoints.push(midPt, vGeom.centerUnit);
+      knotMeta.push(
+        { srcId: uId, dstId: vId, baseHw: midHw, wNorm: 1.0, dstIsOcean: vIsOcean },
+        { srcId: uId, dstId: vId, baseHw: vHw, wNorm: vIsLake ? 0.72 : 1.0, dstIsOcean: vIsOcean },
+      );
+    }
+
+    if (knotPoints.length < 2) continue;
+
+    // Densify chain along Catmull-Rom spline with shared confluence vertices preserved identically.
+    const samples: SampleNode[] = [];
+    const subsPerSpan = altitudeNorm < 0.28 ? 6 : 4;
+    for (let k = 0; k + 1 < knotPoints.length; k += 1) {
+      const p0 = knotPoints[Math.max(0, k - 1)];
+      const p1 = knotPoints[k];
+      const p2 = knotPoints[k + 1];
+      const p3 = knotPoints[Math.min(knotPoints.length - 1, k + 2)];
+      const metaA = knotMeta[k];
+      const metaB = knotMeta[k + 1];
+
+      for (let s = 0; s < subsPerSpan; s += 1) {
+        if (k > 0 && s === 0) continue;
+        const t = s / subsPerSpan;
+        samples.push({
+          u: s === 0 ? p1 : catmullRomPointOnSphere(p0, p1, p2, p3, t),
+          hintA: metaB.srcId,
+          hintB: metaB.dstId,
+          baseHw: metaA.baseHw + (metaB.baseHw - metaA.baseHw) * t,
+          wNorm: metaA.wNorm + (metaB.wNorm - metaA.wNorm) * t,
+          dstIsOcean: metaB.dstIsOcean,
+        });
+      }
+      if (k + 2 === knotPoints.length) {
+        samples.push({
+          u: p2,
+          hintA: metaB.srcId,
+          hintB: metaB.dstId,
+          baseHw: metaB.baseHw,
+          wNorm: metaB.wNorm,
+          dstIsOcean: metaB.dstIsOcean,
+        });
+      }
+    }
 
     let spanUnits: Vec3[] = [];
     let spanHalfWidths: number[] = [];
-    let prevUnit: Vec3 | null = null;
-    let prevSurf = surfaceSampler.sample(points[0], cell.cellId, dstId, altitudeNorm);
+    let spanHintA: number[] = [];
+    let spanHintB: number[] = [];
     let emittedAnySpan = false;
 
     const flushSpan = () => {
       if (spanUnits.length < 2) {
         spanUnits = [];
         spanHalfWidths = [];
+        spanHintA = [];
+        spanHintB = [];
         return;
       }
       const projectedPts: THREE.Vector3[] = [];
@@ -640,104 +885,142 @@ export function buildHydrologyRibbonMesh(
         const u = spanUnits[k];
         const prevU = spanUnits[Math.max(0, k - 1)];
         const nextU = spanUnits[Math.min(spanUnits.length - 1, k + 1)];
-        const s = surfaceSampler.sample(u, cell.cellId, dstId, altitudeNorm);
+        const s = surfaceSampler.sample(u, spanHintA[k], spanHintB[k], altitudeNorm);
         const lift = (flatMode ? s.vertexReliefHeight * 0.65 : s.vertexReliefHeight) + (flatMode ? 0.0015 : 0.0008);
-        const guardedHw = safeDryHalfWidth(
-          surfaceSampler,
-          u,
-          prevU,
-          nextU,
-          spanHalfWidths[k] / flatScale,
-          cell.cellId,
-          dstId,
-          altitudeNorm,
-        ) * flatScale;
+        const guardedHw =
+          safeDryHalfWidth(
+            surfaceSampler,
+            u,
+            prevU,
+            nextU,
+            spanHalfWidths[k] / flatScale,
+            spanHintA[k],
+            spanHintB[k],
+            altitudeNorm,
+          ) * flatScale;
         projectedPts.push(projectPoint(u, lift));
         guardedHalfWidths.push(guardedHw);
         upNormals.push(
-          flatMode
-            ? new THREE.Vector3(0, 0, 1)
-            : new THREE.Vector3(u[0], u[1], u[2]).normalize(),
+          flatMode ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(u[0], u[1], u[2]).normalize(),
         );
       }
       appendRibbonStrip(positions, normals, uvs, indices, projectedPts, guardedHalfWidths, upNormals);
+
+      if (altitudeNorm < 0.65 && projectedPts.length >= 4) {
+        const step = Math.max(4, Math.floor(projectedPts.length / Math.max(1, chain.length - 1)));
+        for (let cIdx = Math.floor(step * 0.5); cIdx + 1 < projectedPts.length; cIdx += step) {
+          const prevP = projectedPts[Math.max(0, cIdx - 1)];
+          const nextP = projectedPts[Math.min(projectedPts.length - 1, cIdx + 1)];
+          const tangent = nextP.clone().sub(prevP);
+          if (tangent.lengthSq() > 1e-12 && nextP.distanceTo(prevP) < 0.5) {
+            tangent.normalize();
+            const chevronSize = Math.max(0.00075, guardedHalfWidths[cIdx] * 0.92);
+            appendFlowChevron(
+              chevPos,
+              chevNorm,
+              chevUv,
+              chevIdx,
+              projectedPts[cIdx],
+              tangent,
+              upNormals[cIdx],
+              chevronSize,
+            );
+          }
+        }
+      }
+
       emittedAnySpan = true;
       spanUnits = [];
       spanHalfWidths = [];
+      spanHintA = [];
+      spanHintB = [];
     };
 
-    const pushDryPoint = (u: Vec3, wNorm: number, elevM: number, isMouthCap: boolean) => {
+    const pushDrySample = (sm: SampleNode, elevM: number, isMouthCap: boolean) => {
       const inlandSwell =
-        dstIsOcean && !isMouthCap
+        sm.dstIsOcean && !isMouthCap
           ? 1.0 + 0.12 * smoothstep(35.0, 6.0, elevM) * smoothstep(1.0, 8.0, elevM)
           : 1.0;
       const capScale = isMouthCap ? 0.35 : 1.0;
-      spanUnits.push(u);
-      spanHalfWidths.push(baseHalfW * wNorm * inlandSwell * capScale * flatScale);
+      spanUnits.push(sm.u);
+      spanHalfWidths.push(sm.baseHw * sm.wNorm * inlandSwell * capScale * flatScale);
+      spanHintA.push(sm.hintA);
+      spanHintB.push(sm.hintB);
     };
 
+    let prevSample = samples[0];
+    let prevSurf = surfaceSampler.sample(prevSample.u, prevSample.hintA, prevSample.hintB, altitudeNorm);
     if (prevSurf.isExplored && prevSurf.effectiveElevM >= SHORELINE_STOP_ELEV_M) {
-      pushDryPoint(points[0], widthsNorm[0], prevSurf.effectiveElevM, false);
+      pushDrySample(prevSample, prevSurf.effectiveElevM, false);
     }
-    prevUnit = points[0];
 
-    for (let i = 1; i < points.length; i += 1) {
-      const curUnit = points[i];
-      const curSurf = surfaceSampler.sample(curUnit, cell.cellId, dstId, altitudeNorm);
+    for (let i = 1; i < samples.length; i += 1) {
+      const curSample = samples[i];
+      const curSurf = surfaceSampler.sample(curSample.u, curSample.hintA, curSample.hintB, altitudeNorm);
       const prevDry = prevSurf.isExplored && prevSurf.effectiveElevM >= SHORELINE_STOP_ELEV_M;
       const curDry = curSurf.isExplored && curSurf.effectiveElevM >= SHORELINE_STOP_ELEV_M;
 
       if (prevDry && curDry) {
-        pushDryPoint(curUnit, widthsNorm[i], curSurf.effectiveElevM, false);
+        pushDrySample(curSample, curSurf.effectiveElevM, false);
       } else if (prevDry && !curDry) {
-        if (curSurf.isExplored && prevUnit) {
+        if (curSurf.isExplored) {
           const shorePt = bisectShorelineUnit(
             surfaceSampler,
-            prevUnit,
-            curUnit,
-            cell.cellId,
-            dstId,
+            prevSample.u,
+            curSample.u,
+            curSample.hintA,
+            curSample.hintB,
             altitudeNorm,
           );
-          const shoreSurf = surfaceSampler.sample(shorePt, cell.cellId, dstId, altitudeNorm);
-          pushDryPoint(shorePt, widthsNorm[i] * 0.65, shoreSurf.effectiveElevM, true);
+          const shoreSurf = surfaceSampler.sample(
+            shorePt,
+            curSample.hintA,
+            curSample.hintB,
+            altitudeNorm,
+          );
+          pushDrySample(
+            { ...curSample, u: shorePt, wNorm: curSample.wNorm * 0.65 },
+            shoreSurf.effectiveElevM,
+            true,
+          );
         }
         flushSpan();
-        if (dstIsOcean) {
+        if (curSample.dstIsOcean) {
           break;
         }
       } else if (!prevDry && curDry) {
-        if (prevSurf.isExplored && prevUnit) {
+        if (prevSurf.isExplored) {
           const entryPt = bisectShorelineUnit(
             surfaceSampler,
-            curUnit,
-            prevUnit,
-            cell.cellId,
-            dstId,
+            curSample.u,
+            prevSample.u,
+            curSample.hintA,
+            curSample.hintB,
             altitudeNorm,
           );
-          const entrySurf = surfaceSampler.sample(entryPt, cell.cellId, dstId, altitudeNorm);
-          pushDryPoint(entryPt, widthsNorm[i], entrySurf.effectiveElevM, false);
+          const entrySurf = surfaceSampler.sample(
+            entryPt,
+            curSample.hintA,
+            curSample.hintB,
+            altitudeNorm,
+          );
+          pushDrySample({ ...curSample, u: entryPt }, entrySurf.effectiveElevM, false);
         }
-        pushDryPoint(curUnit, widthsNorm[i], curSurf.effectiveElevM, false);
+        pushDrySample(curSample, curSurf.effectiveElevM, false);
       }
 
-      prevUnit = curUnit;
+      prevSample = curSample;
       prevSurf = curSurf;
     }
 
     flushSpan();
-
     if (emittedAnySpan) {
       renderedRiverCount += 1;
-      if (floodStage > 0.25) {
-        floodedRiverCount += 1;
-      }
     }
   }
 
   if (indices.length === 0) {
-    return { mesh: null, renderedRiverCount, floodedRiverCount };
+    return { mesh: null, chevronMesh: null, renderedRiverCount, floodedRiverCount };
   }
 
   const geom = new THREE.BufferGeometry();
@@ -749,7 +1032,20 @@ export function buildHydrologyRibbonMesh(
 
   const mesh = new THREE.Mesh(geom, material);
   mesh.frustumCulled = false;
-  return { mesh, renderedRiverCount, floodedRiverCount };
+
+  let chevronMesh: THREE.Mesh | null = null;
+  if (chevIdx.length > 0 && chevronMaterial) {
+    const chevGeom = new THREE.BufferGeometry();
+    chevGeom.setAttribute("position", new THREE.Float32BufferAttribute(chevPos, 3));
+    chevGeom.setAttribute("normal", new THREE.Float32BufferAttribute(chevNorm, 3));
+    chevGeom.setAttribute("uv", new THREE.Float32BufferAttribute(chevUv, 2));
+    chevGeom.setIndex(chevIdx);
+    chevGeom.computeBoundingSphere();
+    chevronMesh = new THREE.Mesh(chevGeom, chevronMaterial);
+    chevronMesh.frustumCulled = false;
+  }
+
+  return { mesh, chevronMesh, renderedRiverCount, floodedRiverCount };
 }
 
 /**
@@ -808,7 +1104,12 @@ export function buildRoadRibbonMesh(
     const projectedPts: THREE.Vector3[] = [];
     const halfWidths: number[] = [];
     const upNormals: THREE.Vector3[] = [];
-    const roadMul = road.infraKey.includes("metalled") || road.infraKey.includes("rail") ? 1.35 : 1.0;
+    const roadMul =
+      road.infraKey.includes("metalled") || road.infraKey.includes("rail")
+        ? 1.40
+        : road.infraKey.includes("timber")
+          ? 1.05
+          : 0.80;
     for (const pt of points) {
       const s = surfaceSampler.sample(pt, road.fromCellId, road.toCellId, altitudeNorm);
       const lift = (flatMode ? s.vertexReliefHeight * 0.65 : s.vertexReliefHeight) + (flatMode ? 0.002 : 0.0012);

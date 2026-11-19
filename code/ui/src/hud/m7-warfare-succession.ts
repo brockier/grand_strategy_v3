@@ -25,7 +25,7 @@ export function createWarfareCommandWindowPlugin(): WindowContentPlugin {
     defaultTitle: "Operational Warfare Command",
     minWidth: 500,
     minHeight: 380,
-    hotkey: "w",
+    hotkey: "f",
     mountContent(container, _instanceKey, spine) {
       const tabGroup = createAccessibleTabGroup(document, {
         prefix: "warfare-command",
