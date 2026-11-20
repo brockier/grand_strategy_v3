@@ -1020,4 +1020,92 @@ describe("Photorealistic Planet Presentation, Multi-Tier Semantic Zoom LOD, De-C
       (globalThis as unknown as { HTMLElement: unknown }).HTMLElement = prevHtml;
     }
   });
+
+  // @req UI-GLB-003
+  it("automatically centers and north-aligns the starting HQ colony even when placed on the back hemisphere at boot without hijacking later panning (UI-GLB-003)", async () => {
+    const topo = generateGoldbergTopology(3);
+    const backHqCell = topo.cells.find((c) => c.centerUnit[2] < -0.7)!;
+    expect(backHqCell).toBeDefined();
+
+    const dom = new JSDOM(`<!doctype html><html><body><div id="app-shell"></div></body></html>`);
+    const prevDoc = (globalThis as unknown as { document: unknown }).document;
+    const prevWin = (globalThis as unknown as { window: unknown }).window;
+    const prevHtml = (globalThis as unknown as { HTMLElement: unknown }).HTMLElement;
+    (globalThis as unknown as { document: unknown }).document = dom.window.document;
+    (globalThis as unknown as { window: unknown }).window = dom.window;
+    (globalThis as unknown as { HTMLElement: unknown }).HTMLElement = dom.window.HTMLElement;
+
+    const canvas = dom.window.document.createElement("canvas");
+    Object.defineProperty(canvas, "clientWidth", { value: 1280 });
+    Object.defineProperty(canvas, "clientHeight", { value: 800 });
+    canvas.getContext = (() => null) as unknown as typeof canvas.getContext;
+    dom.window.document.getElementById("app-shell")!.appendChild(canvas);
+
+    const store = new DiegeticStore();
+    const bus = new UiIntentBus();
+    const viewport = await initializeGlobeViewport(canvas, store, bus, []);
+    try {
+      const base = CANONICAL_M3_M4;
+      const initialSnap: DiegeticSnapshot = {
+        ...base,
+        globeTopology: { subdivision: 3, cellCount: topo.cellCount },
+        hqPresence: {
+          ...base.hqPresence,
+          cellId: backHqCell.cellId,
+          settlementName: "Antipode Landing",
+        },
+        knownSettlements: [
+          {
+            settlementId: 0,
+            settlementName: "Antipode Landing",
+            cellId: backHqCell.cellId,
+            isHq: true,
+          },
+        ],
+        knownCells: [
+          {
+            tier: "surveyed",
+            cellId: backHqCell.cellId,
+            observedTick: 1,
+            isLiveHqSight: true,
+            elevationM: 42,
+            confidence01: 1.0,
+            provenanceLabel: "Direct Observation",
+            biomeKey: "temperate_grassland",
+            isOcean: false,
+            strahlerOrder: 1,
+          },
+        ],
+      };
+
+      store.ingestSnapshot(initialSnap);
+      viewport.updateFromSnapshot(initialSnap);
+
+      expect(greatCircleRadians(viewport.camera.getFocusUnit(), backHqCell.centerUnit)).toBeLessThan(1e-4);
+      expect(Math.abs(viewport.camera.getHeadingRadians())).toBeLessThan(1e-3);
+
+      // User manually pans away -> subsequent tick snapshots must preserve the user's camera focus.
+      viewport.camera.panByPixels(140, -60, 800);
+      const pannedFocus = viewport.camera.getFocusUnit();
+      expect(greatCircleRadians(pannedFocus, backHqCell.centerUnit)).toBeGreaterThan(0.05);
+
+      const nextTickSnap: DiegeticSnapshot = {
+        ...initialSnap,
+        clockAndNotifications: {
+          ...initialSnap.clockAndNotifications,
+          tick: initialSnap.clockAndNotifications.tick + 1,
+        },
+      };
+      store.ingestSnapshot(nextTickSnap);
+      viewport.updateFromSnapshot(nextTickSnap);
+
+      expect(greatCircleRadians(viewport.camera.getFocusUnit(), pannedFocus)).toBeLessThan(1e-6);
+    } finally {
+      viewport.dispose();
+      dom.window.close();
+      (globalThis as unknown as { document: unknown }).document = prevDoc;
+      (globalThis as unknown as { window: unknown }).window = prevWin;
+      (globalThis as unknown as { HTMLElement: unknown }).HTMLElement = prevHtml;
+    }
+  });
 });

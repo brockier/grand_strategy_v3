@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, session, type WebContents } from "electron";
+import { app, BrowserWindow, ipcMain, screen, session, type WebContents } from "electron";
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -8,6 +8,7 @@ import { parsePlayerCommand } from "./ipc-validator";
 import { runM2E2ESmokePhase } from "./m2-e2e-smoke";
 import { runM3M4E2ESmokePhase } from "./m3-m4-e2e-smoke";
 import { runM5M6M7E2ESmoke } from "./m5-m6-m7-e2e-smoke";
+import { BASE_WINDOW_HEIGHT, BASE_WINDOW_WIDTH, computeInitialWindowSize } from "./window-bounds";
 
 function getArgValue(prefix: string): string | null {
   for (const arg of process.argv) {
@@ -730,9 +731,14 @@ async function startOrGetSessionState(paths: RuntimePaths): Promise<unknown> {
 function createMainWindow(paths: RuntimePaths): BrowserWindow {
   const headless = (process.env.NG_HEADLESS_TEST === "1" || SMOKE_MODE !== null) && !SMOKE_VISIBLE;
   const isOzoneHeadless = process.argv.some((arg) => arg.includes("ozone-platform=headless"));
+  const initialSize =
+    headless || isOzoneHeadless
+      ? { width: BASE_WINDOW_WIDTH, height: BASE_WINDOW_HEIGHT }
+      : computeInitialWindowSize(screen.getPrimaryDisplay()?.workAreaSize);
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: initialSize.width,
+    height: initialSize.height,
+    center: !headless && !isOzoneHeadless,
     show: !headless || isOzoneHeadless,
     ...(SMOKE_VISIBLE ? { focusable: false, skipTaskbar: true } : {}),
     backgroundColor: "#11100e",
@@ -746,7 +752,7 @@ function createMainWindow(paths: RuntimePaths): BrowserWindow {
     },
   });
   if (isOzoneHeadless) {
-    win.setContentSize(1280, 800);
+    win.setContentSize(BASE_WINDOW_WIDTH, BASE_WINDOW_HEIGHT);
   }
   void win.loadFile(paths.indexHtml);
   return win;
@@ -961,10 +967,14 @@ app.whenReady().then(() => {
           const rows = Array.from(document.querySelectorAll("#mod-diagnostic-dialog tbody tr")).map(tr => tr.textContent);
           const rt = window.__ngM2Runtime;
           let globeAvgRgb = [0, 0, 0];
+          let focusCellId = null;
+          let hqCellId = null;
           if (rt && rt.globe && window.__ngBootStatus?.mode === "live") {
             rt.globe.stepRender(16);
             const sample = rt.globe.captureFrameSample(48);
             if (sample) globeAvgRgb = sample.averageRgb;
+            focusCellId = rt.globe.camera.getTelemetry().focusCellId;
+            hqCellId = rt.store.getSnapshot()?.hqPresence?.cellId ?? null;
           }
           return {
             status: window.__ngBootStatus,
@@ -972,6 +982,8 @@ app.whenReady().then(() => {
             dialogRows: rows,
             hudTitle: document.getElementById("hud-scenario-title")?.textContent ?? "",
             globeAvgRgb,
+            focusCellId,
+            hqCellId,
           };
         })()`);
 

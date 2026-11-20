@@ -14,6 +14,7 @@ import {
   norm3,
   scale3,
   sub3,
+  tangentBasis,
   UiIntentBus,
   unprojectFlat2DToUnit,
   Vec3,
@@ -183,6 +184,8 @@ export async function initializeGlobeViewport(
   let activeOverlayMode = "terrain";
   let weatherOverlayActive = false;
   let previewDestinationCellId: number | null = null;
+  let hasCenteredInitialColony = false;
+  let lastScenarioIdentity: string | null = null;
 
   const overlayRootId = "globe-overlay-root";
   let overlayRoot = document.getElementById(overlayRootId);
@@ -195,6 +198,7 @@ export async function initializeGlobeViewport(
 
   let renderer: THREE.WebGLRenderer | null = null;
   let scene: THREE.Scene | null = null;
+  let dirLight: THREE.DirectionalLight | null = null;
   let rafHandle = 0;
   let glContext: WebGL2RenderingContext | null = null;
 
@@ -222,7 +226,7 @@ export async function initializeGlobeViewport(
       new THREE.Color(0.24, 0.21, 0.18),
       1.35,
     );
-    const dirLight = new THREE.DirectionalLight(new THREE.Color(1.0, 0.96, 0.90), 1.85);
+    dirLight = new THREE.DirectionalLight(new THREE.Color(1.0, 0.96, 0.90), 1.85);
     dirLight.position.copy(sunDir).multiplyScalar(8);
     scene.add(hemiLight);
     scene.add(dirLight);
@@ -715,6 +719,31 @@ export async function initializeGlobeViewport(
 
     patchLod.updateForCamera(focusUnit, altNorm, projMorph);
     syncSelectionRingMesh();
+
+    orbitalCamera.camera.updateMatrixWorld();
+    const mElem = orbitalCamera.camera.matrixWorld.elements;
+    const camRight = new THREE.Vector3(mElem[0], mElem[1], mElem[2]);
+    const camUp = new THREE.Vector3(mElem[4], mElem[5], mElem[6]);
+    const camOut = new THREE.Vector3(mElem[8], mElem[9], mElem[10]);
+    const sceneSun = camOut
+      .clone()
+      .multiplyScalar(0.66)
+      .addScaledVector(camRight, 0.38)
+      .addScaledVector(camUp, 0.65)
+      .normalize();
+    if (dirLight) {
+      dirLight.position.copy(sceneSun).multiplyScalar(8);
+    }
+    if (projMode === "globe") {
+      sunDir.copy(sceneSun);
+    } else {
+      const [east, north] = tangentBasis(projOrigin);
+      const flatSun = norm3(
+        add3(scale3(projOrigin, 0.66), add3(scale3(east, 0.38), scale3(north, 0.65))),
+      );
+      sunDir.set(flatSun[0], flatSun[1], flatSun[2]);
+    }
+
     shaderCtrl.setCartographicState(
       blend,
       sunDir,
@@ -998,6 +1027,30 @@ export async function initializeGlobeViewport(
       patchLod.rebuildTopology(topology);
     }
     terrainSampler = createShaderTerrainSurfaceSampler(snapshot, topology);
+    const scenarioIdentity = `${snapshot.scenarioKey}:${snapshot.globeTopology.cellCount}`;
+    let centeredColonyNow = false;
+    if (!hasCenteredInitialColony || lastScenarioIdentity !== scenarioIdentity) {
+      const hqSettlement = snapshot.knownSettlements?.find((s) => s.isHq);
+      const startCellId =
+        snapshot.hqPresence?.cellId ??
+        hqSettlement?.cellId ??
+        snapshot.knownSettlements?.[0]?.cellId ??
+        null;
+      const startCell = startCellId !== null ? meshBuild.cellById.get(startCellId) : undefined;
+      if (startCell) {
+        hasCenteredInitialColony = true;
+        lastScenarioIdentity = scenarioIdentity;
+        orbitalCamera.flyToUnitVector(
+          startCell.centerUnit,
+          orbitalCamera.getAltitudeNorm(),
+          0,
+          true,
+        );
+        orbitalCamera.resetNorth(true);
+        orbitalCamera.setFocusCellId(startCell.cellId);
+        centeredColonyNow = true;
+      }
+    }
     orbitalCamera.refreshSurfaceTransform();
     shaderCtrl.uploadSnapshot(snapshot, selectedCellId, hoveredCellId);
     rebuildCurrentFeatures();
@@ -1005,6 +1058,9 @@ export async function initializeGlobeViewport(
       layer.onSnapshotUpdate(snapshot);
     }
     renderOnce();
+    if (centeredColonyNow) {
+      emitTelemetry();
+    }
   };
 
   if (currentSnapshot) {

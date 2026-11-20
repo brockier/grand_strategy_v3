@@ -3,6 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  computeInitialWindowSize,
+  TARGET_WINDOW_HEIGHT,
+  TARGET_WINDOW_WIDTH,
+} from "../electron/window-bounds";
 
 const UI_ROOT = path.resolve(__dirname, "..");
 const ELECTRON_BIN = path.join(UI_ROOT, "node_modules", ".bin", "electron");
@@ -41,6 +46,8 @@ interface SmokePayload {
     dialogRows: string[];
     hudTitle: string;
     globeAvgRgb: number[];
+    focusCellId?: number | null;
+    hqCellId?: number | null;
   };
   ackGood: { accepted: boolean; errorCode: string | null; message: string };
   ackBad: { accepted: boolean; errorCode: string | null; message: string };
@@ -114,6 +121,8 @@ describe("Electron Security Sandbox, GPU Geodesic Globe & Mod Recovery", () => {
     expect(["webgpu", "webgl2"]).toContain(status.gpuBackend);
     expect(status.shaderCompiled).toBe(true);
     expect(result.initial.hudTitle).toContain("The Unexplained Colony");
+    expect(result.initial.hqCellId).not.toBeNull();
+    expect(result.initial.focusCellId).toBe(result.initial.hqCellId);
 
     // UI-SHL-003 sandbox & IPC assertions
     expect(status.hasNodeRequire).toBe(false);
@@ -203,5 +212,27 @@ describe("Electron Security Sandbox, GPU Geodesic Globe & Mod Recovery", () => {
     expect(result.visibleSurface?.compositedEmpty).toBe(false);
     expect(result.visibleSurface?.compositedSize.width).toBeGreaterThanOrEqual(640);
     expect(result.visibleSurface?.compositedSize.height).toBeGreaterThanOrEqual(400);
+  });
+
+  // @req UI-SHL-001
+  it("sizes the startup desktop window to twice the 1280x800 baseline while clamping to the primary display work area (UI-SHL-001)", () => {
+    expect(TARGET_WINDOW_WIDTH).toBe(2560);
+    expect(TARGET_WINDOW_HEIGHT).toBe(1600);
+    expect(computeInitialWindowSize({ width: 3840, height: 2160 })).toEqual({
+      width: 2560,
+      height: 1600,
+    });
+    expect(computeInitialWindowSize({ width: 2560, height: 1400 })).toEqual({
+      width: 2560,
+      height: 1400,
+    });
+    expect(computeInitialWindowSize({ width: 1920, height: 1048 })).toEqual({
+      width: 1920,
+      height: 1048,
+    });
+    expect(computeInitialWindowSize(null)).toEqual({
+      width: 2560,
+      height: 1600,
+    });
   });
 });
