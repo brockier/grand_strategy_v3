@@ -63,11 +63,30 @@ export type ValidatedCommand =
       readonly doctrineKey: string;
       readonly noRetreat: boolean;
     }
-  | { readonly kind: "acknowledgeSuccession" };
+  | { readonly kind: "acknowledgeSuccession" }
+  | {
+      readonly kind: "constructDam";
+      readonly targetCell: number;
+      readonly ruleCurve: string;
+    }
+  | {
+      readonly kind: "setDamRuleCurve";
+      readonly targetCell: number;
+      readonly ruleCurve: string;
+    };
 
 export type CommandParseResult =
   | { readonly ok: true; readonly command: ValidatedCommand }
   | { readonly ok: false; readonly errorCode: string; readonly message: string };
+
+const ALLOWED_DAM_RULE_CURVES = new Set<string>([
+  "balanced_power",
+  "flood_control",
+  "irrigation_supply",
+  "BalancedPower",
+  "FloodControl",
+  "IrrigationSupply",
+]);
 
 const ALLOWED_NOTIFICATION_BEHAVIORS = new Set<string>([
   "LogOnly",
@@ -430,6 +449,51 @@ export function parsePlayerCommand(payload: unknown): CommandParseResult {
       return {
         ok: true,
         command: { kind: "acknowledgeSuccession" },
+      };
+    case "constructDam": {
+      if (
+        (keys.length !== 2 && keys.length !== 3) ||
+        typeof obj.targetCell !== "number" ||
+        !Number.isInteger(obj.targetCell) ||
+        obj.targetCell < 0
+      ) {
+        return {
+          ok: false,
+          errorCode: "INVALID_ARGUMENT",
+          message: "constructDam requires non-negative integer targetCell and optional valid ruleCurve",
+        };
+      }
+      const curve = obj.ruleCurve === undefined ? "balanced_power" : obj.ruleCurve;
+      if (typeof curve !== "string" || !ALLOWED_DAM_RULE_CURVES.has(curve)) {
+        return {
+          ok: false,
+          errorCode: "INVALID_ARGUMENT",
+          message: "constructDam ruleCurve must be balanced_power, flood_control, or irrigation_supply",
+        };
+      }
+      return {
+        ok: true,
+        command: { kind: "constructDam", targetCell: obj.targetCell, ruleCurve: curve },
+      };
+    }
+    case "setDamRuleCurve":
+      if (
+        keys.length !== 3 ||
+        typeof obj.targetCell !== "number" ||
+        !Number.isInteger(obj.targetCell) ||
+        obj.targetCell < 0 ||
+        typeof obj.ruleCurve !== "string" ||
+        !ALLOWED_DAM_RULE_CURVES.has(obj.ruleCurve)
+      ) {
+        return {
+          ok: false,
+          errorCode: "INVALID_ARGUMENT",
+          message: "setDamRuleCurve requires non-negative integer targetCell and valid ruleCurve",
+        };
+      }
+      return {
+        ok: true,
+        command: { kind: "setDamRuleCurve", targetCell: obj.targetCell, ruleCurve: obj.ruleCurve },
       };
     case "issueTacticalMicroCommand":
       return {

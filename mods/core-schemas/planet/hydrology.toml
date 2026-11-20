@@ -1,0 +1,37 @@
+# Externalized Planetary Fluid Constants & Hydrological Policy Rules (`ENG-GEO-012`, `ENG-GEO-014`, `ENG-WTH-006`)
+
+[hydrology_rules]
+id = "default_hydrology_rules"
+active_fluid_id = "water"
+infiltration_rate_01 = 0.34
+evapotranspiration_scale = 1.0
+aquifer_diffusivity = 0.085
+aquifer_capacity_mm = 420.0
+spring_emergence_threshold_01 = 0.88
+estuary_max_elev_m = 14.0
+shallow_ford_max_q_m3_s = 35.0
+deep_navigable_min_q_m3_s = 45.0
+rapids_min_slope_rad = 0.032
+dam_min_discharge_m3_s = 18.0
+dam_min_relief_m = 18.0
+dam_turbine_efficiency_01 = 0.82
+dam_siltation_rate_per_day = 0.00015
+dam_breach_flood_threshold_01 = 0.96
+
+[[fluids]]
+id = "water"
+display_name = "Terrestrial Water"
+density_kg_m3 = 1000.0
+freeze_point_c = 0.0
+boil_point_c = 100.0
+latent_heat_evap_kj_kg = 2260.0
+specific_heat_j_kg_k = 4184.0
+
+[[fluids]]
+id = "methane"
+display_name = "Cryogenic Methane"
+density_kg_m3 = 422.6
+freeze_point_c = -182.5
+boil_point_c = -161.5
+latent_heat_evap_kj_kg = 510.0
+specific_heat_j_kg_k = 3480.0

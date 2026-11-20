@@ -849,7 +849,9 @@ impl CommandPort for SimWorld {
             | SpinePlayerCommand::SetInnovationMode { .. }
             | SpinePlayerCommand::IssueTheaterDirective { .. }
             | SpinePlayerCommand::IssueOperationalBattlePlan { .. }
-            | SpinePlayerCommand::AcknowledgeSuccession => {}
+            | SpinePlayerCommand::AcknowledgeSuccession
+            | SpinePlayerCommand::ConstructDam { .. }
+            | SpinePlayerCommand::SetDamRuleCurve { .. } => {}
         }
     }
 }

@@ -12,10 +12,11 @@ use sim_spine::{
         write_u8,
     },
     slerp_unit_xyz, CanonicalSaveablePort, CellId, CharacterId, CharacterSnapshotView,
-    CommandPort, FormationId, GovernanceFrictionPlugPort, KnowledgeModifierPlugPort,
-    LogisticsPort, MandateId, ModRegistryPort, NonStateEconomyPlugPort, NotificationBehaviorKind,
-    OperationalCombatPlugPort, PhysicalLedgerPort, PlanetGeometryPort, PopulationPort,
-    SettlementId, SpinePlayerCommand, SuccessionPlugPort, SurfaceConditionsPort, TheaterId, Tick,
+    CommandPort, DamRuleCurveKind, DamStatusView, FormationId, GovernanceFrictionPlugPort,
+    KnowledgeModifierPlugPort, LogisticsPort, MandateId, ModRegistryPort,
+    NonStateEconomyPlugPort, NotificationBehaviorKind, OperationalCombatPlugPort,
+    PhysicalLedgerPort, PlanetGeometryPort, PopulationPort, SettlementId, SpinePlayerCommand,
+    SuccessionPlugPort, SurfaceConditionsPort, TheaterId, Tick,
 };
 
 /// IPC-safe mod diagnostic payload compatible with `UI-SHL-004`.
@@ -55,6 +56,47 @@ pub struct DepositEstimateDto {
     pub instrument_tier: u8,
     pub observed_tick: u64,
     pub provenance_label: String,
+    #[serde(default)]
+    pub accessibility_tier: u8,
+    #[serde(default)]
+    pub is_offshore: bool,
+    #[serde(default)]
+    pub is_alluvial_placer: bool,
+}
+
+/// Live dam and reservoir impoundment state surfaced on surveyed river cells (`ENG-GEO-014`).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DamStatusDto {
+    pub cell_id: u32,
+    pub rule_curve: String,
+    pub reservoir_storage_m3: f64,
+    pub reservoir_capacity_m3: f64,
+    pub reservoir_fill_01: f32,
+    pub reservoir_head_m: f32,
+    pub spillway_release_m3_s: f32,
+    pub live_hydro_kw: f32,
+    pub sediment_silt_01: f32,
+    pub condition_01: f32,
+    pub breached: bool,
+}
+
+impl From<DamStatusView> for DamStatusDto {
+    fn from(v: DamStatusView) -> Self {
+        Self {
+            cell_id: v.cell_id.get(),
+            rule_curve: v.rule_curve.as_str().to_owned(),
+            reservoir_storage_m3: v.reservoir_storage_m3,
+            reservoir_capacity_m3: v.reservoir_capacity_m3,
+            reservoir_fill_01: v.reservoir_fill_01,
+            reservoir_head_m: v.reservoir_head_m,
+            spillway_release_m3_s: v.spillway_release_m3_s,
+            live_hydro_kw: v.live_hydro_kw,
+            sediment_silt_01: v.sediment_silt_01,
+            condition_01: v.condition_01,
+            breached: v.breached,
+        }
+    }
 }
 
 fn default_mean_temp_c() -> f32 {
@@ -156,6 +198,38 @@ pub enum KnownCellDto {
         river_velocity_mps: f32,
         #[serde(default, rename = "hydroPotentialKw")]
         hydro_potential_kw: f32,
+        #[serde(default, rename = "geologyProvince")]
+        geology_province: String,
+        #[serde(default, rename = "roughnessM")]
+        roughness_m: f32,
+        #[serde(default, rename = "basinDepthM")]
+        basin_depth_m: f32,
+        #[serde(default, rename = "faultInstability01")]
+        fault_instability_01: f32,
+        #[serde(default, rename = "volcanicHazard01")]
+        volcanic_hazard_01: f32,
+        #[serde(default, rename = "soilDrainage01")]
+        soil_drainage_01: f32,
+        #[serde(default, rename = "soilClay01")]
+        soil_clay_01: f32,
+        #[serde(default, rename = "marineUpwelling01")]
+        marine_upwelling_01: f32,
+        #[serde(default, rename = "shelfNutrient01")]
+        shelf_nutrient_01: f32,
+        #[serde(default, rename = "lakeKind")]
+        lake_kind: String,
+        #[serde(default, rename = "lakeSalinityPerMille")]
+        lake_salinity_per_mille: f32,
+        #[serde(default, rename = "isEstuary")]
+        is_estuary: bool,
+        #[serde(default, rename = "riverNavigability")]
+        river_navigability: String,
+        #[serde(default, rename = "isSpringOasis")]
+        is_spring_oasis: bool,
+        #[serde(default, rename = "groundwaterM3")]
+        groundwater_m3: f64,
+        #[serde(default, rename = "damStatus")]
+        dam_status: Option<DamStatusDto>,
     },
     Surveyed {
         #[serde(rename = "cellId")]
@@ -208,6 +282,38 @@ pub enum KnownCellDto {
         river_velocity_mps: f32,
         #[serde(default, rename = "hydroPotentialKw")]
         hydro_potential_kw: f32,
+        #[serde(default, rename = "geologyProvince")]
+        geology_province: String,
+        #[serde(default, rename = "roughnessM")]
+        roughness_m: f32,
+        #[serde(default, rename = "basinDepthM")]
+        basin_depth_m: f32,
+        #[serde(default, rename = "faultInstability01")]
+        fault_instability_01: f32,
+        #[serde(default, rename = "volcanicHazard01")]
+        volcanic_hazard_01: f32,
+        #[serde(default, rename = "soilDrainage01")]
+        soil_drainage_01: f32,
+        #[serde(default, rename = "soilClay01")]
+        soil_clay_01: f32,
+        #[serde(default, rename = "marineUpwelling01")]
+        marine_upwelling_01: f32,
+        #[serde(default, rename = "shelfNutrient01")]
+        shelf_nutrient_01: f32,
+        #[serde(default, rename = "lakeKind")]
+        lake_kind: String,
+        #[serde(default, rename = "lakeSalinityPerMille")]
+        lake_salinity_per_mille: f32,
+        #[serde(default, rename = "isEstuary")]
+        is_estuary: bool,
+        #[serde(default, rename = "riverNavigability")]
+        river_navigability: String,
+        #[serde(default, rename = "isSpringOasis")]
+        is_spring_oasis: bool,
+        #[serde(default, rename = "groundwaterM3")]
+        groundwater_m3: f64,
+        #[serde(default, rename = "damStatus")]
+        dam_status: Option<DamStatusDto>,
     },
 }
 
@@ -1042,6 +1148,18 @@ pub enum ValidatedPlayerCommand {
         #[serde(default, rename = "techKey")]
         tech_key: String,
     },
+    ConstructDam {
+        #[serde(rename = "targetCell")]
+        target_cell: u32,
+        #[serde(default, rename = "ruleCurve")]
+        rule_curve: String,
+    },
+    SetDamRuleCurve {
+        #[serde(rename = "targetCell")]
+        target_cell: u32,
+        #[serde(rename = "ruleCurve")]
+        rule_curve: String,
+    },
 }
 
 impl ValidatedPlayerCommand {
@@ -1165,6 +1283,34 @@ impl ValidatedPlayerCommand {
             ValidatedPlayerCommand::BuyOrSelectTechTarget { tech_key } => Err(format!(
                 "ERR_BOUGHT_TECH_FORBIDDEN: Technology '{tech_key}' cannot be bought or picked from a deterministic tree; foster empirical production or leisure conditions."
             )),
+            ValidatedPlayerCommand::ConstructDam {
+                target_cell,
+                rule_curve,
+            } => {
+                let parsed = if rule_curve.trim().is_empty() {
+                    DamRuleCurveKind::BalancedPower
+                } else {
+                    DamRuleCurveKind::from_key(rule_curve).ok_or_else(|| {
+                        format!("Unsupported dam rule curve '{rule_curve}'")
+                    })?
+                };
+                Ok(SpinePlayerCommand::ConstructDam {
+                    target_cell: CellId(*target_cell),
+                    rule_curve: parsed,
+                })
+            }
+            ValidatedPlayerCommand::SetDamRuleCurve {
+                target_cell,
+                rule_curve,
+            } => {
+                let parsed = DamRuleCurveKind::from_key(rule_curve).ok_or_else(|| {
+                    format!("Unsupported dam rule curve '{rule_curve}'")
+                })?;
+                Ok(SpinePlayerCommand::SetDamRuleCurve {
+                    target_cell: CellId(*target_cell),
+                    rule_curve: parsed,
+                })
+            }
         }
     }
 }
@@ -1455,6 +1601,22 @@ impl PlayerKnowledgeArchive {
                 river_discharge_m3_s: planet.cell_river_discharge_m3_s(cid),
                 river_velocity_mps: planet.cell_river_velocity_mps(cid),
                 hydro_potential_kw: planet.cell_hydro_potential_kw(cid),
+                geology_province: planet.cell_geology_province(cid).as_str().to_owned(),
+                roughness_m: planet.cell_roughness_m(cid),
+                basin_depth_m: planet.cell_basin_depth_m(cid),
+                fault_instability_01: planet.cell_fault_instability_01(cid),
+                volcanic_hazard_01: planet.cell_volcanic_hazard_01(cid),
+                soil_drainage_01: planet.cell_soil_drainage_01(cid),
+                soil_clay_01: planet.cell_soil_clay_01(cid),
+                marine_upwelling_01: planet.cell_marine_upwelling_01(cid),
+                shelf_nutrient_01: planet.cell_shelf_nutrient_01(cid),
+                lake_kind: planet.cell_lake_kind(cid).as_str().to_owned(),
+                lake_salinity_per_mille: planet.cell_lake_salinity_per_mille(cid),
+                is_estuary: planet.cell_is_estuary(cid),
+                river_navigability: planet.cell_river_navigability(cid).as_str().to_owned(),
+                is_spring_oasis: false,
+                groundwater_m3: 0.0,
+                dam_status: None,
             },
         );
     }
@@ -1508,6 +1670,22 @@ impl PlayerKnowledgeArchive {
                 river_discharge_m3_s: planet.cell_river_discharge_m3_s(cid),
                 river_velocity_mps: planet.cell_river_velocity_mps(cid),
                 hydro_potential_kw: planet.cell_hydro_potential_kw(cid),
+                geology_province: planet.cell_geology_province(cid).as_str().to_owned(),
+                roughness_m: planet.cell_roughness_m(cid),
+                basin_depth_m: planet.cell_basin_depth_m(cid),
+                fault_instability_01: planet.cell_fault_instability_01(cid),
+                volcanic_hazard_01: planet.cell_volcanic_hazard_01(cid),
+                soil_drainage_01: planet.cell_soil_drainage_01(cid),
+                soil_clay_01: planet.cell_soil_clay_01(cid),
+                marine_upwelling_01: planet.cell_marine_upwelling_01(cid),
+                shelf_nutrient_01: planet.cell_shelf_nutrient_01(cid),
+                lake_kind: planet.cell_lake_kind(cid).as_str().to_owned(),
+                lake_salinity_per_mille: planet.cell_lake_salinity_per_mille(cid),
+                is_estuary: planet.cell_is_estuary(cid),
+                river_navigability: planet.cell_river_navigability(cid).as_str().to_owned(),
+                is_spring_oasis: false,
+                groundwater_m3: 0.0,
+                dam_status: None,
             },
         );
     }
@@ -1662,6 +1840,22 @@ impl PlayerKnowledgeArchive {
                     river_discharge_m3_s,
                     river_velocity_mps,
                     hydro_potential_kw,
+                    geology_province,
+                    roughness_m,
+                    basin_depth_m,
+                    fault_instability_01,
+                    volcanic_hazard_01,
+                    soil_drainage_01,
+                    soil_clay_01,
+                    marine_upwelling_01,
+                    shelf_nutrient_01,
+                    lake_kind,
+                    lake_salinity_per_mille,
+                    is_estuary,
+                    river_navigability,
+                    is_spring_oasis,
+                    groundwater_m3,
+                    dam_status,
                     ..
                 } => {
                     let age = tick.get().saturating_sub(observed_tick);
@@ -1695,6 +1889,22 @@ impl PlayerKnowledgeArchive {
                                 river_discharge_m3_s,
                                 river_velocity_mps,
                                 hydro_potential_kw,
+                                geology_province,
+                                roughness_m,
+                                basin_depth_m,
+                                fault_instability_01,
+                                volcanic_hazard_01,
+                                soil_drainage_01,
+                                soil_clay_01,
+                                marine_upwelling_01,
+                                shelf_nutrient_01,
+                                lake_kind,
+                                lake_salinity_per_mille,
+                                is_estuary,
+                                river_navigability,
+                                is_spring_oasis,
+                                groundwater_m3,
+                                dam_status,
                             },
                         );
                     } else if let Some(KnownCellDto::Surveyed {
@@ -1729,6 +1939,22 @@ impl PlayerKnowledgeArchive {
                     river_discharge_m3_s,
                     river_velocity_mps,
                     hydro_potential_kw,
+                    geology_province,
+                    roughness_m,
+                    basin_depth_m,
+                    fault_instability_01,
+                    volcanic_hazard_01,
+                    soil_drainage_01,
+                    soil_clay_01,
+                    marine_upwelling_01,
+                    shelf_nutrient_01,
+                    lake_kind,
+                    lake_salinity_per_mille,
+                    is_estuary,
+                    river_navigability,
+                    is_spring_oasis,
+                    groundwater_m3,
+                    dam_status,
                     ..
                 } => {
                     let age = tick.get().saturating_sub(observed_tick);
@@ -1761,6 +1987,22 @@ impl PlayerKnowledgeArchive {
                             river_discharge_m3_s,
                             river_velocity_mps,
                             hydro_potential_kw,
+                            geology_province,
+                            roughness_m,
+                            basin_depth_m,
+                            fault_instability_01,
+                            volcanic_hazard_01,
+                            soil_drainage_01,
+                            soil_clay_01,
+                            marine_upwelling_01,
+                            shelf_nutrient_01,
+                            lake_kind,
+                            lake_salinity_per_mille,
+                            is_estuary,
+                            river_navigability,
+                            is_spring_oasis,
+                            groundwater_m3,
+                            dam_status,
                         },
                     );
                 }
@@ -1833,6 +2075,22 @@ impl PlayerKnowledgeArchive {
                     river_discharge_m3_s: planet.cell_river_discharge_m3_s(cid),
                     river_velocity_mps: planet.cell_river_velocity_mps(cid),
                     hydro_potential_kw: planet.cell_hydro_potential_kw(cid),
+                    geology_province: planet.cell_geology_province(cid).as_str().to_owned(),
+                    roughness_m: planet.cell_roughness_m(cid),
+                    basin_depth_m: planet.cell_basin_depth_m(cid),
+                    fault_instability_01: planet.cell_fault_instability_01(cid),
+                    volcanic_hazard_01: planet.cell_volcanic_hazard_01(cid),
+                    soil_drainage_01: planet.cell_soil_drainage_01(cid),
+                    soil_clay_01: planet.cell_soil_clay_01(cid),
+                    marine_upwelling_01: planet.cell_marine_upwelling_01(cid),
+                    shelf_nutrient_01: planet.cell_shelf_nutrient_01(cid),
+                    lake_kind: planet.cell_lake_kind(cid).as_str().to_owned(),
+                    lake_salinity_per_mille: planet.cell_lake_salinity_per_mille(cid),
+                    is_estuary: planet.cell_is_estuary(cid),
+                    river_navigability: planet.cell_river_navigability(cid).as_str().to_owned(),
+                    is_spring_oasis: false,
+                    groundwater_m3: 0.0,
+                    dam_status: None,
                 },
             );
         }
@@ -1965,6 +2223,46 @@ impl PlayerKnowledgeArchive {
         let total_cells = planet.cell_count();
 
         let live_cells = self.observe_hq_halo(tick, planet, ledger);
+
+        // Refresh live dynamic surface hydrology, aquifer springs, salinity, and dam status in HQ sight (`ENG-GEO-014`, `ENG-WTH-006`).
+        for &cid_u32 in &live_cells {
+            if let Some(KnownCellDto::Surveyed {
+                river_discharge_m3_s,
+                hydro_potential_kw,
+                lake_salinity_per_mille,
+                river_navigability,
+                is_spring_oasis,
+                groundwater_m3,
+                dam_status,
+                ..
+            }) = self.surveyed_cells.get_mut(&cid_u32)
+            {
+                let cid = CellId(cid_u32);
+                let live_q = weather.cell_live_discharge_m3_s(cid);
+                if live_q > 0.0 || planet.cell_river_channel_downstream(cid).is_some() {
+                    *river_discharge_m3_s = live_q.max(planet.cell_river_discharge_m3_s(cid));
+                }
+                let live_sal = weather.cell_salinity_per_mille(cid);
+                if live_sal > 0.0 {
+                    *lake_salinity_per_mille = live_sal;
+                }
+                let live_nav = weather.cell_live_navigability(cid);
+                if live_nav != sim_spine::RiverNavigabilityKind::None {
+                    *river_navigability = live_nav.as_str().to_owned();
+                } else {
+                    *river_navigability = planet.cell_river_navigability(cid).as_str().to_owned();
+                }
+                *is_spring_oasis = weather.cell_is_spring_oasis(cid);
+                *groundwater_m3 = weather.cell_groundwater_m3(cid);
+                let live_dam = weather.dam_at_cell(cid).map(DamStatusDto::from);
+                if let Some(ref d) = live_dam {
+                    *hydro_potential_kw = d.live_hydro_kw.max(planet.cell_hydro_potential_kw(cid));
+                } else {
+                    *hydro_potential_kw = planet.cell_hydro_potential_kw(cid);
+                }
+                *dam_status = live_dam;
+            }
+        }
 
         // Strict air-gap: union of sampled globe cells, live HQ sight halo, and previously known cells.
         let mut emitted_cells: BTreeSet<u32> = (0..total_cells.min(64)).collect();
@@ -2779,6 +3077,9 @@ fn write_deposit_estimates(out: &mut Vec<u8>, ests: &[DepositEstimateDto]) {
         write_u8(out, d.instrument_tier);
         write_u64_le(out, d.observed_tick);
         write_str(out, &d.provenance_label);
+        write_u8(out, d.accessibility_tier);
+        write_u8(out, u8::from(d.is_offshore));
+        write_u8(out, u8::from(d.is_alluvial_placer));
     }
 }
 
@@ -2799,9 +3100,129 @@ fn read_deposit_estimates(input: &mut &[u8]) -> Result<Vec<DepositEstimateDto>, 
             instrument_tier: read_u8(input)?,
             observed_tick: read_u64_le(input)?,
             provenance_label: read_str(input)?,
+            accessibility_tier: read_u8(input)?,
+            is_offshore: read_u8(input)? != 0,
+            is_alluvial_placer: read_u8(input)? != 0,
         });
     }
     Ok(out)
+}
+
+fn write_dam_status(out: &mut Vec<u8>, dam: Option<&DamStatusDto>) {
+    match dam {
+        Some(d) => {
+            write_u8(out, 1);
+            write_u32_le(out, d.cell_id);
+            write_str(out, &d.rule_curve);
+            write_f64_bits(out, d.reservoir_storage_m3);
+            write_f64_bits(out, d.reservoir_capacity_m3);
+            write_f32_bits(out, d.reservoir_fill_01);
+            write_f32_bits(out, d.reservoir_head_m);
+            write_f32_bits(out, d.spillway_release_m3_s);
+            write_f32_bits(out, d.live_hydro_kw);
+            write_f32_bits(out, d.sediment_silt_01);
+            write_f32_bits(out, d.condition_01);
+            write_u8(out, u8::from(d.breached));
+        }
+        None => write_u8(out, 0),
+    }
+}
+
+fn read_dam_status(input: &mut &[u8]) -> Result<Option<DamStatusDto>, String> {
+    if read_u8(input)? == 0 {
+        return Ok(None);
+    }
+    Ok(Some(DamStatusDto {
+        cell_id: read_u32_le(input)?,
+        rule_curve: read_str(input)?,
+        reservoir_storage_m3: read_f64_bits(input)?,
+        reservoir_capacity_m3: read_f64_bits(input)?,
+        reservoir_fill_01: read_f32_bits(input)?,
+        reservoir_head_m: read_f32_bits(input)?,
+        spillway_release_m3_s: read_f32_bits(input)?,
+        live_hydro_kw: read_f32_bits(input)?,
+        sediment_silt_01: read_f32_bits(input)?,
+        condition_01: read_f32_bits(input)?,
+        breached: read_u8(input)? != 0,
+    }))
+}
+
+struct CellGeoHydroExt {
+    geology_province: String,
+    roughness_m: f32,
+    basin_depth_m: f32,
+    fault_instability_01: f32,
+    volcanic_hazard_01: f32,
+    soil_drainage_01: f32,
+    soil_clay_01: f32,
+    marine_upwelling_01: f32,
+    shelf_nutrient_01: f32,
+    lake_kind: String,
+    lake_salinity_per_mille: f32,
+    is_estuary: bool,
+    river_navigability: String,
+    is_spring_oasis: bool,
+    groundwater_m3: f64,
+    dam_status: Option<DamStatusDto>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_geo_hydro_ext(
+    out: &mut Vec<u8>,
+    geology_province: &str,
+    roughness_m: f32,
+    basin_depth_m: f32,
+    fault_instability_01: f32,
+    volcanic_hazard_01: f32,
+    soil_drainage_01: f32,
+    soil_clay_01: f32,
+    marine_upwelling_01: f32,
+    shelf_nutrient_01: f32,
+    lake_kind: &str,
+    lake_salinity_per_mille: f32,
+    is_estuary: bool,
+    river_navigability: &str,
+    is_spring_oasis: bool,
+    groundwater_m3: f64,
+    dam_status: Option<&DamStatusDto>,
+) {
+    write_str(out, geology_province);
+    write_f32_bits(out, roughness_m);
+    write_f32_bits(out, basin_depth_m);
+    write_f32_bits(out, fault_instability_01);
+    write_f32_bits(out, volcanic_hazard_01);
+    write_f32_bits(out, soil_drainage_01);
+    write_f32_bits(out, soil_clay_01);
+    write_f32_bits(out, marine_upwelling_01);
+    write_f32_bits(out, shelf_nutrient_01);
+    write_str(out, lake_kind);
+    write_f32_bits(out, lake_salinity_per_mille);
+    write_u8(out, u8::from(is_estuary));
+    write_str(out, river_navigability);
+    write_u8(out, u8::from(is_spring_oasis));
+    write_f64_bits(out, groundwater_m3);
+    write_dam_status(out, dam_status);
+}
+
+fn read_geo_hydro_ext(input: &mut &[u8]) -> Result<CellGeoHydroExt, String> {
+    Ok(CellGeoHydroExt {
+        geology_province: read_str(input)?,
+        roughness_m: read_f32_bits(input)?,
+        basin_depth_m: read_f32_bits(input)?,
+        fault_instability_01: read_f32_bits(input)?,
+        volcanic_hazard_01: read_f32_bits(input)?,
+        soil_drainage_01: read_f32_bits(input)?,
+        soil_clay_01: read_f32_bits(input)?,
+        marine_upwelling_01: read_f32_bits(input)?,
+        shelf_nutrient_01: read_f32_bits(input)?,
+        lake_kind: read_str(input)?,
+        lake_salinity_per_mille: read_f32_bits(input)?,
+        is_estuary: read_u8(input)? != 0,
+        river_navigability: read_str(input)?,
+        is_spring_oasis: read_u8(input)? != 0,
+        groundwater_m3: read_f64_bits(input)?,
+        dam_status: read_dam_status(input)?,
+    })
 }
 
 impl CanonicalSaveablePort for PlayerKnowledgeArchive {
@@ -2844,6 +3265,22 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     river_discharge_m3_s,
                     river_velocity_mps,
                     hydro_potential_kw,
+                    geology_province,
+                    roughness_m,
+                    basin_depth_m,
+                    fault_instability_01,
+                    volcanic_hazard_01,
+                    soil_drainage_01,
+                    soil_clay_01,
+                    marine_upwelling_01,
+                    shelf_nutrient_01,
+                    lake_kind,
+                    lake_salinity_per_mille,
+                    is_estuary,
+                    river_navigability,
+                    is_spring_oasis,
+                    groundwater_m3,
+                    dam_status,
                 } => {
                     write_u8(out, 1);
                     write_u32_le(out, *cell_id);
@@ -2883,6 +3320,25 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     write_f32_bits(out, *river_discharge_m3_s);
                     write_f32_bits(out, *river_velocity_mps);
                     write_f32_bits(out, *hydro_potential_kw);
+                    write_geo_hydro_ext(
+                        out,
+                        geology_province,
+                        *roughness_m,
+                        *basin_depth_m,
+                        *fault_instability_01,
+                        *volcanic_hazard_01,
+                        *soil_drainage_01,
+                        *soil_clay_01,
+                        *marine_upwelling_01,
+                        *shelf_nutrient_01,
+                        lake_kind,
+                        *lake_salinity_per_mille,
+                        *is_estuary,
+                        river_navigability,
+                        *is_spring_oasis,
+                        *groundwater_m3,
+                        dam_status.as_ref(),
+                    );
                 }
                 KnownCellDto::Rumored {
                     cell_id,
@@ -2932,6 +3388,22 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     river_discharge_m3_s,
                     river_velocity_mps,
                     hydro_potential_kw,
+                    geology_province,
+                    roughness_m,
+                    basin_depth_m,
+                    fault_instability_01,
+                    volcanic_hazard_01,
+                    soil_drainage_01,
+                    soil_clay_01,
+                    marine_upwelling_01,
+                    shelf_nutrient_01,
+                    lake_kind,
+                    lake_salinity_per_mille,
+                    is_estuary,
+                    river_navigability,
+                    is_spring_oasis,
+                    groundwater_m3,
+                    dam_status,
                 } => {
                     write_u8(out, 3);
                     write_u32_le(out, *cell_id);
@@ -2971,6 +3443,25 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     write_f32_bits(out, *river_discharge_m3_s);
                     write_f32_bits(out, *river_velocity_mps);
                     write_f32_bits(out, *hydro_potential_kw);
+                    write_geo_hydro_ext(
+                        out,
+                        geology_province,
+                        *roughness_m,
+                        *basin_depth_m,
+                        *fault_instability_01,
+                        *volcanic_hazard_01,
+                        *soil_drainage_01,
+                        *soil_clay_01,
+                        *marine_upwelling_01,
+                        *shelf_nutrient_01,
+                        lake_kind,
+                        *lake_salinity_per_mille,
+                        *is_estuary,
+                        river_navigability,
+                        *is_spring_oasis,
+                        *groundwater_m3,
+                        dam_status.as_ref(),
+                    );
                 }
             }
         }
@@ -3087,41 +3578,85 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                 0 => KnownCellDto::Unexplored {
                     cell_id: read_u32_le(input)?,
                 },
-                1 => KnownCellDto::Surveyed {
-                    cell_id: read_u32_le(input)?,
-                    observed_tick: read_u64_le(input)?,
-                    is_live_hq_sight: read_u8(input)? != 0,
-                    elevation_m: read_f32_bits(input)?,
-                    confidence_01: read_f32_bits(input)?,
-                    provenance_label: read_str(input)?,
-                    biome_key: read_str(input)?,
-                    is_ocean: read_u8(input)? != 0,
-                    river_downstream_cell_id: if read_u8(input)? != 0 {
+                1 => {
+                    let cell_id = read_u32_le(input)?;
+                    let observed_tick = read_u64_le(input)?;
+                    let is_live_hq_sight = read_u8(input)? != 0;
+                    let elevation_m = read_f32_bits(input)?;
+                    let confidence_01 = read_f32_bits(input)?;
+                    let provenance_label = read_str(input)?;
+                    let biome_key = read_str(input)?;
+                    let is_ocean = read_u8(input)? != 0;
+                    let river_downstream_cell_id = if read_u8(input)? != 0 {
                         Some(read_u32_le(input)?)
                     } else {
                         None
-                    },
-                    river_flow_norm_01: read_f32_bits(input)?,
-                    deposit_estimates: read_deposit_estimates(input)?,
-                    watershed_id: read_u32_le(input)?,
-                    region_label: read_str(input)?,
-                    mean_annual_temp_c: read_f32_bits(input)?,
-                    annual_precip_mm: read_f32_bits(input)?,
-                    aridity_index_01: read_f32_bits(input)?,
-                    soil_fertility_01: read_f32_bits(input)?,
-                    rock_strata_code: read_u8(input)?,
-                    drainage_area_km2: read_f32_bits(input)?,
-                    strahler_order: read_u8(input)?,
-                    is_lake: read_u8(input)? != 0,
-                    river_channel_downstream_cell_id: if read_u8(input)? != 0 {
+                    };
+                    let river_flow_norm_01 = read_f32_bits(input)?;
+                    let deposit_estimates = read_deposit_estimates(input)?;
+                    let watershed_id = read_u32_le(input)?;
+                    let region_label = read_str(input)?;
+                    let mean_annual_temp_c = read_f32_bits(input)?;
+                    let annual_precip_mm = read_f32_bits(input)?;
+                    let aridity_index_01 = read_f32_bits(input)?;
+                    let soil_fertility_01 = read_f32_bits(input)?;
+                    let rock_strata_code = read_u8(input)?;
+                    let drainage_area_km2 = read_f32_bits(input)?;
+                    let strahler_order = read_u8(input)?;
+                    let is_lake = read_u8(input)? != 0;
+                    let river_channel_downstream_cell_id = if read_u8(input)? != 0 {
                         Some(read_u32_le(input)?)
                     } else {
                         None
-                    },
-                    river_discharge_m3_s: read_f32_bits(input)?,
-                    river_velocity_mps: read_f32_bits(input)?,
-                    hydro_potential_kw: read_f32_bits(input)?,
-                },
+                    };
+                    let river_discharge_m3_s = read_f32_bits(input)?;
+                    let river_velocity_mps = read_f32_bits(input)?;
+                    let hydro_potential_kw = read_f32_bits(input)?;
+                    let ext = read_geo_hydro_ext(input)?;
+                    KnownCellDto::Surveyed {
+                        cell_id,
+                        observed_tick,
+                        is_live_hq_sight,
+                        elevation_m,
+                        confidence_01,
+                        provenance_label,
+                        biome_key,
+                        is_ocean,
+                        river_downstream_cell_id,
+                        river_flow_norm_01,
+                        deposit_estimates,
+                        watershed_id,
+                        region_label,
+                        mean_annual_temp_c,
+                        annual_precip_mm,
+                        aridity_index_01,
+                        soil_fertility_01,
+                        rock_strata_code,
+                        drainage_area_km2,
+                        strahler_order,
+                        is_lake,
+                        river_channel_downstream_cell_id,
+                        river_discharge_m3_s,
+                        river_velocity_mps,
+                        hydro_potential_kw,
+                        geology_province: ext.geology_province,
+                        roughness_m: ext.roughness_m,
+                        basin_depth_m: ext.basin_depth_m,
+                        fault_instability_01: ext.fault_instability_01,
+                        volcanic_hazard_01: ext.volcanic_hazard_01,
+                        soil_drainage_01: ext.soil_drainage_01,
+                        soil_clay_01: ext.soil_clay_01,
+                        marine_upwelling_01: ext.marine_upwelling_01,
+                        shelf_nutrient_01: ext.shelf_nutrient_01,
+                        lake_kind: ext.lake_kind,
+                        lake_salinity_per_mille: ext.lake_salinity_per_mille,
+                        is_estuary: ext.is_estuary,
+                        river_navigability: ext.river_navigability,
+                        is_spring_oasis: ext.is_spring_oasis,
+                        groundwater_m3: ext.groundwater_m3,
+                        dam_status: ext.dam_status,
+                    }
+                }
                 2 => KnownCellDto::Rumored {
                     cell_id: read_u32_le(input)?,
                     observed_tick: read_u64_le(input)?,
@@ -3133,41 +3668,85 @@ impl CanonicalSaveablePort for PlayerKnowledgeArchive {
                     watershed_id: read_u32_le(input)?,
                     region_label: read_str(input)?,
                 },
-                3 => KnownCellDto::Stale {
-                    cell_id: read_u32_le(input)?,
-                    observed_tick: read_u64_le(input)?,
-                    last_live_tick: read_u64_le(input)?,
-                    elevation_m: read_f32_bits(input)?,
-                    confidence_01: read_f32_bits(input)?,
-                    provenance_label: read_str(input)?,
-                    biome_key: read_str(input)?,
-                    is_ocean: read_u8(input)? != 0,
-                    river_downstream_cell_id: if read_u8(input)? != 0 {
+                3 => {
+                    let cell_id = read_u32_le(input)?;
+                    let observed_tick = read_u64_le(input)?;
+                    let last_live_tick = read_u64_le(input)?;
+                    let elevation_m = read_f32_bits(input)?;
+                    let confidence_01 = read_f32_bits(input)?;
+                    let provenance_label = read_str(input)?;
+                    let biome_key = read_str(input)?;
+                    let is_ocean = read_u8(input)? != 0;
+                    let river_downstream_cell_id = if read_u8(input)? != 0 {
                         Some(read_u32_le(input)?)
                     } else {
                         None
-                    },
-                    river_flow_norm_01: read_f32_bits(input)?,
-                    deposit_estimates: read_deposit_estimates(input)?,
-                    watershed_id: read_u32_le(input)?,
-                    region_label: read_str(input)?,
-                    mean_annual_temp_c: read_f32_bits(input)?,
-                    annual_precip_mm: read_f32_bits(input)?,
-                    aridity_index_01: read_f32_bits(input)?,
-                    soil_fertility_01: read_f32_bits(input)?,
-                    rock_strata_code: read_u8(input)?,
-                    drainage_area_km2: read_f32_bits(input)?,
-                    strahler_order: read_u8(input)?,
-                    is_lake: read_u8(input)? != 0,
-                    river_channel_downstream_cell_id: if read_u8(input)? != 0 {
+                    };
+                    let river_flow_norm_01 = read_f32_bits(input)?;
+                    let deposit_estimates = read_deposit_estimates(input)?;
+                    let watershed_id = read_u32_le(input)?;
+                    let region_label = read_str(input)?;
+                    let mean_annual_temp_c = read_f32_bits(input)?;
+                    let annual_precip_mm = read_f32_bits(input)?;
+                    let aridity_index_01 = read_f32_bits(input)?;
+                    let soil_fertility_01 = read_f32_bits(input)?;
+                    let rock_strata_code = read_u8(input)?;
+                    let drainage_area_km2 = read_f32_bits(input)?;
+                    let strahler_order = read_u8(input)?;
+                    let is_lake = read_u8(input)? != 0;
+                    let river_channel_downstream_cell_id = if read_u8(input)? != 0 {
                         Some(read_u32_le(input)?)
                     } else {
                         None
-                    },
-                    river_discharge_m3_s: read_f32_bits(input)?,
-                    river_velocity_mps: read_f32_bits(input)?,
-                    hydro_potential_kw: read_f32_bits(input)?,
-                },
+                    };
+                    let river_discharge_m3_s = read_f32_bits(input)?;
+                    let river_velocity_mps = read_f32_bits(input)?;
+                    let hydro_potential_kw = read_f32_bits(input)?;
+                    let ext = read_geo_hydro_ext(input)?;
+                    KnownCellDto::Stale {
+                        cell_id,
+                        observed_tick,
+                        last_live_tick,
+                        elevation_m,
+                        confidence_01,
+                        provenance_label,
+                        biome_key,
+                        is_ocean,
+                        river_downstream_cell_id,
+                        river_flow_norm_01,
+                        deposit_estimates,
+                        watershed_id,
+                        region_label,
+                        mean_annual_temp_c,
+                        annual_precip_mm,
+                        aridity_index_01,
+                        soil_fertility_01,
+                        rock_strata_code,
+                        drainage_area_km2,
+                        strahler_order,
+                        is_lake,
+                        river_channel_downstream_cell_id,
+                        river_discharge_m3_s,
+                        river_velocity_mps,
+                        hydro_potential_kw,
+                        geology_province: ext.geology_province,
+                        roughness_m: ext.roughness_m,
+                        basin_depth_m: ext.basin_depth_m,
+                        fault_instability_01: ext.fault_instability_01,
+                        volcanic_hazard_01: ext.volcanic_hazard_01,
+                        soil_drainage_01: ext.soil_drainage_01,
+                        soil_clay_01: ext.soil_clay_01,
+                        marine_upwelling_01: ext.marine_upwelling_01,
+                        shelf_nutrient_01: ext.shelf_nutrient_01,
+                        lake_kind: ext.lake_kind,
+                        lake_salinity_per_mille: ext.lake_salinity_per_mille,
+                        is_estuary: ext.is_estuary,
+                        river_navigability: ext.river_navigability,
+                        is_spring_oasis: ext.is_spring_oasis,
+                        groundwater_m3: ext.groundwater_m3,
+                        dam_status: ext.dam_status,
+                    }
+                }
                 other => return Err(format!("invalid KnownCellDto tag {other}")),
             };
             self.surveyed_cells.insert(key, dto);

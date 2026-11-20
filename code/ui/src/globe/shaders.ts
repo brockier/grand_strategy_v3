@@ -31,6 +31,7 @@ export interface GlobeShaderController {
   ): void;
   setAltitudeNorm?(altitudeNorm01: number): void;
   setParchmentMode?(enabled: boolean): void;
+  setGeologyMode?(enabled: boolean): void;
   setProjectionState?(
     mode: GlobeProjectionMode,
     morph01: number,
@@ -145,6 +146,86 @@ function inferFertilityFallback(cell: Extract<KnownCellDto, { tier: "stale" | "s
   return 0.52;
 }
 
+const GEOLOGY_PROVINCE_CODES: Readonly<Record<string, number>> = {
+  shield_craton: 1,
+  old_orogen: 2,
+  young_orogen: 3,
+  volcanic_arc: 4,
+  sedimentary_basin: 5,
+  continental_rift: 6,
+  platform: 7,
+  alluvial_plain: 8,
+  continental_shelf: 9,
+  continental_slope: 10,
+  mid_ocean_ridge: 11,
+  oceanic_trench: 12,
+  abyssal_plain: 13,
+};
+
+function encodeGeologyProvinceCode(cell: KnownCellDto): number {
+  if (cell.tier === "unexplored" || cell.tier === "rumored") return 0;
+  const provKey = (cell.geologyProvince ?? "").toLowerCase().trim();
+  if (provKey && GEOLOGY_PROVINCE_CODES[provKey] !== undefined) {
+    return GEOLOGY_PROVINCE_CODES[provKey];
+  }
+  const isOcean = Boolean(cell.isOcean || cell.elevationM < 0);
+  if (isOcean) {
+    if (cell.elevationM >= -220) return 9;
+    if (cell.elevationM >= -1600) return 10;
+    if (cell.elevationM <= -3900) return 12;
+    return 13;
+  }
+  if (cell.elevationM >= 1800) return 3;
+  if (cell.elevationM <= 180) return 8;
+  return 7;
+}
+
+function encodeGeologyBytes(cell: KnownCellDto): readonly [number, number, number, number] {
+  if (cell.tier === "unexplored" || cell.tier === "rumored") {
+    return [0, 0, 0, 0];
+  }
+  const provCode = encodeGeologyProvinceCode(cell);
+  const provByte = Math.max(0, Math.min(255, provCode * 18));
+
+  const isOcean = Boolean(cell.isOcean || cell.elevationM < 0);
+  const fallbackRough = isOcean
+    ? 25
+    : cell.elevationM > 1400
+      ? 260
+      : cell.elevationM > 350
+        ? 90
+        : 24;
+  const roughNorm = Math.max(0, Math.min(1, (cell.roughnessM ?? fallbackRough) / 900));
+  const roughByte = Math.round(roughNorm * 255);
+
+  const haz4 = Math.max(
+    0,
+    Math.min(15, Math.round(Math.max(cell.faultInstability01 ?? 0.1, cell.volcanicHazard01 ?? 0.05) * 15)),
+  );
+  const soilOrUpwell = isOcean
+    ? Math.max(cell.marineUpwelling01 ?? 0, cell.shelfNutrient01 ?? 0)
+    : (cell.soilDrainage01 ?? 0.5);
+  const sub4 = Math.max(0, Math.min(15, Math.round(Math.max(0, Math.min(1, soilOrUpwell)) * 15)));
+  const hazSubByte = (haz4 << 4) | sub4;
+
+  const hasChannel =
+    !isOcean &&
+    (cell.riverChannelDownstreamCellId != null ||
+      ((cell.strahlerOrder ?? 1) >= 2 && (cell.riverFlowNorm01 ?? 0) > 0.15));
+  const isOasis = Boolean(cell.isSpringOasis);
+  const isEndorheic = cell.lakeKind === "endorheic" || (cell.lakeSalinityPerMille ?? 0) >= 8;
+  const hasDam = Boolean(cell.damStatus && !cell.damStatus.breached);
+  const flags4 =
+    (hasChannel ? 1 : 0) |
+    (isOasis ? 2 : 0) |
+    (isEndorheic ? 4 : 0) |
+    (hasDam ? 8 : 0);
+  const depth4 = hasChannel ? Math.max(1, Math.min(15, Math.round((cell.strahlerOrder ?? 1) * 3))) : 0;
+  const hydroFlagsByte = (depth4 << 4) | flags4;
+
+  return [provByte, roughByte, hazSubByte, hydroFlagsByte];
+}
+
 function encodeBiophysicalBytes(
   cell: KnownCellDto,
   weather: ObservedWeatherDto | undefined,
@@ -184,6 +265,7 @@ in float aSkirtMask;
 
 uniform sampler2D uCellDataTex;
 uniform sampler2D uBiophysicalTex;
+uniform sampler2D uGeologyTex;
 uniform float uTexSize;
 uniform float uCartographicBlend;
 uniform float uCameraAltitudeNorm;
@@ -220,6 +302,13 @@ vec4 sampleBiophysicalData(float cid) {
   float u = (mod(idx, uTexSize) + 0.5) / uTexSize;
   float v = (floor(idx / uTexSize) + 0.5) / uTexSize;
   return texture(uBiophysicalTex, vec2(u, v));
+}
+
+vec4 sampleGeologyData(float cid) {
+  float idx = floor(cid + 0.5);
+  float u = (mod(idx, uTexSize) + 0.5) / uTexSize;
+  float v = (floor(idx / uTexSize) + 0.5) / uTexSize;
+  return texture(uGeologyTex, vec2(u, v));
 }
 
 float hash31(vec3 p) {
@@ -284,7 +373,11 @@ float evalProceduralRelief(
   vec3 unitP,
   float baseElevM,
   float coastBand,
+  float landFrac,
+  float maxLandW,
+  float maxOceanW,
   float strahler,
+  float valleyMask,
   float kSum
 ) {
   vec3 warpVec = vec3(
@@ -297,22 +390,38 @@ float evalProceduralRelief(
   float coastDetail = (fbm4(unitP * 44.0 + warpVec * 2.1) - 0.50) * 145.0;
   float fjordMask = smoothstep(0.68, 1.15, absLat);
   float fjordCuts = (ridgedFbm3(unitP * 34.0 + warpVec * 1.8) - 0.46) * 290.0 * fjordMask;
+  float ridgeSuppress = 1.0 - 0.85 * valleyMask;
   float microRidgeM = (ridgedFbm3(unitP * 28.0 + warpVec * 0.8) - 0.35)
-    * smoothstep(80.0, 1400.0, max(0.0, baseElevM)) * 420.0;
+    * smoothstep(35.0, 420.0, max(0.0, baseElevM))
+    * (1.0 - 0.85 * valleyMask)
+    * 320.0
+    * step(0.55, landFrac);
 
-  float effectiveElevM = baseElevM + (coastMacro + coastDetail - fjordCuts) * coastBand + microRidgeM;
+  float coastDelta = clamp((coastMacro + coastDetail - fjordCuts) * 0.35, -38.0, 38.0) * coastBand;
+  float effectiveElevM = baseElevM + coastDelta + microRidgeM;
+  if (landFrac <= 0.001) {
+    effectiveElevM = min(baseElevM, -1.0);
+  } else if (landFrac >= 0.999) {
+    effectiveElevM = max(baseElevM + microRidgeM, 0.8);
+  } else if (maxOceanW > 0.96) {
+    effectiveElevM = min(baseElevM, -1.0);
+  } else if (maxLandW > 0.96) {
+    effectiveElevM = max(effectiveElevM, 0.8);
+  }
+
   float posElev = max(0.0, effectiveElevM);
   float landMask = smoothstep(0.0, 6.0, posElev);
-  float coastalBluff = smoothstep(0.0, 65.0, posElev) * 0.0052;
+  float coastalBluff = smoothstep(0.0, 65.0, posElev) * 0.0052 * (1.0 - 0.55 * valleyMask);
   float hypsoBase = pow(clamp(posElev / 4200.0, 0.0, 1.0), 0.65) * 0.060;
   float rollingHills = (fbm4(unitP * 34.0 + vec3(3.1, -1.7, 5.3)) - 0.42)
-    * 0.0054 * smoothstep(2.0, 35.0, posElev);
-  float valleyCut = 0.0036
-    * smoothstep(1.25, 3.8, strahler)
-    * smoothstep(8.0, 85.0, posElev)
-    * (1.0 - smoothstep(450.0, 1800.0, posElev));
+    * 0.0054 * smoothstep(2.0, 35.0, posElev) * ridgeSuppress;
+  float valleyCut = 0.0044
+    * valleyMask
+    * smoothstep(0.5, 4.0, strahler)
+    * smoothstep(2.0, 60.0, posElev)
+    * (1.0 - smoothstep(1200.0, 3400.0, posElev));
   float alpineCrags = ridgedFbm3(unitP * 26.0 + vec3(-2.4, 5.1, 1.7))
-    * 0.019 * smoothstep(180.0, 1700.0, posElev);
+    * 0.019 * smoothstep(180.0, 1700.0, posElev) * ridgeSuppress;
 
   float rawLandRelief = max(0.0003 * landMask, coastalBluff + hypsoBase + rollingHills + alpineCrags - valleyCut) * landMask;
   return rawLandRelief * smoothstep(0.42, 0.82, kSum);
@@ -379,16 +488,23 @@ void main() {
     float isLand1 = step(0.499, d1.r);
     float isLand2 = step(0.499, d2.r);
     float landFrac = isLand0 * w0 + isLand1 * w1 + isLand2 * w2;
-    float coastTransition = smoothstep(0.05, 0.32, landFrac) * smoothstep(0.05, 0.32, 1.0 - landFrac);
-    coastBand = (1.0 - smoothstep(40.0, 520.0, abs(baseElevM))) * coastTransition;
+    float maxLandW = max(isLand0 * w0, max(isLand1 * w1, isLand2 * w2));
+    float maxOceanW = max((1.0 - isLand0) * w0, max((1.0 - isLand1) * w1, (1.0 - isLand2) * w2));
+    float mixedCoastGate = clamp(4.0 * landFrac * (1.0 - landFrac), 0.0, 1.0);
+    float zeroCrossGate = 1.0 - smoothstep(8.0, 95.0, abs(baseElevM));
+    coastBand = mixedCoastGate * zeroCrossGate;
 
     vec4 bio0 = sampleBiophysicalData(aCornerCells.x);
     vec4 bio1 = sampleBiophysicalData(aCornerCells.y);
     vec4 bio2 = sampleBiophysicalData(aCornerCells.z);
+    vec4 geo0 = sampleGeologyData(aCornerCells.x);
+    vec4 geo1 = sampleGeologyData(aCornerCells.y);
+    vec4 geo2 = sampleGeologyData(aCornerCells.z);
     float b0Mask = step(0.24, d0.a) * w0;
     float b1Mask = step(0.24, d1.a) * w1;
     float b2Mask = step(0.24, d2.a) * w2;
     float bSum = b0Mask + b1Mask + b2Mask;
+    float valleyMask = 0.0;
     if (bSum >= 0.01) {
       float bw0 = b0Mask / bSum;
       float bw1 = b1Mask / bSum;
@@ -397,9 +513,13 @@ void main() {
       float fa1 = floor(bio1.a * 255.0 + 0.5);
       float fa2 = floor(bio2.a * 255.0 + 0.5);
       strahler = floor(fa0 / 32.0) * bw0 + floor(fa1 / 32.0) * bw1 + floor(fa2 / 32.0) * bw2;
+      float ch0 = step(0.5, mod(floor(geo0.a * 255.0 + 0.5), 2.0));
+      float ch1 = step(0.5, mod(floor(geo1.a * 255.0 + 0.5), 2.0));
+      float ch2 = step(0.5, mod(floor(geo2.a * 255.0 + 0.5), 2.0));
+      valleyMask = smoothstep(0.18, 0.85, ch0 * bw0 + ch1 * bw1 + ch2 * bw2) * smoothstep(0.15, 0.70, bSum);
     }
 
-    reliefHeight = evalProceduralRelief(unitP, baseElevM, coastBand, strahler, kSum);
+    reliefHeight = evalProceduralRelief(unitP, baseElevM, coastBand, landFrac, maxLandW, maxOceanW, strahler, valleyMask, kSum);
   }
 
   // Strict epistemic barrier: Unexplored vertices remain smoothly spherical and never lift.
@@ -453,6 +573,7 @@ precision highp float;
 
 uniform sampler2D uCellDataTex;
 uniform sampler2D uBiophysicalTex;
+uniform sampler2D uGeologyTex;
 uniform sampler2D uParchmentGrainTex;
 uniform sampler2D uHatchPatternTex;
 uniform sampler2D uTerrainBiomeTex;
@@ -461,6 +582,7 @@ uniform float uTexSize;
 uniform float uCartographicBlend;
 uniform float uCameraAltitudeNorm;
 uniform float uParchmentMode;
+uniform float uGeologyMode;
 uniform float uProjectionMorph;
 uniform vec3 uSunDir;
 uniform float uHoveredCellId;
@@ -510,6 +632,13 @@ vec4 sampleBiophysicalData(float cid) {
   float u = (mod(idx, uTexSize) + 0.5) / uTexSize;
   float v = (floor(idx / uTexSize) + 0.5) / uTexSize;
   return texture(uBiophysicalTex, vec2(u, v));
+}
+
+vec4 sampleGeologyData(float cid) {
+  float idx = floor(cid + 0.5);
+  float u = (mod(idx, uTexSize) + 0.5) / uTexSize;
+  float v = (floor(idx / uTexSize) + 0.5) / uTexSize;
+  return texture(uGeologyTex, vec2(u, v));
 }
 
 float hash31(vec3 p) {
@@ -605,6 +734,23 @@ float decodeElevMeters(float elevNorm) {
     return (elevNorm / 0.5 - 1.0) * 5000.0;
   }
   return ((elevNorm - 0.5) / 0.5) * 5000.0;
+}
+
+vec3 geologyProvinceColor(float code) {
+  if (code < 0.5) return vec3(0.32, 0.34, 0.36);
+  if (code < 1.5) return vec3(0.68, 0.42, 0.48); // shield_craton
+  if (code < 2.5) return vec3(0.56, 0.44, 0.62); // old_orogen
+  if (code < 3.5) return vec3(0.84, 0.47, 0.25); // young_orogen
+  if (code < 4.5) return vec3(0.88, 0.26, 0.22); // volcanic_arc
+  if (code < 5.5) return vec3(0.82, 0.72, 0.42); // sedimentary_basin
+  if (code < 6.5) return vec3(0.74, 0.28, 0.52); // continental_rift
+  if (code < 7.5) return vec3(0.64, 0.68, 0.46); // platform
+  if (code < 8.5) return vec3(0.46, 0.76, 0.48); // alluvial_plain
+  if (code < 9.5) return vec3(0.32, 0.74, 0.76); // continental_shelf
+  if (code < 10.5) return vec3(0.20, 0.52, 0.74); // continental_slope
+  if (code < 11.5) return vec3(0.82, 0.46, 0.34); // mid_ocean_ridge
+  if (code < 12.5) return vec3(0.14, 0.20, 0.52); // oceanic_trench
+  return vec3(0.10, 0.30, 0.54); // abyssal_plain
 }
 
 void main() {
@@ -729,7 +875,46 @@ void main() {
     snowPackM = 0.0;
   }
 
-  // Organic domain-warped coastal & high-latitude fjord displacement prior to sea-level test.
+  vec4 geo0 = sampleGeologyData(vCornerCells.x);
+  vec4 geo1 = sampleGeologyData(vCornerCells.y);
+  vec4 geo2 = sampleGeologyData(vCornerCells.z);
+  float ga0 = floor(geo0.a * 255.0 + 0.5);
+  float ga1 = floor(geo1.a * 255.0 + 0.5);
+  float ga2 = floor(geo2.a * 255.0 + 0.5);
+  float ch0 = step(0.5, mod(ga0, 2.0));
+  float ch1 = step(0.5, mod(ga1, 2.0));
+  float ch2 = step(0.5, mod(ga2, 2.0));
+  float valleyMask = (b0Mask + b1Mask + b2Mask >= 0.01)
+    ? smoothstep(0.18, 0.85, ch0 * bw0 + ch1 * bw1 + ch2 * bw2) * smoothstep(0.15, 0.70, b0Mask + b1Mask + b2Mask)
+    : 0.0;
+  float oasis0 = step(0.5, mod(floor(ga0 / 2.0), 2.0));
+  float oasis1 = step(0.5, mod(floor(ga1 / 2.0), 2.0));
+  float oasis2 = step(0.5, mod(floor(ga2 / 2.0), 2.0));
+  float oasisMask = (b0Mask + b1Mask + b2Mask >= 0.01)
+    ? smoothstep(0.35, 0.85, oasis0 * bw0 + oasis1 * bw1 + oasis2 * bw2)
+    : 0.0;
+  float endorh0 = step(0.5, mod(floor(ga0 / 4.0), 2.0));
+  float endorh1 = step(0.5, mod(floor(ga1 / 4.0), 2.0));
+  float endorh2 = step(0.5, mod(floor(ga2 / 4.0), 2.0));
+  float endorheicMask = (b0Mask + b1Mask + b2Mask >= 0.01)
+    ? smoothstep(0.35, 0.85, endorh0 * bw0 + endorh1 * bw1 + endorh2 * bw2)
+    : 0.0;
+
+  float bestGeoW = bw0;
+  vec4 domGeo = geo0;
+  if (bw1 > bestGeoW) {
+    bestGeoW = bw1;
+    domGeo = geo1;
+  }
+  if (bw2 > bestGeoW) {
+    domGeo = geo2;
+  }
+  float domProvCode = (b0Mask + b1Mask + b2Mask >= 0.01) ? floor((domGeo.r * 255.0) / 18.0 + 0.5) : 0.0;
+  float geoHazByte = floor(geo0.b * 255.0 + 0.5) * bw0 + floor(geo1.b * 255.0 + 0.5) * bw1 + floor(geo2.b * 255.0 + 0.5) * bw2;
+  float faultHaz01 = clamp(floor(geoHazByte / 16.0) / 15.0, 0.0, 1.0);
+  float subBio01 = clamp(mod(geoHazByte, 16.0) / 15.0, 0.0, 1.0);
+
+  // Sign-preserving organic coastal warp strictly along mixed land-ocean boundary triangles (UI-GLB-009).
   float absLat = abs(asin(clamp(unitS.y, -1.0, 1.0)));
   float baseElevM = decodeElevMeters(elevNorm);
   vec3 warpVec = vec3(
@@ -741,15 +926,32 @@ void main() {
   float isLand1 = step(0.499, d1.r);
   float isLand2 = step(0.499, d2.r);
   float landFrac = isLand0 * w0 + isLand1 * w1 + isLand2 * w2;
-  float coastTransition = smoothstep(0.05, 0.32, landFrac) * smoothstep(0.05, 0.32, 1.0 - landFrac);
-  float coastBand = (1.0 - smoothstep(40.0, 520.0, abs(baseElevM))) * coastTransition;
+  float maxLandW = max(isLand0 * w0, max(isLand1 * w1, isLand2 * w2));
+  float maxOceanW = max((1.0 - isLand0) * w0, max((1.0 - isLand1) * w1, (1.0 - isLand2) * w2));
+  float mixedCoastGate = clamp(4.0 * landFrac * (1.0 - landFrac), 0.0, 1.0);
+  float zeroCrossGate = 1.0 - smoothstep(8.0, 95.0, abs(baseElevM));
+  float coastBand = mixedCoastGate * zeroCrossGate;
   float coastMacro = (fbm4(unitS * 16.0 + warpVec * 1.45) - 0.48) * 320.0;
   float coastDetail = (fbm4(unitS * 44.0 + warpVec * 2.1) - 0.50) * 145.0;
   float fjordMask = smoothstep(0.68, 1.15, absLat);
   float fjordCuts = (ridgedFbm3(unitS * 34.0 + warpVec * 1.8) - 0.46) * 290.0 * fjordMask;
-  float microRidgeM = (ridgedFbm3(unitS * 28.0 + warpVec * 0.8) - 0.35) * smoothstep(80.0, 1400.0, max(0.0, baseElevM)) * 420.0;
+  float microRidgeM = (ridgedFbm3(unitS * 28.0 + warpVec * 0.8) - 0.35)
+    * smoothstep(35.0, 420.0, max(0.0, baseElevM))
+    * (1.0 - 0.85 * valleyMask)
+    * 320.0
+    * step(0.55, landFrac);
 
-  float effectiveElevM = baseElevM + (coastMacro + coastDetail - fjordCuts) * coastBand + microRidgeM;
+  float coastDelta = clamp((coastMacro + coastDetail - fjordCuts) * 0.35, -38.0, 38.0) * coastBand;
+  float effectiveElevM = baseElevM + coastDelta + microRidgeM;
+  if (landFrac <= 0.001) {
+    effectiveElevM = min(baseElevM, -1.0);
+  } else if (landFrac >= 0.999) {
+    effectiveElevM = max(baseElevM + microRidgeM, 0.8);
+  } else if (maxOceanW > 0.96) {
+    effectiveElevM = min(baseElevM, -1.0);
+  } else if (maxLandW > 0.96) {
+    effectiveElevM = max(effectiveElevM, 0.8);
+  }
   bool isOceanPixel = effectiveElevM < 0.0;
   float lakeWeight = step(0.94, d0.b) * w0 + step(0.94, d1.b) * w1 + step(0.94, d2.b) * w2;
   bool isLakePixel = !isOceanPixel && lakeWeight > 0.46;
@@ -813,11 +1015,18 @@ void main() {
 
     float shelfT = smoothstep(0.0, 185.0, depthM);
     float abyssT = smoothstep(160.0, 2200.0, depthM);
+    float deepTrenchT = smoothstep(3200.0, 4800.0, depthM);
     vec3 waterRgb = mix(surfLittoral, surfShelf, shelfT);
     waterRgb = mix(waterRgb, surfAbyss, abyssT);
+    waterRgb = mix(waterRgb, vec3(0.006, 0.022, 0.068), deepTrenchT * 0.72);
+    // Subtle shelf upwelling & submerged mid-ocean ridge bathymetry variation.
+    float shelfUpwell = (1.0 - smoothstep(140.0, 900.0, depthM)) * subBio01;
+    waterRgb = mix(waterRgb, vec3(0.045, 0.215, 0.205), shelfUpwell * 0.34);
     if (isLakePixel) {
       float lakeCenter = smoothstep(0.46, 0.94, lakeWeight);
-      waterRgb = mix(vec3(0.068, 0.235, 0.295), vec3(0.032, 0.138, 0.218), lakeCenter);
+      vec3 freshLakeCol = mix(vec3(0.068, 0.235, 0.295), vec3(0.032, 0.138, 0.218), lakeCenter);
+      vec3 saltLakeCol = mix(vec3(0.18, 0.44, 0.42), vec3(0.68, 0.76, 0.72), smoothstep(0.65, 0.98, lakeWeight));
+      waterRgb = mix(freshLakeCol, saltLakeCol, endorheicMask);
     }
 
     // Coastal shallow river-mouth silt plume when continental discharge feeds shelf waters.
@@ -887,6 +1096,10 @@ void main() {
     vec3 landAlbedo = mix(coldBelt, tempBelt, smoothstep(0.14, 0.44, warmth));
     landAlbedo = mix(landAlbedo, warmBelt, smoothstep(0.54, 0.84, warmth));
 
+    // Emergent groundwater springs & desert oases create lush emerald palm/riparian greens in arid basins (ENG-WTH-006).
+    vec3 oasisLushCol = mix(vec3(0.09, 0.34, 0.12), vec3(0.16, 0.42, 0.16), canopyDetail);
+    landAlbedo = mix(landAlbedo, oasisLushCol, oasisMask * 0.78);
+
     // Exposed mountain bedrock, coastal cliff bluffs & fractured scree bands.
     float strataBand = 0.5 + 0.5 * sin(effectiveElevM * 0.032 + microVar * 4.5 + strataRough * 0.7);
     float screeDetail = ridgedFbm3(unitS * 175.0) * closeDetail01;
@@ -929,6 +1142,25 @@ void main() {
   parchmentRgb = mix(parchmentRgb, uCompassRoseRgb, 0.16 * grat);
 
   vec3 finalRgb = mix(satRgb, parchmentRgb, uParchmentMode);
+
+  // Selectable Geology & Bathymetry Cartographic Lens (uGeologyMode >= 0.5) (UI-MAP-010).
+  if (uGeologyMode > 0.01) {
+    vec3 geoBase = geologyProvinceColor(domProvCode);
+    float contourStepM = isOceanPixel ? 500.0 : 250.0;
+    float geoSteps = abs(effectiveElevM) / contourStepM;
+    float geoIso = 1.0 - smoothstep(0.03, 0.03 + max(0.02, fwidth(geoSteps)) * 1.4, abs(fract(geoSteps) - 0.5));
+    float hazStripe = smoothstep(0.32, 0.85, faultHaz01) * smoothstep(0.25, 0.75, sin((unitS.x + unitS.z) * 260.0 + hatchInk * 4.0) * 0.5 + 0.5);
+    vec3 geoCol = mix(geoBase * (0.48 + 0.58 * reliefNdl), vec3(0.06, 0.08, 0.11), geoIso * 0.45 + coastLine * 0.55);
+    geoCol = mix(geoCol, vec3(0.95, 0.34, 0.16), hazStripe * 0.55);
+    if (isOceanPixel) {
+      geoCol = mix(geoCol, vec3(0.26, 0.92, 0.74), subBio01 * 0.42);
+    } else if (isLakePixel) {
+      geoCol = mix(geoCol, mix(vec3(0.14, 0.58, 0.78), vec3(0.88, 0.84, 0.48), endorheicMask), 0.78);
+    } else if (oasisMask > 0.15) {
+      geoCol = mix(geoCol, vec3(0.12, 0.86, 0.46), oasisMask * 0.75);
+    }
+    finalRgb = mix(finalRgb, geoCol, uGeologyMode);
+  }
 
   // Weather overlay wetness & storm rainfall shading (UI-MAP-004).
   if (rainNorm > 0.05) {
@@ -983,6 +1215,8 @@ export function createGlobeShaderController(initialPalette?: GlobePalette): Glob
   const texB = createCellDataTexture();
   const bioA = createCellDataTexture();
   const bioB = createCellDataTexture();
+  const geoA = createCellDataTexture();
+  const geoB = createCellDataTexture();
   let activeIdx = 0;
 
   const grainFallback = createNeutralPatternTexture(232, 224, 206);
@@ -995,10 +1229,12 @@ export function createGlobeShaderController(initialPalette?: GlobePalette): Glob
   const uniforms = {
     uCellDataTex: { value: texA.texture },
     uBiophysicalTex: { value: bioA.texture },
+    uGeologyTex: { value: geoA.texture },
     uTexSize: { value: CELL_DATA_TEX_SIZE },
     uCartographicBlend: { value: 0.5 },
     uCameraAltitudeNorm: { value: 0.62 },
     uParchmentMode: { value: 0.0 },
+    uGeologyMode: { value: 0.0 },
     uProjectionMode: { value: 0.0 },
     uProjectionMorph: { value: 0.0 },
     uFocusUnit: { value: new THREE.Vector3(0, 0, 1) },
@@ -1081,10 +1317,13 @@ export function createGlobeShaderController(initialPalette?: GlobePalette): Glob
       const nextIdx = 1 - activeIdx;
       const target = nextIdx === 0 ? texA : texB;
       const targetBio = nextIdx === 0 ? bioA : bioB;
+      const targetGeo = nextIdx === 0 ? geoA : geoB;
       const buf = target.buffer;
       const bioBuf = targetBio.buffer;
+      const geoBuf = targetGeo.buffer;
       buf.fill(0);
       bioBuf.fill(0);
+      geoBuf.fill(0);
 
       const weatherByCell = new Map<number, ObservedWeatherDto>();
       for (const w of snapshot.observedWeather) {
@@ -1129,13 +1368,21 @@ export function createGlobeShaderController(initialPalette?: GlobePalette): Glob
         bioBuf[offset + 1] = bioG;
         bioBuf[offset + 2] = bioB;
         bioBuf[offset + 3] = bioAVal;
+
+        const [geoR, geoG, geoB, geoAVal] = encodeGeologyBytes(cell);
+        geoBuf[offset] = geoR;
+        geoBuf[offset + 1] = geoG;
+        geoBuf[offset + 2] = geoB;
+        geoBuf[offset + 3] = geoAVal;
       }
 
       target.texture.needsUpdate = true;
       targetBio.texture.needsUpdate = true;
+      targetGeo.texture.needsUpdate = true;
       activeIdx = nextIdx;
       uniforms.uCellDataTex.value = target.texture;
       uniforms.uBiophysicalTex.value = targetBio.texture;
+      uniforms.uGeologyTex.value = targetGeo.texture;
       uniforms.uSelectedCellId.value = selectedCellId ?? -1;
       uniforms.uHoveredCellId.value = hoveredCellId ?? -1;
     },
@@ -1171,6 +1418,9 @@ export function createGlobeShaderController(initialPalette?: GlobePalette): Glob
     setParchmentMode(enabled: boolean) {
       uniforms.uParchmentMode.value = enabled ? 1 : 0;
     },
+    setGeologyMode(enabled: boolean) {
+      uniforms.uGeologyMode.value = enabled ? 1 : 0;
+    },
     setProjectionState(mode: GlobeProjectionMode, morph01: number, focusUnit: Vec3) {
       uniforms.uProjectionMode.value = mode === "globe" ? 0 : mode === "equal_area" ? 1 : 2;
       uniforms.uProjectionMorph.value = Math.max(0, Math.min(1, morph01));
@@ -1181,6 +1431,8 @@ export function createGlobeShaderController(initialPalette?: GlobePalette): Glob
       texB.texture.dispose();
       bioA.texture.dispose();
       bioB.texture.dispose();
+      geoA.texture.dispose();
+      geoB.texture.dispose();
       grainFallback.dispose();
       hatchFallback.dispose();
       biomeFallback.dispose();

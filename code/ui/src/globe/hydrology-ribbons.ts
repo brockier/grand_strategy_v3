@@ -18,7 +18,7 @@ import {
 
 export type SurfacePointProjector = (unit: Vec3, lift: number) => THREE.Vector3;
 
-const SHORELINE_STOP_ELEV_M = 2.0;
+const SHORELINE_STOP_ELEV_M = 0.08;
 
 function fround(x: number): number {
   return Math.fround(x);
@@ -159,11 +159,13 @@ export function createShaderTerrainSurfaceSampler(
   const elevNorm = new Float32Array(nCells);
   const isLand = new Uint8Array(nCells);
   const strahlerOrder = new Float32Array(nCells);
+  const hasChannel = new Uint8Array(nCells);
 
   for (const cell of snapshot.knownCells) {
     if (cell.cellId < 0 || cell.cellId >= nCells || cell.tier === "unexplored") continue;
     knownMask[cell.cellId] = 1;
-    const elevByte = encodeShaderElevByte(cell.elevationM, Boolean(cell.isOcean || cell.elevationM < 0));
+    const isCellOcean = Boolean(cell.isOcean || cell.elevationM < 0);
+    const elevByte = encodeShaderElevByte(cell.elevationM, isCellOcean);
     const norm = elevByte / 255;
     elevNorm[cell.cellId] = norm;
     isLand[cell.cellId] = norm >= 0.499 ? 1 : 0;
@@ -173,6 +175,13 @@ export function createShaderTerrainSurfaceSampler(
         0,
         Math.min(7, cell.strahlerOrder ?? ((cell.riverFlowNorm01 ?? 0) > 0.45 ? 2 : 1)),
       );
+      if (
+        !isCellOcean &&
+        (cell.riverChannelDownstreamCellId != null ||
+          ((cell.strahlerOrder ?? 1) >= 2 && (cell.riverFlowNorm01 ?? 0) > 0.15))
+      ) {
+        hasChannel[cell.cellId] = 1;
+      }
     }
   }
 
@@ -319,19 +328,28 @@ export function createShaderTerrainSurfaceSampler(
       const baseElevM = decodeShaderElevMeters(eNorm);
 
       const landFrac = isLand[i0] * w0 + isLand[i1] * w1 + isLand[i2] * w2;
-      const coastTransition = smoothstep(0.05, 0.32, landFrac) * smoothstep(0.05, 0.32, 1.0 - landFrac);
-      const coastBand = (1.0 - smoothstep(40.0, 520.0, Math.abs(baseElevM))) * coastTransition;
+      const maxLandW = Math.max(isLand[i0] * w0, isLand[i1] * w1, isLand[i2] * w2);
+      const maxOceanW = Math.max((1 - isLand[i0]) * w0, (1 - isLand[i1]) * w1, (1 - isLand[i2]) * w2);
+      const mixedCoastGate = clamp(4.0 * landFrac * (1.0 - landFrac), 0.0, 1.0);
+      const zeroCrossGate = 1.0 - smoothstep(8.0, 95.0, Math.abs(baseElevM));
+      const coastBand = mixedCoastGate * zeroCrossGate;
 
       const b0Mask = bioValidMask[i0] * w0;
       const b1Mask = bioValidMask[i1] * w1;
       const b2Mask = bioValidMask[i2] * w2;
       const bSum = b0Mask + b1Mask + b2Mask;
       let strahler = 1.0;
+      let valleyMask = 0.0;
       if (bSum >= 0.01) {
+        const bw0 = b0Mask / bSum;
+        const bw1 = b1Mask / bSum;
+        const bw2 = b2Mask / bSum;
         strahler =
-          strahlerOrder[i0] * (b0Mask / bSum) +
-          strahlerOrder[i1] * (b1Mask / bSum) +
-          strahlerOrder[i2] * (b2Mask / bSum);
+          strahlerOrder[i0] * bw0 +
+          strahlerOrder[i1] * bw1 +
+          strahlerOrder[i2] * bw2;
+        const chMix = hasChannel[i0] * bw0 + hasChannel[i1] * bw1 + hasChannel[i2] * bw2;
+        valleyMask = smoothstep(0.18, 0.85, chMix) * smoothstep(0.15, 0.70, bSum);
       }
 
       const ux = unitS[0];
@@ -346,29 +364,46 @@ export function createShaderTerrainSurfaceSampler(
       const coastDetail = (fbm4(ux * 44.0 + wx * 2.1, uy * 44.0 + wy * 2.1, uz * 44.0 + wz * 2.1) - 0.5) * 145.0;
       const fjordMask = smoothstep(0.68, 1.15, absLat);
       const fjordCuts = (ridgedFbm3(ux * 34.0 + wx * 1.8, uy * 34.0 + wy * 1.8, uz * 34.0 + wz * 1.8) - 0.46) * 290.0 * fjordMask;
+      const ridgeSuppress = 1.0 - 0.85 * valleyMask;
       const microRidgeM =
         (ridgedFbm3(ux * 28.0 + wx * 0.8, uy * 28.0 + wy * 0.8, uz * 28.0 + wz * 0.8) - 0.35) *
-        smoothstep(80.0, 1400.0, Math.max(0.0, baseElevM)) *
-        420.0;
+        smoothstep(35.0, 420.0, Math.max(0.0, baseElevM)) *
+        (1.0 - 0.85 * valleyMask) *
+        320.0 *
+        (landFrac >= 0.55 ? 1.0 : 0.0);
 
-      const effectiveElevM = baseElevM + (coastMacro + coastDetail - fjordCuts) * coastBand + microRidgeM;
+      const coastDelta = clamp((coastMacro + coastDetail - fjordCuts) * 0.35, -38.0, 38.0) * coastBand;
+      let effectiveElevM = baseElevM + coastDelta + microRidgeM;
+      if (landFrac <= 0.001) {
+        effectiveElevM = Math.min(baseElevM, -1.0);
+      } else if (landFrac >= 0.999) {
+        effectiveElevM = Math.max(baseElevM + microRidgeM, 0.8);
+      } else if (maxOceanW > 0.96) {
+        effectiveElevM = Math.min(baseElevM, -1.0);
+      } else if (maxLandW > 0.96) {
+        effectiveElevM = Math.max(effectiveElevM, 0.8);
+      }
+
       const posElev = Math.max(0.0, effectiveElevM);
       const landMask = smoothstep(0.0, 6.0, posElev);
-      const coastalBluff = smoothstep(0.0, 65.0, posElev) * 0.0052;
+      const coastalBluff = smoothstep(0.0, 65.0, posElev) * 0.0052 * (1.0 - 0.55 * valleyMask);
       const hypsoBase = Math.pow(clamp(posElev / 4200.0, 0.0, 1.0), 0.65) * 0.060;
       const rollingHills =
         (fbm4(ux * 34.0 + 3.1, uy * 34.0 - 1.7, uz * 34.0 + 5.3) - 0.42) *
         0.0054 *
-        smoothstep(2.0, 35.0, posElev);
+        smoothstep(2.0, 35.0, posElev) *
+        ridgeSuppress;
       const valleyCut =
-        0.0036 *
-        smoothstep(1.25, 3.8, strahler) *
-        smoothstep(8.0, 85.0, posElev) *
-        (1.0 - smoothstep(450.0, 1800.0, posElev));
+        0.0044 *
+        valleyMask *
+        smoothstep(0.5, 4.0, strahler) *
+        smoothstep(2.0, 60.0, posElev) *
+        (1.0 - smoothstep(1200.0, 3400.0, posElev));
       const alpineCrags =
         ridgedFbm3(ux * 26.0 - 2.4, uy * 26.0 + 5.1, uz * 26.0 + 1.7) *
         0.019 *
-        smoothstep(180.0, 1700.0, posElev);
+        smoothstep(180.0, 1700.0, posElev) *
+        ridgeSuppress;
       const rawLandRelief =
         Math.max(
           0.0003 * landMask,
@@ -480,7 +515,7 @@ function safeDryHalfWidth(
   if (sideLen < 1e-9) return targetHw;
   const side = scale3(sideRaw, 1 / sideLen);
   let hw = targetHw;
-  for (let step = 0; step < 5; step += 1) {
+  for (let step = 0; step < 9; step += 1) {
     const leftU = norm3(add3(curUnit, scale3(side, hw)));
     const rightU = norm3(sub3(curUnit, scale3(side, hw)));
     const sL = sampler.sample(leftU, hintA, hintB, altitudeNorm);
@@ -488,7 +523,7 @@ function safeDryHalfWidth(
     if (sL.isExplored && sL.effectiveElevM >= 0 && sR.isExplored && sR.effectiveElevM >= 0) {
       return hw;
     }
-    hw *= 0.5;
+    hw *= 0.78;
   }
   return hw;
 }
@@ -760,6 +795,7 @@ export function buildHydrologyRibbonMesh(
       readonly baseHw: number;
       readonly wNorm: number;
       readonly dstIsOcean: boolean;
+      readonly isEstuaryOrMajor: boolean;
     }
 
     const knotPoints: Vec3[] = [];
@@ -769,6 +805,7 @@ export function buildHydrologyRibbonMesh(
       readonly baseHw: number;
       readonly wNorm: number;
       readonly dstIsOcean: boolean;
+      readonly isEstuaryOrMajor: boolean;
     }> = [];
 
     for (let eIdx = 0; eIdx + 1 < chain.length; eIdx += 1) {
@@ -776,10 +813,16 @@ export function buildHydrologyRibbonMesh(
       const vId = chain[eIdx + 1];
       const uGeom = cellMap.get(uId)!;
       const vGeom = cellMap.get(vId)!;
+      const uKnown = knownById.get(uId);
       const vKnown = knownById.get(vId);
       const vIsOcean = Boolean(vKnown && vKnown.tier !== "unexplored" && (vKnown.isOcean || vKnown.elevationM < 0));
       const vIsLake = Boolean(vKnown && (vKnown.tier === "surveyed" || vKnown.tier === "stale") && vKnown.isLake);
       const truncatedAtFog = !vKnown || vKnown.tier === "unexplored" || (vKnown.tier === "rumored" && !vIsOcean);
+      const isEstuaryOrMajor = Boolean(
+        uKnown &&
+          (uKnown.tier === "surveyed" || uKnown.tier === "stale") &&
+          (uKnown.isEstuary || (uKnown.strahlerOrder ?? 1) >= 2),
+      );
 
       const uInfo = halfWidthForCell(uId);
       if (uInfo.flooded) floodedRiverCount += 1;
@@ -792,7 +835,11 @@ export function buildHydrologyRibbonMesh(
       const latRaw = cross3(uPt, chordDir);
       const latLen = Math.hypot(latRaw[0], latRaw[1], latRaw[2]);
       const lateral = latLen > 1e-6 ? scale3(latRaw, 1 / latLen) : north;
-      const amp = Math.min(0.018, segLen * 0.20) * (truncatedAtFog ? 0.55 : 1.0);
+      const uElev = uKnown && uKnown.tier !== "unexplored" ? uKnown.elevationM : 0;
+      const vElev = vKnown && vKnown.tier !== "unexplored" ? vKnown.elevationM : uElev;
+      const elevDiff = Math.abs(uElev - vElev);
+      const reliefDamp = elevDiff > 300 ? clamp(1.0 - (elevDiff - 300) / 1400, 0.25, 1.0) : 1.0;
+      const amp = Math.min(0.018, segLen * 0.20) * (truncatedAtFog ? 0.55 : 1.0) * reliefDamp;
       const offMid = deterministicSignedNoise(uId, vId, 17) * amp;
 
       if (eIdx === 0) {
@@ -803,6 +850,7 @@ export function buildHydrologyRibbonMesh(
           baseHw: uInfo.hw,
           wNorm: 1.0,
           dstIsOcean: vIsOcean,
+          isEstuaryOrMajor,
         });
       }
 
@@ -811,19 +859,26 @@ export function buildHydrologyRibbonMesh(
         const fogEnd = slerpUnitVec3(uPt, vGeom.centerUnit, 0.42);
         knotPoints.push(qPt, fogEnd);
         knotMeta.push(
-          { srcId: uId, dstId: vId, baseHw: uInfo.hw, wNorm: 0.52, dstIsOcean: false },
-          { srcId: uId, dstId: vId, baseHw: uInfo.hw, wNorm: 0.05, dstIsOcean: false },
+          { srcId: uId, dstId: vId, baseHw: uInfo.hw, wNorm: 0.52, dstIsOcean: false, isEstuaryOrMajor },
+          { srcId: uId, dstId: vId, baseHw: uInfo.hw, wNorm: 0.05, dstIsOcean: false, isEstuaryOrMajor },
         );
         break;
       }
 
       const midPt = norm3(add3(slerpUnitVec3(uPt, vGeom.centerUnit, 0.5), scale3(lateral, offMid)));
-      const vHw = dsMap.has(vId) || vIsLake ? halfWidthForCell(vId).hw : uInfo.hw * 1.08;
+      const vHw = dsMap.has(vId) || vIsLake ? halfWidthForCell(vId).hw : uInfo.hw * 1.15;
       const midHw = 0.5 * (uInfo.hw + vHw);
       knotPoints.push(midPt, vGeom.centerUnit);
       knotMeta.push(
-        { srcId: uId, dstId: vId, baseHw: midHw, wNorm: 1.0, dstIsOcean: vIsOcean },
-        { srcId: uId, dstId: vId, baseHw: vHw, wNorm: vIsLake ? 0.72 : 1.0, dstIsOcean: vIsOcean },
+        { srcId: uId, dstId: vId, baseHw: midHw, wNorm: 1.0, dstIsOcean: vIsOcean, isEstuaryOrMajor },
+        {
+          srcId: uId,
+          dstId: vId,
+          baseHw: vHw,
+          wNorm: vIsLake ? 0.78 : 1.0,
+          dstIsOcean: vIsOcean,
+          isEstuaryOrMajor,
+        },
       );
     }
 
@@ -850,6 +905,7 @@ export function buildHydrologyRibbonMesh(
           baseHw: metaA.baseHw + (metaB.baseHw - metaA.baseHw) * t,
           wNorm: metaA.wNorm + (metaB.wNorm - metaA.wNorm) * t,
           dstIsOcean: metaB.dstIsOcean,
+          isEstuaryOrMajor: metaB.isEstuaryOrMajor,
         });
       }
       if (k + 2 === knotPoints.length) {
@@ -860,6 +916,7 @@ export function buildHydrologyRibbonMesh(
           baseHw: metaB.baseHw,
           wNorm: metaB.wNorm,
           dstIsOcean: metaB.dstIsOcean,
+          isEstuaryOrMajor: metaB.isEstuaryOrMajor,
         });
       }
     }
@@ -868,6 +925,7 @@ export function buildHydrologyRibbonMesh(
     let spanHalfWidths: number[] = [];
     let spanHintA: number[] = [];
     let spanHintB: number[] = [];
+    let spanDstOcean: boolean[] = [];
     let emittedAnySpan = false;
 
     const flushSpan = () => {
@@ -876,9 +934,10 @@ export function buildHydrologyRibbonMesh(
         spanHalfWidths = [];
         spanHintA = [];
         spanHintB = [];
+        spanDstOcean = [];
         return;
       }
-      const projectedPts: THREE.Vector3[] = [];
+      const rawLifts: number[] = [];
       const guardedHalfWidths: number[] = [];
       const upNormals: THREE.Vector3[] = [];
       for (let k = 0; k < spanUnits.length; k += 1) {
@@ -886,24 +945,29 @@ export function buildHydrologyRibbonMesh(
         const prevU = spanUnits[Math.max(0, k - 1)];
         const nextU = spanUnits[Math.min(spanUnits.length - 1, k + 1)];
         const s = surfaceSampler.sample(u, spanHintA[k], spanHintB[k], altitudeNorm);
-        const lift = (flatMode ? s.vertexReliefHeight * 0.65 : s.vertexReliefHeight) + (flatMode ? 0.0015 : 0.0008);
-        const guardedHw =
-          safeDryHalfWidth(
-            surfaceSampler,
-            u,
-            prevU,
-            nextU,
-            spanHalfWidths[k] / flatScale,
-            spanHintA[k],
-            spanHintB[k],
-            altitudeNorm,
-          ) * flatScale;
-        projectedPts.push(projectPoint(u, lift));
+        const reliefLift = (flatMode ? s.vertexReliefHeight * 0.65 : s.vertexReliefHeight) + (flatMode ? 0.0014 : 0.00065);
+        rawLifts.push(reliefLift);
+        const hwTarget = spanHalfWidths[k] / flatScale;
+        const guardedHw = spanDstOcean[k]
+          ? safeDryHalfWidth(surfaceSampler, u, prevU, nextU, hwTarget, spanHintA[k], spanHintB[k], altitudeNorm) * flatScale
+          : spanHalfWidths[k];
         guardedHalfWidths.push(guardedHw);
         upNormals.push(
           flatMode ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(u[0], u[1], u[2]).normalize(),
         );
       }
+
+      // Enforce strictly non-increasing 3D water elevation downstream while never dipping under terrain (`UI-GLB-009`).
+      const lifts = rawLifts.slice();
+      for (let k = lifts.length - 2; k >= 0; k -= 1) {
+        lifts[k] = Math.max(lifts[k], lifts[k + 1]);
+      }
+
+      const projectedPts: THREE.Vector3[] = [];
+      for (let k = 0; k < spanUnits.length; k += 1) {
+        projectedPts.push(projectPoint(spanUnits[k], lifts[k]));
+      }
+
       appendRibbonStrip(positions, normals, uvs, indices, projectedPts, guardedHalfWidths, upNormals);
 
       if (altitudeNorm < 0.65 && projectedPts.length >= 4) {
@@ -934,34 +998,48 @@ export function buildHydrologyRibbonMesh(
       spanHalfWidths = [];
       spanHintA = [];
       spanHintB = [];
+      spanDstOcean = [];
     };
 
-    const pushDrySample = (sm: SampleNode, elevM: number, isMouthCap: boolean) => {
-      const inlandSwell =
-        sm.dstIsOcean && !isMouthCap
-          ? 1.0 + 0.12 * smoothstep(35.0, 6.0, elevM) * smoothstep(1.0, 8.0, elevM)
+    const pushSample = (sm: SampleNode, elevM: number, isMouth: boolean) => {
+      const estuarySwell =
+        sm.dstIsOcean
+          ? 1.0 + (sm.isEstuaryOrMajor ? 0.95 : 0.45) * (1.0 - smoothstep(0.0, 42.0, Math.max(0.0, elevM)))
           : 1.0;
-      const capScale = isMouthCap ? 0.35 : 1.0;
       spanUnits.push(sm.u);
-      spanHalfWidths.push(sm.baseHw * sm.wNorm * inlandSwell * capScale * flatScale);
+      spanHalfWidths.push(sm.baseHw * sm.wNorm * estuarySwell * flatScale);
       spanHintA.push(sm.hintA);
       spanHintB.push(sm.hintB);
+      spanDstOcean.push(isMouth || sm.dstIsOcean);
     };
 
     let prevSample = samples[0];
     let prevSurf = surfaceSampler.sample(prevSample.u, prevSample.hintA, prevSample.hintB, altitudeNorm);
-    if (prevSurf.isExplored && prevSurf.effectiveElevM >= SHORELINE_STOP_ELEV_M) {
-      pushDrySample(prevSample, prevSurf.effectiveElevM, false);
+    const isStartValid =
+      prevSurf.isExplored && (!prevSample.dstIsOcean || prevSurf.effectiveElevM >= SHORELINE_STOP_ELEV_M);
+    if (isStartValid) {
+      pushSample(prevSample, prevSurf.effectiveElevM, false);
     }
 
     for (let i = 1; i < samples.length; i += 1) {
       const curSample = samples[i];
       const curSurf = surfaceSampler.sample(curSample.u, curSample.hintA, curSample.hintB, altitudeNorm);
+
+      // Keep all land-to-land/lake river spans 100% continuous across low plains without mid-course clipping (`UI-GLB-009`).
+      if (!curSample.dstIsOcean) {
+        if (curSurf.isExplored) {
+          pushSample(curSample, curSurf.effectiveElevM, false);
+        }
+        prevSample = curSample;
+        prevSurf = curSurf;
+        continue;
+      }
+
       const prevDry = prevSurf.isExplored && prevSurf.effectiveElevM >= SHORELINE_STOP_ELEV_M;
       const curDry = curSurf.isExplored && curSurf.effectiveElevM >= SHORELINE_STOP_ELEV_M;
 
       if (prevDry && curDry) {
-        pushDrySample(curSample, curSurf.effectiveElevM, false);
+        pushSample(curSample, curSurf.effectiveElevM, false);
       } else if (prevDry && !curDry) {
         if (curSurf.isExplored) {
           const shorePt = bisectShorelineUnit(
@@ -971,6 +1049,7 @@ export function buildHydrologyRibbonMesh(
             curSample.hintA,
             curSample.hintB,
             altitudeNorm,
+            SHORELINE_STOP_ELEV_M,
           );
           const shoreSurf = surfaceSampler.sample(
             shorePt,
@@ -978,16 +1057,10 @@ export function buildHydrologyRibbonMesh(
             curSample.hintB,
             altitudeNorm,
           );
-          pushDrySample(
-            { ...curSample, u: shorePt, wNorm: curSample.wNorm * 0.65 },
-            shoreSurf.effectiveElevM,
-            true,
-          );
+          pushSample({ ...curSample, u: shorePt }, Math.max(0.0, shoreSurf.effectiveElevM), true);
         }
         flushSpan();
-        if (curSample.dstIsOcean) {
-          break;
-        }
+        break;
       } else if (!prevDry && curDry) {
         if (prevSurf.isExplored) {
           const entryPt = bisectShorelineUnit(
@@ -997,6 +1070,7 @@ export function buildHydrologyRibbonMesh(
             curSample.hintA,
             curSample.hintB,
             altitudeNorm,
+            SHORELINE_STOP_ELEV_M,
           );
           const entrySurf = surfaceSampler.sample(
             entryPt,
@@ -1004,9 +1078,9 @@ export function buildHydrologyRibbonMesh(
             curSample.hintB,
             altitudeNorm,
           );
-          pushDrySample({ ...curSample, u: entryPt }, entrySurf.effectiveElevM, false);
+          pushSample({ ...curSample, u: entryPt }, entrySurf.effectiveElevM, true);
         }
-        pushDrySample(curSample, curSurf.effectiveElevM, false);
+        pushSample(curSample, curSurf.effectiveElevM, false);
       }
 
       prevSample = curSample;

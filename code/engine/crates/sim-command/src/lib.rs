@@ -650,7 +650,9 @@ impl CommandHierarchy {
             | SpinePlayerCommand::SetInnovationMode { .. }
             | SpinePlayerCommand::IssueTheaterDirective { .. }
             | SpinePlayerCommand::IssueOperationalBattlePlan { .. }
-            | SpinePlayerCommand::AcknowledgeSuccession) => {
+            | SpinePlayerCommand::AcknowledgeSuccession
+            | SpinePlayerCommand::ConstructDam { .. }
+            | SpinePlayerCommand::SetDamRuleCurve { .. }) => {
                 self.pending_world_actions
                     .push(CommandWorldAction { tick, command: other });
             }

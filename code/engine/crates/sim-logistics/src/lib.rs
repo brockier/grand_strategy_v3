@@ -20,7 +20,8 @@ use sim_spine::ids::{
 use sim_spine::ports::{
     great_circle_arc_km, slerp_unit_xyz, ArrivedCourierEnvelope, CanonicalSaveablePort,
     CarrierDefView, ConvoyTransitView, CourierEnvelope, LogisticsPort, ModRegistryPort,
-    PlanetGeometryPort, ShipmentRequest, SurfaceConditionsPort, TransitChannelKind,
+    PlanetGeometryPort, RiverNavigabilityKind, ShipmentRequest, SurfaceConditionsPort,
+    TransitChannelKind,
 };
 
 /// Explicit economic or engineering reason why an overland road edge exists.
@@ -1186,6 +1187,7 @@ impl LogisticsNetwork {
                 cur_cell,
                 slope,
                 carrier,
+                planet,
                 weather,
                 registry,
             )
@@ -1598,6 +1600,7 @@ fn eval_continuous_land_speed(
     v: CellId,
     slope: f32,
     carrier: &CarrierDefView,
+    planet: &dyn PlanetGeometryPort,
     weather: &dyn SurfaceConditionsPort,
     registry: &dyn ModRegistryPort,
 ) -> Option<f64> {
@@ -1620,6 +1623,13 @@ fn eval_continuous_land_speed(
         .map(|i| f64::from(i.speed_multiplier.max(0.25)))
         .unwrap_or(1.0);
     let wilderness_mult = if road_built { 1.0 } else { 0.82 };
+    let avg_rough_norm =
+        f64::from((0.5 * (planet.cell_roughness_m(u) + planet.cell_roughness_m(v)) / 350.0).clamp(0.0, 1.0));
+    let roughness_mult = if road_built {
+        1.0 - 0.12 * avg_rough_norm
+    } else {
+        1.0 - 0.42 * avg_rough_norm
+    };
     let mud_shield = infra.map(|i| i.mud_shield_factor).unwrap_or(0.0);
     let effective_mud = (avg_mud * (1.0 - mud_shield)).clamp(0.0, 1.0);
     let mud_mult = f64::from((1.0 - effective_mud * carrier.mud_penalty_factor).clamp(0.18, 1.0));
@@ -1643,6 +1653,7 @@ fn eval_continuous_land_speed(
     let speed = f64::from(carrier.base_speed_km_hr.max(0.5))
         * infra_speed_mult
         * wilderness_mult
+        * roughness_mult
         * mud_mult
         * grade_mult
         * flood_mult
@@ -1703,6 +1714,7 @@ fn eval_waypoint_segment_speed(
         probe_cell,
         slope,
         carrier,
+        planet,
         weather,
         registry,
     )
@@ -1775,7 +1787,16 @@ fn eval_edge_speed_with_map(
             let ch_u = planet.cell_river_channel_downstream(u);
             let ch_v = planet.cell_river_channel_downstream(v);
             if ch_u == Some(v) {
-                let q = planet.cell_river_discharge_m3_s(u);
+                let nav = match weather.cell_live_navigability(u) {
+                    RiverNavigabilityKind::None => planet.cell_river_navigability(u),
+                    live => live,
+                };
+                if nav == RiverNavigabilityKind::Rapids && weather.dam_at_cell(u).is_none() {
+                    return None;
+                }
+                let q = weather
+                    .cell_live_discharge_m3_s(u)
+                    .max(planet.cell_river_discharge_m3_s(u));
                 let vel_mps = planet.cell_river_velocity_mps(u);
                 let slope = planet.cell_slope_rad(edge_id).abs();
                 if q < 25.0 || slope > 0.045 || vel_mps > 3.8 {
@@ -1783,7 +1804,16 @@ fn eval_edge_speed_with_map(
                 }
                 river_current_km_hr = f64::from(vel_mps) * 3.6 * 0.85;
             } else if ch_v == Some(u) {
-                let q = planet.cell_river_discharge_m3_s(v);
+                let nav = match weather.cell_live_navigability(v) {
+                    RiverNavigabilityKind::None => planet.cell_river_navigability(v),
+                    live => live,
+                };
+                if nav == RiverNavigabilityKind::Rapids && weather.dam_at_cell(v).is_none() {
+                    return None;
+                }
+                let q = weather
+                    .cell_live_discharge_m3_s(v)
+                    .max(planet.cell_river_discharge_m3_s(v));
                 let vel_mps = planet.cell_river_velocity_mps(v);
                 let slope = planet.cell_slope_rad(edge_id).abs();
                 if q < 25.0 || slope > 0.045 || vel_mps > 3.8 {
@@ -1802,7 +1832,16 @@ fn eval_edge_speed_with_map(
         return None;
     }
     if requires_bridge && Some(infra_id) != timber_bridge_infra && bridge_cap.is_none() {
-        return None;
+        let avg_ice = 0.5 * (surf_u.ice_thickness_m + surf_v.ice_thickness_m);
+        let max_flood = surf_u.flood_stage_01.max(surf_v.flood_stage_01);
+        let shallow_ford = (weather.cell_live_navigability(u) == RiverNavigabilityKind::ShallowFord
+            || weather.cell_live_navigability(v) == RiverNavigabilityKind::ShallowFord
+            || planet.cell_river_navigability(u) == RiverNavigabilityKind::ShallowFord)
+            && max_flood < 0.35;
+        let ice_crossing = avg_ice >= 0.25;
+        if !shallow_ford && !ice_crossing {
+            return None;
+        }
     }
     if let Some(cap_kg) = bridge_cap
         && cargo_mass_kg > cap_kg
@@ -1810,7 +1849,7 @@ fn eval_edge_speed_with_map(
         return None;
     }
     let slope = planet.cell_slope_rad(edge_id).abs();
-    eval_continuous_land_speed(infra_id, road_built, u, v, slope, carrier, weather, registry)
+    eval_continuous_land_speed(infra_id, road_built, u, v, slope, carrier, planet, weather, registry)
 }
 
 fn record_convoy_arrival(

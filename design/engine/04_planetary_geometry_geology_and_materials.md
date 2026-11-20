@@ -3,7 +3,7 @@
 **Module ID:** `ENG-GEO-04`  
 **Code Location:** `code/engine/crates/sim-planet/`  
 **Milestone & Design Depth:** `M1–M7: Full Detailed Design`  
-**Satisfies Requirements:** `ENG-GEO-001.1`, `ENG-GEO-002`, `ENG-GEO-003`, `ENG-GEO-004`, `ENG-GEO-005`, `ENG-GEO-006`, `ENG-GEO-007` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
+**Satisfies Requirements:** `ENG-GEO-001.1`, `ENG-GEO-002`, `ENG-GEO-003`, `ENG-GEO-004`, `ENG-GEO-005`, `ENG-GEO-006`, `ENG-GEO-007`, `ENG-GEO-008`, `ENG-GEO-009`, `ENG-GEO-010`, `ENG-GEO-011`, `ENG-GEO-012`, `ENG-GEO-013` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
 ---
 
@@ -38,15 +38,33 @@
 
 ```rust
 pub struct CellTerrainData {
-    pub elevation_m: f32,         // negative = ocean bathymetry, >= 0 = land
+    pub elevation_m: f32,         // negative = submarine bathymetry, >= 0 = land
+    pub channel_bed_elev_m: f32,  // strictly downhill incised river bed elevation
+    pub water_surface_elev_m: f32,// monotonic water profile (0.0m at ocean shoreline)
+    pub roughness_m: f32,         // sub-cell terrain roughness impeding unbuilt travel
     pub plate_id: PlateId,
+    pub geology_province: GeologyProvinceKind, // 13 unified land & marine provinces
+    pub province_age_myr: f32,
+    pub basin_depth_m: f32,
+    pub fault_instability_01: f32,
+    pub volcanic_hazard_01: f32,
     pub rock_strata: RockStrataClass, // OceanicBasalt | IgneousOrogenic | VolcanicArc | MetamorphicShield | SedimentaryBasin | AlluvialPlain
     pub surface_soil: SoilClass,
+    pub soil_drainage_01: f32,
+    pub soil_clay_01: f32,
+    pub marine_upwelling_01: f32,
+    pub shelf_nutrient_01: f32,
     pub river_downstream: Option<CellId>, // General watershed drainage link across all land cells
+    pub spill_parent: Option<CellId>,     // Priority-flood outlet across flat depressions
     pub watershed_id: WatershedId,
     pub drainage_area_km2: f32,
     pub strahler_order: u8,
     pub is_lake: bool,
+    pub lake_kind: LakeKind,              // None | Exorheic | Endorheic
+    pub lake_surface_elev_m: f32,
+    pub lake_salinity_per_mille: f32,
+    pub is_estuary: bool,
+    pub river_navigability: RiverNavigabilityKind, // None | ShallowFord | Rapids | DeepNavigable
     pub river_channel_downstream: Option<CellId>, // Directed acyclic downstream perennial river channel link
     pub river_discharge_m3_s: f32,
     pub river_velocity_mps: f32,
@@ -63,6 +81,9 @@ pub struct HiddenSubsurfaceDeposit {
     pub average_purity_01: f32,
     pub overburden_depth_m: f32,
     pub aquifer_flood_risk_01: f32,
+    pub accessibility_tier: u8,     // 1 (surface/outcrop), 2 (mid-shaft), 3 (deep/seismic)
+    pub is_offshore: bool,          // continental_shelf submarine hydrocarbon/mineral bed
+    pub is_alluvial_placer: bool,   // downstream river placer transported from upland orogens
 }
 ```
 
@@ -81,10 +102,10 @@ Each world seed rolls concrete entries within physical parameter ranges defined 
 All stages run deterministically from `ChaCha8Rng::seed_from_u64(world_seed)` using fixed IEEE-754 order without `fast-math`:
 
 1. **Welded Spherical Manifold Construction (`ENG-GEO-001.1`):** Generate subdivided unit icosahedron triangles at frequency `m` with `10 * m^2 + 2` vertices and `20 * m^2` outward CCW triangles, sort sample neighbors counter-clockwise, verify Euler characteristic `V - E + F == 2`, and expose inverse-angular / barycentric terrain interpolation `sample_elevation_at_unit_xyz(u)` alongside `O(m)` hill-climbing `nearest_sample_cell(u)`.
-2. **Domain-Warped Anisotropic Ridged Orogeny & Continental Shelves (`ENG-GEO-002`, `ENG-GEO-007`):** Sample `K` plate seeds via geodesic farthest-point sampling, flood-assign plates with noise-perturbed boundaries, assign continental versus oceanic crust + Euler pole rotation vectors, compute convergent boundary stress (`dot(relative_vel, boundary_normal)`), add domain-warped 5-octave ridged multifractal uplift (`(1 - |n(u + w(u))|)^2.2`) to form curved cordilleras, shape two-tier continental-shelf (`-15m .. -180m`) versus abyssal-basin bathymetry, and carve high-latitude glacial fjord/skerry troughs along cold coastal belts (`|lat| > 46 deg`).
-3. **Wind Gyres & Orographic Precipitation (`ENG-GEO-004`):** Compute latitudinal Hadley/Ferrel/Polar prevailing wind vectors rotated by Coriolis deflection; march moisture parcels downwind across cell steps, precipitating moisture up windward slopes and leaving realistic rain shadows on leeward slopes.
-4. **Priority-Flood Acyclic Watersheds, Volumetric River Runoff, Inland Lakes & Terminus Closure (`ENG-GEO-004`, `ENG-GEO-007`, `ENG-GEO-008`):** Execute Barnes priority-flood depression resolution from ocean coast cells inward across land elevation so every land cell receives a strictly non-increasing downhill `river_downstream: Option<CellId>` pointer (guaranteeing an acyclic DAG terminating at sea), accumulate `drainage_area_km2`, compute hierarchical integer `strahler_order` (`1..7`), and incise fluvial valleys monotonically without breaking downhill flow. On top of the baseline drainage DAG, accumulate net climate runoff (`effective_precip - evap` over `cell_area_km2 * 1e6 / 31_536_000`) in topological downstream order to populate `river_discharge_m3_s`, derive channel Manning-approximation flow speed `river_velocity_mps` and reach drop power `hydro_potential_kw`, classify pooled basin sinks whose rim overflow is unresolved or wet basins above threshold as `is_lake = true`, and prune/extend `river_channel_downstream` so every perennial river cell (`river_discharge_m3_s >= 18.0 m3/s`) connects downstream strictly into another perennial river confluence, an `is_lake` cell, or an ocean coast cell.
-5. **Continuous Biophysical Indices & Strata Deposits (`ENG-GEO-003`, `ENG-GEO-007`):** Derive `aridity_index_01` from precipitation versus temperature-driven potential evapotranspiration and `soil_fertility_01` from parent `RockStrataClass`, drainage, moisture, and slope; sample subsurface deposits conditioned on geological strata.
+2. **Two-Generation Tectonic Provinces & Unified Land-Sea Bathymetry (`ENG-GEO-002`, `ENG-GEO-007`, `ENG-GEO-009`, `ENG-GEO-010`):** Sample `K` plate seeds via geodesic farthest-point sampling, flood-assign plates with noise-perturbed boundaries, evaluate both ancient eroded relict sutures (`OldOrogen`, `ShieldCraton`, `Platform`) and modern active margins (`YoungOrogen`, `VolcanicArc`, `ContinentalRift`, `MidOceanRidge`, `OceanicTrench`), calibrate continuous land hypsometry and marine bathymetry (`ContinentalShelf` `-12m..-185m`, `ContinentalSlope` `-185m..-2800m`, `AbyssalPlain` `-3200m..-4600m`) to emergent sea level matching `land_fraction_target`, classify depositional lowlands (`SedimentaryBasin`, `AlluvialPlain`), and compute `basin_depth_m`, `fault_instability_01`, `volcanic_hazard_01`, and `roughness_m`.
+3. **Wind Gyres, Orographic Precipitation & Marine Upwelling (`ENG-GEO-004`, `ENG-GEO-013`):** Compute latitudinal Hadley, Ferrel, and Polar prevailing wind vectors rotated by Coriolis deflection; march moisture parcels downwind across cell steps, precipitating moisture up windward slopes and leaving rain shadows on leeward slopes; compute offshore Ekman coastal `marine_upwelling_01` and estuarine/shelf `shelf_nutrient_01`.
+4. **Spillway Priority-Flood, Monotonic Thalwegs, Exorheic/Endorheic Lakes, Estuaries & Navigability (`ENG-GEO-004`, `ENG-GEO-007`, `ENG-GEO-008`, `ENG-GEO-012`):** Execute Barnes priority-flood depression resolution from ocean coast cells inward across the spherical manifold, recording explicit `spill_parent` outlets across flat basins so every land sample receives an acyclic downhill pointer. Accumulate climate runoff (`effective_precip - evap`) topologically into `river_discharge_m3_s`, differentiate freshwater `Exorheic` overflow lakes (`salinity 0.1..0.5` per mille) from humid vs. arid terminal `Endorheic` salt basins (`22..165` per mille), clamp monotonic `channel_bed_elev_m` and `water_surface_elev_m` (`bed[u] > bed[ds]`, `surf[u] >= surf[ds] >= 0.0`), tag tidal `is_estuary` mouths and `RiverNavigabilityKind` (`ShallowFord`, `Rapids`, `DeepNavigable`), and prune/route every perennial reach so zero dry-land terminations remain.
+5. **Continuous Soil Texture & Data-Driven Province-Affinity Deposits (`ENG-GEO-003`, `ENG-GEO-011`, `ENG-GEO-013`):** Derive `aridity_index_01`, `soil_drainage_01`, `soil_clay_01`, and `soil_fertility_01` from province weathering and climate; spawn contiguous multi-cell veins, `is_offshore` shelf deposits, and downstream `is_alluvial_placer` deposits strictly from externalized `[[deposit_affinities]]` in `mods/core-schemas/planet/geology.toml` with a guaranteed reachable `accessibility_tier == 1` starter ore and fuel deposit near coastal colony landing zones.
 6. **Bounded Procedural Material Roll (`ENG-GEO-005`):** Generate world-specific materials, fluxes, fuels, crops, fauna, and pathogens using rejection-bounded physical curves so mass conservation (`output_metal <= ore_mass * purity`) and thermodynamic efficiency limits (`heat_released <= fuel_enthalpy`) can never be violated.
 7. **Circular Geodesic HQ Horizon (`ENG-EPI-002`):** `player-view::observe_hq_halo` traverses `VecDeque` breadth-first rings bounded by true geodesic `great_circle_km` radius (`hq_sight_radius_cells = 4` by default on `m = 24`) so explored horizons form natural circles rather than 6-sided graph spokes.
 

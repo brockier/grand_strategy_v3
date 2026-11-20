@@ -339,6 +339,45 @@ export class MockSnapshotPlayer implements SimBridgeApi {
           next.clockAndNotifications.autoPauseReason = null;
         }
         break;
+      case "constructDam": {
+        const idx = next.knownCells.findIndex((c) => c.cellId === cmd.targetCell);
+        if (idx >= 0) {
+          const cell = next.knownCells[idx] as Record<string, unknown>;
+          if (cell.tier === "surveyed" || cell.tier === "stale") {
+            const q = Number(cell.riverDischargeM3S ?? 45);
+            const kw = Math.max(250, Math.round(q * 18));
+            cell.damStatus = {
+              cellId: cmd.targetCell,
+              ruleCurve: cmd.ruleCurve || "balanced_power",
+              reservoirStorageM3: q * 3600 * 6,
+              reservoirCapacityM3: q * 3600 * 24,
+              reservoirFill01: 0.25,
+              reservoirHeadM: 22,
+              spillwayReleaseM3S: q * 0.85,
+              liveHydroKw: kw,
+              sedimentSilt01: 0.01,
+              condition01: 1.0,
+              breached: false,
+            };
+            cell.hydroPotentialKw = Math.max(Number(cell.hydroPotentialKw ?? 0), kw);
+          }
+        }
+        break;
+      }
+      case "setDamRuleCurve": {
+        const idx = next.knownCells.findIndex((c) => c.cellId === cmd.targetCell);
+        if (idx >= 0) {
+          const cell = next.knownCells[idx] as Record<string, unknown>;
+          if (cell.damStatus && typeof cell.damStatus === "object") {
+            const dam = cell.damStatus as Record<string, unknown>;
+            dam.ruleCurve = cmd.ruleCurve;
+            if (cmd.ruleCurve === "flood_control") {
+              dam.spillwayReleaseM3S = Number(dam.spillwayReleaseM3S ?? 40) * 1.35;
+            }
+          }
+        }
+        break;
+      }
       default:
         break;
     }

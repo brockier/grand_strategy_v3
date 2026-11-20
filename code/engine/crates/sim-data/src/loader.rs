@@ -9,8 +9,9 @@ use schemars::schema_for;
 use serde::{Deserialize, Serialize};
 use sim_spine::{
     ActorId, CalendarConfigView, CarrierClassId, CarrierDefView, CohortArchetypeDefView,
-    CommodityDefView, CommodityId, DoctrineDefView, EventClassId, FormationTemplateDefView,
-    GovernanceModelDefView, InfraClassId, InfraDefView, ModRegistryPort, NaturalBoundsView,
+    CommodityDefView, CommodityId, DepositAffinityDefView, DoctrineDefView, EventClassId,
+    FluidDefView, FormationTemplateDefView, GeologyProvinceDefView, GovernanceModelDefView,
+    HydrologyRulesView, InfraClassId, InfraDefView, ModRegistryPort, NaturalBoundsView,
     NotificationBehaviorKind, PlanetGenConfigView, PolicyLawDefView, ProcessDefView, ProcessId,
     ProcessQuantityView, ScenarioArchetypeKind, ScenarioCharacterSeed, ScenarioInitView,
     ScenarioSettlementSeed, SuccessionRuleDefView, TechComponentDefView, TechComponentId,
@@ -19,14 +20,14 @@ use sim_spine::{
 
 use crate::schema::{
     CalendarRecord, CarrierRecord, CharacterTraitRecord, CharactersDomain, CohortArchetypeRecord,
-    CommoditiesAndKnowledgeDomain, CommodityRecord, DoctrineRecord, EventClassRecord,
-    FormationTemplateRecord, GovernanceDomain, GovernanceModelRecord, InfraClassRecord,
-    LocalizationStringRecord, LogisticsDomain, MergedModDocument,
-    NotificationsAndLocDomain, PackManifest, PlanetGenDomain, PlanetGenerationRecord,
-    PolicyLawRecord, PopulationDomain, ProcessRecord, ProcessesDomain,
-    ScenarioAndCalendarDomain, ScenarioHeaderRecord, SkinRefDomain, SkinReferenceRecord,
-    StartingCharacterRecord, StartingSettlementRecord, SuccessionRuleRecord, TechComponentRecord,
-    TheoryDomainRecord, VocationRecord, WarfareDomain,
+    CommoditiesAndKnowledgeDomain, CommodityRecord, DepositAffinityRecord, DoctrineRecord,
+    EventClassRecord, FluidRecord, FormationTemplateRecord, GeologyProvinceRecord,
+    GovernanceDomain, GovernanceModelRecord, HydrologyRulesRecord, InfraClassRecord,
+    LocalizationStringRecord, LogisticsDomain, MergedModDocument, NotificationsAndLocDomain,
+    PackManifest, PlanetGenDomain, PlanetGenerationRecord, PolicyLawRecord, PopulationDomain,
+    ProcessRecord, ProcessesDomain, ScenarioAndCalendarDomain, ScenarioHeaderRecord, SkinRefDomain,
+    SkinReferenceRecord, StartingCharacterRecord, StartingSettlementRecord, SuccessionRuleRecord,
+    TechComponentRecord, TheoryDomainRecord, VocationRecord, WarfareDomain,
 };
 
 /// Diagnostic severity level emitted during mod loading and validation.
@@ -239,12 +240,16 @@ impl ModRegistryPort for CompiledModBundle {
 
 const SINGLETON_SECTIONS: &[&str] = &[
     "planet_generation",
+    "hydrology_rules",
     "calendar",
     "scenario",
     "skin_reference",
 ];
 
 const ARRAY_SECTIONS: &[&str] = &[
+    "fluids",
+    "geology_provinces",
+    "deposit_affinities",
     "commodities",
     "tech_components",
     "theory_domains",
@@ -1132,6 +1137,10 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
 
     let planet_generation = parse_singleton("planet_generation", &mut diagnostics)
         .and_then(|rec| deserialize_staged_record::<PlanetGenerationRecord>("planet_generation", rec, &mut diagnostics));
+    let hydrology_rules = singleton_buckets
+        .get("hydrology_rules")
+        .and_then(|rec| deserialize_staged_record::<HydrologyRulesRecord>("hydrology_rules", rec, &mut diagnostics))
+        .unwrap_or_default();
     let calendar = parse_singleton("calendar", &mut diagnostics)
         .and_then(|rec| deserialize_staged_record::<CalendarRecord>("calendar", rec, &mut diagnostics));
     let scenario = parse_singleton("scenario", &mut diagnostics)
@@ -1155,6 +1164,11 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
         }};
     }
 
+    let (fluids, fluid_recs) = parse_array_domain!("fluids", FluidRecord);
+    let (geology_provinces, geo_prov_recs) =
+        parse_array_domain!("geology_provinces", GeologyProvinceRecord);
+    let (deposit_affinities, dep_aff_recs) =
+        parse_array_domain!("deposit_affinities", DepositAffinityRecord);
     let (commodities, commodity_recs) = parse_array_domain!("commodities", CommodityRecord);
     let (tech_components, _) = parse_array_domain!("tech_components", TechComponentRecord);
     let (theory_domains, _) = parse_array_domain!("theory_domains", TheoryDomainRecord);
@@ -1656,6 +1670,132 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
         }
     }
 
+    for (f, (_, rec)) in fluids.iter().zip(fluid_recs.iter()) {
+        if f.density_kg_m3 <= 0.0 {
+            push_field_diag(
+                &mut diagnostics,
+                "fluids",
+                rec,
+                "density_kg_m3",
+                format!("Fluid '{}' density_kg_m3 must be > 0.0", f.id),
+            );
+        }
+        if f.boil_point_c <= f.freeze_point_c {
+            push_field_diag(
+                &mut diagnostics,
+                "fluids",
+                rec,
+                "boil_point_c",
+                format!(
+                    "Fluid '{}' boil_point_c ({}) must exceed freeze_point_c ({})",
+                    f.id, f.boil_point_c, f.freeze_point_c
+                ),
+            );
+        }
+        if f.latent_heat_evap_kj_kg <= 0.0 {
+            push_field_diag(
+                &mut diagnostics,
+                "fluids",
+                rec,
+                "latent_heat_evap_kj_kg",
+                format!("Fluid '{}' latent_heat_evap_kj_kg must be > 0.0", f.id),
+            );
+        }
+        if f.specific_heat_j_kg_k <= 0.0 {
+            push_field_diag(
+                &mut diagnostics,
+                "fluids",
+                rec,
+                "specific_heat_j_kg_k",
+                format!("Fluid '{}' specific_heat_j_kg_k must be > 0.0", f.id),
+            );
+        }
+    }
+
+    if let Some(rec) = singleton_buckets.get("hydrology_rules") {
+        if !(0.0..=1.0).contains(&hydrology_rules.infiltration_rate_01) {
+            push_field_diag(
+                &mut diagnostics,
+                "hydrology_rules",
+                rec,
+                "infiltration_rate_01",
+                "infiltration_rate_01 must lie in [0.0, 1.0]".to_string(),
+            );
+        }
+        if hydrology_rules.aquifer_diffusivity < 0.0 {
+            push_field_diag(
+                &mut diagnostics,
+                "hydrology_rules",
+                rec,
+                "aquifer_diffusivity",
+                "aquifer_diffusivity must be >= 0.0".to_string(),
+            );
+        }
+        if !fluids.is_empty() && !fluids.iter().any(|f| f.id == hydrology_rules.active_fluid_id) {
+            push_field_diag(
+                &mut diagnostics,
+                "hydrology_rules",
+                rec,
+                "active_fluid_id",
+                format!(
+                    "hydrology_rules.active_fluid_id '{}' references undefined [[fluids]] record",
+                    hydrology_rules.active_fluid_id
+                ),
+            );
+        }
+    }
+
+    let province_keys: BTreeSet<&str> = geology_provinces.iter().map(|p| p.id.as_str()).collect();
+    for (gp, (_, rec)) in geology_provinces.iter().zip(geo_prov_recs.iter()) {
+        if gp.base_roughness_m < 0.0 {
+            push_field_diag(
+                &mut diagnostics,
+                "geology_provinces",
+                rec,
+                "base_roughness_m",
+                format!("Province '{}' base_roughness_m must be >= 0.0", gp.id),
+            );
+        }
+    }
+    for (aff, (_, rec)) in deposit_affinities.iter().zip(dep_aff_recs.iter()) {
+        if !province_keys.is_empty() && !province_keys.contains(aff.province_id.as_str()) {
+            push_field_diag(
+                &mut diagnostics,
+                "deposit_affinities",
+                rec,
+                "province_id",
+                format!(
+                    "Deposit affinity '{}' references undefined province '{}'",
+                    aff.id, aff.province_id
+                ),
+            );
+        }
+        if !(1..=3).contains(&aff.accessibility_tier) {
+            push_field_diag(
+                &mut diagnostics,
+                "deposit_affinities",
+                rec,
+                "accessibility_tier",
+                format!(
+                    "Deposit affinity '{}' accessibility_tier must be 1, 2, or 3",
+                    aff.id
+                ),
+            );
+        }
+        if aff.min_tonnes <= 0.0 || aff.max_tonnes < aff.min_tonnes {
+            push_field_diag(
+                &mut diagnostics,
+                "deposit_affinities",
+                rec,
+                "max_tonnes",
+                format!(
+                    "Deposit affinity '{}' tonnage range must satisfy 0 < min_tonnes <= max_tonnes",
+                    aff.id
+                ),
+            );
+        }
+    }
+
     if !diagnostics.is_empty() {
         return Err(diagnostics);
     }
@@ -1668,6 +1808,10 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
     let merged_doc = MergedModDocument {
         planet: PlanetGenDomain {
             planet_generation: Some(planet_rec.clone()),
+            hydrology_rules: Some(hydrology_rules.clone()),
+            fluids: fluids.clone(),
+            geology_provinces: geology_provinces.clone(),
+            deposit_affinities: deposit_affinities.clone(),
         },
         commodities_and_knowledge: CommoditiesAndKnowledgeDomain {
             commodities: commodities.clone(),
@@ -1908,6 +2052,54 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
         month_lengths: calendar_rec.month_lengths,
     };
 
+    let fluid_views: Vec<FluidDefView> = if fluids.is_empty() {
+        vec![FluidDefView::default()]
+    } else {
+        fluids
+            .iter()
+            .map(|f| FluidDefView {
+                id: f.id.clone(),
+                display_name: f.display_name.clone(),
+                density_kg_m3: f.density_kg_m3,
+                freeze_point_c: f.freeze_point_c,
+                boil_point_c: f.boil_point_c,
+                latent_heat_evap_kj_kg: f.latent_heat_evap_kj_kg,
+                specific_heat_j_kg_k: f.specific_heat_j_kg_k,
+            })
+            .collect()
+    };
+
+    let province_views: Vec<GeologyProvinceDefView> = geology_provinces
+        .iter()
+        .map(|gp| GeologyProvinceDefView {
+            id: gp.id.clone(),
+            display_name: gp.display_name.clone(),
+            is_marine: gp.is_marine,
+            typical_age_myr: gp.typical_age_myr,
+            base_roughness_m: gp.base_roughness_m,
+            fault_instability_01: gp.fault_instability_01,
+            volcanic_hazard_01: gp.volcanic_hazard_01,
+            soil_fertility_bias: gp.soil_fertility_bias,
+            marine_upwelling_bias: gp.marine_upwelling_bias,
+        })
+        .collect();
+
+    let affinity_views: Vec<DepositAffinityDefView> = deposit_affinities
+        .iter()
+        .map(|aff| DepositAffinityDefView {
+            id: aff.id.clone(),
+            province_id: aff.province_id.clone(),
+            category_key: aff.category_key.clone(),
+            is_offshore: aff.is_offshore,
+            accessibility_tier: aff.accessibility_tier,
+            spawn_weight: aff.spawn_weight,
+            min_tonnes: aff.min_tonnes,
+            max_tonnes: aff.max_tonnes,
+            min_purity_01: aff.min_purity_01,
+            max_purity_01: aff.max_purity_01,
+        })
+        .collect();
+
     let planet_gen_view = PlanetGenConfigView {
         id: planet_rec.id.clone(),
         goldberg_subdivision: planet_rec.goldberg_subdivision,
@@ -1932,6 +2124,26 @@ pub fn load_mod_bundle(pack_dirs: &[&Path]) -> Result<CompiledModBundle, Vec<Mod
             fuel_enthalpy_mj_kg_range: planet_rec.natural_bounds.fuel_enthalpy_mj_kg_range,
             crop_opt_temp_c_range: planet_rec.natural_bounds.crop_opt_temp_c_range,
         },
+        hydrology_rules: HydrologyRulesView {
+            active_fluid_id: hydrology_rules.active_fluid_id,
+            infiltration_rate_01: hydrology_rules.infiltration_rate_01,
+            evapotranspiration_scale: hydrology_rules.evapotranspiration_scale,
+            aquifer_diffusivity: hydrology_rules.aquifer_diffusivity,
+            aquifer_capacity_mm: hydrology_rules.aquifer_capacity_mm,
+            spring_emergence_threshold_01: hydrology_rules.spring_emergence_threshold_01,
+            estuary_max_elev_m: hydrology_rules.estuary_max_elev_m,
+            shallow_ford_max_q_m3_s: hydrology_rules.shallow_ford_max_q_m3_s,
+            deep_navigable_min_q_m3_s: hydrology_rules.deep_navigable_min_q_m3_s,
+            rapids_min_slope_rad: hydrology_rules.rapids_min_slope_rad,
+            dam_min_discharge_m3_s: hydrology_rules.dam_min_discharge_m3_s,
+            dam_min_relief_m: hydrology_rules.dam_min_relief_m,
+            dam_turbine_efficiency_01: hydrology_rules.dam_turbine_efficiency_01,
+            dam_siltation_rate_per_day: hydrology_rules.dam_siltation_rate_per_day,
+            dam_breach_flood_threshold_01: hydrology_rules.dam_breach_flood_threshold_01,
+        },
+        fluids: fluid_views,
+        geology_provinces: province_views,
+        deposit_affinities: affinity_views,
     };
 
     let scenario_view = ScenarioInitView {

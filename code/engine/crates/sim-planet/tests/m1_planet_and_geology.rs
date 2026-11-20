@@ -6,8 +6,9 @@ use std::f64::consts::PI;
 use sim_planet::topology::norm3;
 use sim_planet::GeneratedPlanet;
 use sim_spine::{
-    CanonicalSaveablePort, CellId, NaturalBoundsView, PlanetGenConfigView, PlanetGeometryPort,
-    ProceduralDepositCategory, RockStrataClass, SubsurfaceDepositTruthPort,
+    CanonicalSaveablePort, CellId, GeologyProvinceKind, LakeKind, NaturalBoundsView,
+    PlanetGenConfigView, PlanetGeometryPort, ProceduralDepositCategory, RiverNavigabilityKind,
+    RockStrataClass, SubsurfaceDepositTruthPort,
 };
 
 fn default_planet_cfg(subdiv: u8) -> PlanetGenConfigView {
@@ -35,6 +36,7 @@ fn default_planet_cfg(subdiv: u8) -> PlanetGenConfigView {
             fuel_enthalpy_mj_kg_range: [14.0, 44.0],
             crop_opt_temp_c_range: [10.0, 29.0],
         },
+        ..PlanetGenConfigView::default()
     }
 }
 
@@ -542,4 +544,210 @@ fn perennial_rivers_conserve_volumetric_flow_form_lakes_and_terminate_in_river_l
     assert!(observed_perennial > 200, "expected substantial perennial channels across 3 seeds");
     assert!(observed_hydro_sites > 100, "expected positive hydroelectric reach drops");
     assert!(observed_lakes >= 1, "expected inland lakes in interior basins across m=24 planets");
+}
+
+// @req ENG-GEO-009
+#[test]
+fn geomorphology_roughness_basins_and_tectonic_hazards_vary_across_relief() {
+    let cfg = default_planet_cfg(12);
+    let planet = GeneratedPlanet::generate(42, &cfg);
+    let n = planet.cell_count();
+    let mut min_rough = f32::MAX;
+    let mut max_rough = 0.0_f32;
+    let mut basin_cells = 0usize;
+    let mut active_fault_cells = 0usize;
+    let mut active_volc_cells = 0usize;
+
+    for idx in 0..n {
+        let cid = CellId(idx);
+        let r = planet.cell_roughness_m(cid);
+        let bd = planet.cell_basin_depth_m(cid);
+        let fi = planet.cell_fault_instability_01(cid);
+        let vh = planet.cell_volcanic_hazard_01(cid);
+
+        assert!(r.is_finite() && r >= 0.0);
+        assert!(bd.is_finite() && bd >= 0.0);
+        assert!((0.0..=1.0).contains(&fi));
+        assert!((0.0..=1.0).contains(&vh));
+
+        min_rough = min_rough.min(r);
+        max_rough = max_rough.max(r);
+        if bd > 0.5 {
+            basin_cells += 1;
+        }
+        if fi > 0.35 {
+            active_fault_cells += 1;
+        }
+        if vh > 0.35 {
+            active_volc_cells += 1;
+        }
+    }
+
+    assert!(max_rough > min_rough * 4.0, "roughness should distinguish plains/shelves from mountain chains");
+    assert!(basin_cells >= 1, "depression resolution should record filled basin depths");
+    assert!(active_fault_cells >= 20, "convergent/rift belts should exhibit elevated seismic risk");
+    assert!(active_volc_cells >= 10, "volcanic arcs/ridges should exhibit volcanism hazard");
+}
+
+// @req ENG-GEO-010
+#[test]
+fn continental_and_marine_provinces_classify_all_land_and_sea_tectonic_regimes() {
+    let cfg = default_planet_cfg(16);
+    let mut land_provs = BTreeSet::new();
+    let mut marine_provs = BTreeSet::new();
+
+    for seed in [42_u64, 7_u64] {
+        let planet = GeneratedPlanet::generate(seed, &cfg);
+        for idx in 0..planet.cell_count() {
+            let cid = CellId(idx);
+            let prov = planet.cell_geology_province(cid);
+            if planet.is_ocean_cell(cid) {
+                assert!(
+                    prov.is_marine(),
+                    "ocean cell {idx} must carry marine geology province, got {prov:?}"
+                );
+                marine_provs.insert(prov);
+            } else {
+                assert!(
+                    !prov.is_marine(),
+                    "land cell {idx} must carry continental geology province, got {prov:?}"
+                );
+                land_provs.insert(prov);
+            }
+        }
+    }
+
+    assert!(
+        land_provs.len() >= 6,
+        "expected diverse continental provinces (craton, old/young orogen, arc, basin, platform, alluvial), got {land_provs:?}"
+    );
+    assert!(
+        marine_provs.len() >= 4,
+        "expected diverse submarine bathymetry provinces (shelf, slope, ridge, trench, abyss), got {marine_provs:?}"
+    );
+    assert!(marine_provs.contains(&GeologyProvinceKind::ContinentalShelf));
+    assert!(marine_provs.contains(&GeologyProvinceKind::AbyssalPlain));
+}
+
+// @req ENG-GEO-012
+#[test]
+fn incised_channel_bed_and_water_surface_descend_monotonically_with_lakes_estuaries_and_navigability() {
+    let cfg = default_planet_cfg(24);
+    let mut exorheic_count = 0usize;
+    let mut endorheic_count = 0usize;
+    let mut estuary_count = 0usize;
+    let mut deep_nav_count = 0usize;
+    let mut ford_or_rapids = 0usize;
+
+    for seed in [42_u64, 7_u64, 1337_u64] {
+        let planet = GeneratedPlanet::generate(seed, &cfg);
+        for idx in 0..planet.cell_count() {
+            let cid = CellId(idx);
+            let lk = planet.cell_lake_kind(cid);
+            let sal = planet.cell_lake_salinity_per_mille(cid);
+            match lk {
+                LakeKind::Exorheic => {
+                    exorheic_count += 1;
+                    assert!(planet.cell_is_lake(cid));
+                    assert!(sal < 5.0, "exorheic overflow lake should stay fresh, got {sal}");
+                }
+                LakeKind::Endorheic => {
+                    endorheic_count += 1;
+                    assert!(planet.cell_is_lake(cid));
+                    assert!(sal > 10.0, "endorheic terminal lake should concentrate salts, got {sal}");
+                }
+                LakeKind::None => assert!(!planet.cell_is_lake(cid)),
+            }
+            if planet.cell_is_estuary(cid) {
+                estuary_count += 1;
+                let ds = planet.cell_river_channel_downstream(cid);
+                assert!(
+                    ds.is_some_and(|d| planet.is_ocean_cell(d)),
+                    "estuary tag only valid on river mouth entering ocean"
+                );
+            }
+            match planet.cell_river_navigability(cid) {
+                RiverNavigabilityKind::DeepNavigable => deep_nav_count += 1,
+                RiverNavigabilityKind::ShallowFord | RiverNavigabilityKind::Rapids => {
+                    ford_or_rapids += 1;
+                }
+                RiverNavigabilityKind::None => {}
+            }
+
+            if let Some(ds) = planet.cell_river_channel_downstream(cid) {
+                let bed_u = planet.cell_channel_bed_elev_m(cid);
+                let surf_u = planet.cell_water_surface_elev_m(cid);
+                let surf_v = if planet.is_ocean_cell(ds) {
+                    0.0
+                } else {
+                    planet.cell_water_surface_elev_m(ds)
+                };
+                assert!(
+                    surf_u + 1e-3 >= surf_v,
+                    "seed {seed} river cell {idx} water surface {surf_u} < downstream {} ({surf_v})",
+                    ds.get()
+                );
+                if !planet.is_ocean_cell(ds) {
+                    let bed_v = planet.cell_channel_bed_elev_m(ds);
+                    assert!(
+                        bed_u + 1e-3 >= bed_v,
+                        "seed {seed} channel bed {idx} ({bed_u}) rises downstream to {} ({bed_v})",
+                        ds.get()
+                    );
+                }
+            }
+        }
+    }
+
+    assert!(estuary_count >= 10, "expected tidal estuaries at perennial ocean mouths");
+    assert!(deep_nav_count >= 20, "expected deep-navigable trunk river reaches");
+    assert!(ford_or_rapids >= 50, "expected shallow ford and rapids headwater reaches");
+    assert!(
+        exorheic_count + endorheic_count >= 1,
+        "expected exorheic or endorheic lake basins"
+    );
+}
+
+// @req ENG-GEO-013
+#[test]
+fn soil_drainage_clay_and_marine_upwelling_nutrients_persist_across_canonical_save_load() {
+    let cfg = default_planet_cfg(10);
+    let planet = GeneratedPlanet::generate(99, &cfg);
+    let mut high_shelf_nutrient = 0usize;
+    let mut max_upwelling = 0.0_f32;
+    let mut max_clay = 0.0_f32;
+    let mut min_drain = 1.0_f32;
+
+    for idx in 0..planet.cell_count() {
+        let cid = CellId(idx);
+        let drain = planet.cell_soil_drainage_01(cid);
+        let clay = planet.cell_soil_clay_01(cid);
+        let upw = planet.cell_marine_upwelling_01(cid);
+        let nut = planet.cell_shelf_nutrient_01(cid);
+        assert!((0.0..=1.0).contains(&drain));
+        assert!((0.0..=1.0).contains(&clay));
+        assert!((0.0..=1.0).contains(&upw));
+        assert!((0.0..=1.0).contains(&nut));
+        if planet.is_ocean_cell(cid) {
+            max_upwelling = max_upwelling.max(upw);
+            if nut > 0.25 {
+                high_shelf_nutrient += 1;
+            }
+        } else {
+            max_clay = max_clay.max(clay);
+            min_drain = min_drain.min(drain);
+        }
+    }
+
+    assert!(high_shelf_nutrient >= 5, "expected nutrient-enriched coastal shelves");
+    assert!(max_upwelling > 0.15, "expected offshore wind-driven upwelling zones");
+    assert!(max_clay > 0.15 && min_drain < 0.85, "expected differentiated soil drainage and clay");
+
+    let mut bytes = Vec::new();
+    planet.write_canonical_state(&mut bytes);
+    let mut restored = GeneratedPlanet::generate(99, &cfg);
+    let mut slice = bytes.as_slice();
+    restored.read_canonical_state(&mut slice).expect("planet read_canonical_state");
+    assert!(slice.is_empty());
+    assert_eq!(restored.blake3_digest(), planet.blake3_digest());
 }

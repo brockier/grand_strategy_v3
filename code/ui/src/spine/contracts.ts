@@ -33,6 +33,23 @@ export interface DepositEstimateDto {
   readonly instrumentTier: number;
   readonly observedTick: number;
   readonly provenanceLabel: string;
+  readonly accessibilityTier?: number;
+  readonly isOffshore?: boolean;
+  readonly isAlluvialPlacer?: boolean;
+}
+
+export interface DamStatusDto {
+  readonly cellId: number;
+  readonly ruleCurve: string;
+  readonly reservoirStorageM3: number;
+  readonly reservoirCapacityM3: number;
+  readonly reservoirFill01: number;
+  readonly reservoirHeadM: number;
+  readonly spillwayReleaseM3S: number;
+  readonly liveHydroKw: number;
+  readonly sedimentSilt01: number;
+  readonly condition01: number;
+  readonly breached: boolean;
 }
 
 export type GlobeProjectionMode = "globe" | "equal_area" | "mercator";
@@ -87,6 +104,22 @@ export type KnownCellDto =
       readonly riverDischargeM3S?: number;
       readonly riverVelocityMps?: number;
       readonly hydroPotentialKw?: number;
+      readonly geologyProvince?: string;
+      readonly roughnessM?: number;
+      readonly basinDepthM?: number;
+      readonly faultInstability01?: number;
+      readonly volcanicHazard01?: number;
+      readonly soilDrainage01?: number;
+      readonly soilClay01?: number;
+      readonly marineUpwelling01?: number;
+      readonly shelfNutrient01?: number;
+      readonly lakeKind?: string;
+      readonly lakeSalinityPerMille?: number;
+      readonly isEstuary?: boolean;
+      readonly riverNavigability?: string;
+      readonly isSpringOasis?: boolean;
+      readonly groundwaterM3?: number;
+      readonly damStatus?: DamStatusDto | null;
     }
   | {
       readonly tier: "surveyed";
@@ -113,6 +146,22 @@ export type KnownCellDto =
       readonly riverDischargeM3S?: number;
       readonly riverVelocityMps?: number;
       readonly hydroPotentialKw?: number;
+      readonly geologyProvince?: string;
+      readonly roughnessM?: number;
+      readonly basinDepthM?: number;
+      readonly faultInstability01?: number;
+      readonly volcanicHazard01?: number;
+      readonly soilDrainage01?: number;
+      readonly soilClay01?: number;
+      readonly marineUpwelling01?: number;
+      readonly shelfNutrient01?: number;
+      readonly lakeKind?: string;
+      readonly lakeSalinityPerMille?: number;
+      readonly isEstuary?: boolean;
+      readonly riverNavigability?: string;
+      readonly isSpringOasis?: boolean;
+      readonly groundwaterM3?: number;
+      readonly damStatus?: DamStatusDto | null;
     };
 
 export interface KnownSettlementDto {
@@ -664,7 +713,17 @@ export type ValidatedPlayerCommand =
       readonly doctrineKey: string;
       readonly noRetreat: boolean;
     }
-  | { readonly kind: "acknowledgeSuccession" };
+  | { readonly kind: "acknowledgeSuccession" }
+  | {
+      readonly kind: "constructDam";
+      readonly targetCell: number;
+      readonly ruleCurve?: string;
+    }
+  | {
+      readonly kind: "setDamRuleCurve";
+      readonly targetCell: number;
+      readonly ruleCurve: string;
+    };
 
 export interface CommandAck {
   readonly accepted: boolean;
@@ -942,7 +1001,10 @@ export function isValidDiegeticSnapshot(value: unknown): value is DiegeticSnapsh
         "soilFertility01" in c ||
         "rockStrataCode" in c ||
         "drainageAreaKm2" in c ||
-        "strahlerOrder" in c
+        "strahlerOrder" in c ||
+        "geologyProvince" in c ||
+        "roughnessM" in c ||
+        "damStatus" in c
       ) {
         return false;
       }
@@ -988,6 +1050,19 @@ const VALID_NOTIFICATION_BEHAVIORS = new Set<string>([
   "dispatch_popup",
   "dispatch_popup_and_auto_pause",
 ]);
+
+const VALID_DAM_RULE_CURVES = new Set<string>([
+  "balanced_power",
+  "flood_control",
+  "irrigation_supply",
+  "BalancedPower",
+  "FloodControl",
+  "IrrigationSupply",
+]);
+
+function validateDamRuleCurve(raw: unknown): string | null {
+  return typeof raw === "string" && VALID_DAM_RULE_CURVES.has(raw) ? raw : null;
+}
 
 /** Validates outbound `ValidatedPlayerCommand` payloads strictly before crossing IPC. */
 export function validatePlayerCommand(value: unknown): ValidatedPlayerCommand | null {
@@ -1238,6 +1313,32 @@ export function validatePlayerCommand(value: unknown): ValidatedPlayerCommand | 
         return null;
       }
       return { kind: "acknowledgeSuccession" };
+    case "constructDam": {
+      if (
+        (keys.length !== 2 && keys.length !== 3) ||
+        typeof raw.targetCell !== "number" ||
+        !Number.isInteger(raw.targetCell) ||
+        raw.targetCell < 0
+      ) {
+        return null;
+      }
+      const curve = raw.ruleCurve === undefined ? "balanced_power" : validateDamRuleCurve(raw.ruleCurve);
+      if (!curve) return null;
+      return { kind: "constructDam", targetCell: raw.targetCell, ruleCurve: curve };
+    }
+    case "setDamRuleCurve": {
+      const curve = validateDamRuleCurve(raw.ruleCurve);
+      if (
+        keys.length !== 3 ||
+        typeof raw.targetCell !== "number" ||
+        !Number.isInteger(raw.targetCell) ||
+        raw.targetCell < 0 ||
+        !curve
+      ) {
+        return null;
+      }
+      return { kind: "setDamRuleCurve", targetCell: raw.targetCell, ruleCurve: curve };
+    }
     default:
       return null;
   }

@@ -11,6 +11,7 @@ import {
 import { initializeGlobeViewport, GlobeViewportController } from "./globe";
 import {
   EpistemicCurrencyOverlayLayer,
+  GeologyBathymetryOverlayLayer,
   LogisticsConvoyOverlayLayer,
   OcclusionAwareCellPicker,
   OperationalWarfareOverlayLayer,
@@ -123,6 +124,7 @@ async function bootstrapShell(): Promise<void> {
   });
 
   registry.registerMapLayer(createBaselineOverlayPlugin());
+  registry.registerMapLayer(new GeologyBathymetryOverlayLayer());
   registry.registerMapLayer(new EpistemicCurrencyOverlayLayer());
   registry.registerMapLayer(new WeatherHydrologyOverlayLayer());
   registry.registerMapLayer(new LogisticsConvoyOverlayLayer());

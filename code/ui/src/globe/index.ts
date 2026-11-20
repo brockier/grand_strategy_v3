@@ -755,6 +755,7 @@ export async function initializeGlobeViewport(
     );
     shaderCtrl.setAltitudeNorm?.(altNorm);
     shaderCtrl.setParchmentMode?.(activeOverlayMode === "parchment");
+    shaderCtrl.setGeologyMode?.(activeOverlayMode === "geology");
     shaderCtrl.setProjectionState?.(projMode, projMorph, projOrigin);
 
     features.refreshForCamera(
@@ -982,6 +983,8 @@ export async function initializeGlobeViewport(
     } else if (intent.kind === "SwitchMapOverlayMode") {
       activeOverlayMode = intent.modeId;
       weatherOverlayActive = intent.modeId === "weather";
+      shaderCtrl.setParchmentMode?.(activeOverlayMode === "parchment");
+      shaderCtrl.setGeologyMode?.(activeOverlayMode === "geology");
       rebuildCurrentFeatures();
       renderOnce();
     } else if (intent.kind === "SwitchGlobeProjection") {

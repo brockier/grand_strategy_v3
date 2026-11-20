@@ -1,0 +1,338 @@
+# Externalized Land & Marine Tectonic Provinces and Deposit Affinities (`ENG-GEO-010`, `ENG-GEO-011`)
+
+[[geology_provinces]]
+id = "shield_craton"
+display_name = "Precambrian Shield Craton"
+is_marine = false
+typical_age_myr = 2100.0
+base_roughness_m = 42.0
+fault_instability_01 = 0.08
+volcanic_hazard_01 = 0.03
+soil_fertility_bias = -0.10
+marine_upwelling_bias = 0.0
+
+[[geology_provinces]]
+id = "old_orogen"
+display_name = "Paleozoic Eroded Orogen"
+is_marine = false
+typical_age_myr = 380.0
+base_roughness_m = 95.0
+fault_instability_01 = 0.24
+volcanic_hazard_01 = 0.08
+soil_fertility_bias = -0.02
+marine_upwelling_bias = 0.0
+
+[[geology_provinces]]
+id = "young_orogen"
+display_name = "Cenozoic Cordillera Orogen"
+is_marine = false
+typical_age_myr = 35.0
+base_roughness_m = 240.0
+fault_instability_01 = 0.72
+volcanic_hazard_01 = 0.34
+soil_fertility_bias = -0.14
+marine_upwelling_bias = 0.0
+
+[[geology_provinces]]
+id = "volcanic_arc"
+display_name = "Subduction Volcanic Arc"
+is_marine = false
+typical_age_myr = 18.0
+base_roughness_m = 195.0
+fault_instability_01 = 0.84
+volcanic_hazard_01 = 0.86
+soil_fertility_bias = 0.16
+marine_upwelling_bias = 0.0
+
+[[geology_provinces]]
+id = "sedimentary_basin"
+display_name = "Subsiding Sedimentary Basin"
+is_marine = false
+typical_age_myr = 160.0
+base_roughness_m = 22.0
+fault_instability_01 = 0.16
+volcanic_hazard_01 = 0.04
+soil_fertility_bias = 0.14
+marine_upwelling_bias = 0.0
+
+[[geology_provinces]]
+id = "continental_rift"
+display_name = "Divergent Continental Rift"
+is_marine = false
+typical_age_myr = 25.0
+base_roughness_m = 135.0
+fault_instability_01 = 0.78
+volcanic_hazard_01 = 0.58
+soil_fertility_bias = 0.05
+marine_upwelling_bias = 0.0
+
+[[geology_provinces]]
+id = "platform"
+display_name = "Stable Continental Platform"
+is_marine = false
+typical_age_myr = 520.0
+base_roughness_m = 34.0
+fault_instability_01 = 0.12
+volcanic_hazard_01 = 0.05
+soil_fertility_bias = 0.04
+marine_upwelling_bias = 0.0
+
+[[geology_provinces]]
+id = "alluvial_plain"
+display_name = "Quaternary Alluvial Floodplain"
+is_marine = false
+typical_age_myr = 4.0
+base_roughness_m = 10.0
+fault_instability_01 = 0.10
+volcanic_hazard_01 = 0.02
+soil_fertility_bias = 0.24
+marine_upwelling_bias = 0.0
+
+[[geology_provinces]]
+id = "continental_shelf"
+display_name = "Neritic Continental Shelf"
+is_marine = true
+typical_age_myr = 90.0
+base_roughness_m = 12.0
+fault_instability_01 = 0.18
+volcanic_hazard_01 = 0.05
+soil_fertility_bias = 0.0
+marine_upwelling_bias = 0.55
+
+[[geology_provinces]]
+id = "continental_slope"
+display_name = "Bathyal Continental Slope"
+is_marine = true
+typical_age_myr = 110.0
+base_roughness_m = 140.0
+fault_instability_01 = 0.42
+volcanic_hazard_01 = 0.10
+soil_fertility_bias = 0.0
+marine_upwelling_bias = 0.35
+
+[[geology_provinces]]
+id = "mid_ocean_ridge"
+display_name = "Spreading Mid-Ocean Ridge"
+is_marine = true
+typical_age_myr = 8.0
+base_roughness_m = 165.0
+fault_instability_01 = 0.74
+volcanic_hazard_01 = 0.80
+soil_fertility_bias = 0.0
+marine_upwelling_bias = 0.12
+
+[[geology_provinces]]
+id = "oceanic_trench"
+display_name = "Hadal Subduction Trench"
+is_marine = true
+typical_age_myr = 120.0
+base_roughness_m = 210.0
+fault_instability_01 = 0.92
+volcanic_hazard_01 = 0.62
+soil_fertility_bias = 0.0
+marine_upwelling_bias = 0.18
+
+[[geology_provinces]]
+id = "abyssal_plain"
+display_name = "Pelagic Abyssal Plain"
+is_marine = true
+typical_age_myr = 85.0
+base_roughness_m = 18.0
+fault_instability_01 = 0.10
+volcanic_hazard_01 = 0.08
+soil_fertility_bias = 0.0
+marine_upwelling_bias = 0.08
+
+# --- Province-Conditioned Subsurface & Marine Shelf Deposit Affinities ---
+
+[[deposit_affinities]]
+id = "shield_craton_iron_outcrop"
+province_id = "shield_craton"
+category_key = "metallic_ore"
+is_offshore = false
+accessibility_tier = 1
+spawn_weight = 0.36
+min_tonnes = 45000.0
+max_tonnes = 145000.0
+min_purity_01 = 0.42
+max_purity_01 = 0.74
+
+[[deposit_affinities]]
+id = "shield_craton_deep_lode"
+province_id = "shield_craton"
+category_key = "metallic_ore"
+is_offshore = false
+accessibility_tier = 3
+spawn_weight = 0.28
+min_tonnes = 95000.0
+max_tonnes = 260000.0
+min_purity_01 = 0.48
+max_purity_01 = 0.80
+
+[[deposit_affinities]]
+id = "old_orogen_metallic_vein"
+province_id = "old_orogen"
+category_key = "metallic_ore"
+is_offshore = false
+accessibility_tier = 1
+spawn_weight = 0.42
+min_tonnes = 50000.0
+max_tonnes = 160000.0
+min_purity_01 = 0.44
+max_purity_01 = 0.76
+
+[[deposit_affinities]]
+id = "old_orogen_flux_band"
+province_id = "old_orogen"
+category_key = "smelting_flux"
+is_offshore = false
+accessibility_tier = 1
+spawn_weight = 0.30
+min_tonnes = 40000.0
+max_tonnes = 110000.0
+min_purity_01 = 0.45
+max_purity_01 = 0.78
+
+[[deposit_affinities]]
+id = "young_orogen_porphyry"
+province_id = "young_orogen"
+category_key = "metallic_ore"
+is_offshore = false
+accessibility_tier = 2
+spawn_weight = 0.48
+min_tonnes = 75000.0
+max_tonnes = 220000.0
+min_purity_01 = 0.48
+max_purity_01 = 0.82
+
+[[deposit_affinities]]
+id = "volcanic_arc_copper_lode"
+province_id = "volcanic_arc"
+category_key = "metallic_ore"
+is_offshore = false
+accessibility_tier = 2
+spawn_weight = 0.44
+min_tonnes = 60000.0
+max_tonnes = 180000.0
+min_purity_01 = 0.45
+max_purity_01 = 0.78
+
+[[deposit_affinities]]
+id = "volcanic_arc_sulfur_flux"
+province_id = "volcanic_arc"
+category_key = "smelting_flux"
+is_offshore = false
+accessibility_tier = 1
+spawn_weight = 0.34
+min_tonnes = 32000.0
+max_tonnes = 95000.0
+min_purity_01 = 0.42
+max_purity_01 = 0.76
+
+[[deposit_affinities]]
+id = "continental_rift_vein"
+province_id = "continental_rift"
+category_key = "metallic_ore"
+is_offshore = false
+accessibility_tier = 2
+spawn_weight = 0.36
+min_tonnes = 65000.0
+max_tonnes = 190000.0
+min_purity_01 = 0.46
+max_purity_01 = 0.80
+
+[[deposit_affinities]]
+id = "sedimentary_basin_coal_seam"
+province_id = "sedimentary_basin"
+category_key = "solid_fuel"
+is_offshore = false
+accessibility_tier = 1
+spawn_weight = 0.46
+min_tonnes = 60000.0
+max_tonnes = 195000.0
+min_purity_01 = 0.46
+max_purity_01 = 0.82
+
+[[deposit_affinities]]
+id = "sedimentary_basin_limestone_flux"
+province_id = "sedimentary_basin"
+category_key = "smelting_flux"
+is_offshore = false
+accessibility_tier = 1
+spawn_weight = 0.38
+min_tonnes = 50000.0
+max_tonnes = 140000.0
+min_purity_01 = 0.50
+max_purity_01 = 0.86
+
+[[deposit_affinities]]
+id = "sedimentary_basin_hydrocarbon"
+province_id = "sedimentary_basin"
+category_key = "liquid_fuel"
+is_offshore = false
+accessibility_tier = 3
+spawn_weight = 0.34
+min_tonnes = 45000.0
+max_tonnes = 160000.0
+min_purity_01 = 0.55
+max_purity_01 = 0.88
+
+[[deposit_affinities]]
+id = "platform_coal_bed"
+province_id = "platform"
+category_key = "solid_fuel"
+is_offshore = false
+accessibility_tier = 2
+spawn_weight = 0.24
+min_tonnes = 42000.0
+max_tonnes = 120000.0
+min_purity_01 = 0.44
+max_purity_01 = 0.74
+
+[[deposit_affinities]]
+id = "platform_limestone_quarry"
+province_id = "platform"
+category_key = "smelting_flux"
+is_offshore = false
+accessibility_tier = 1
+spawn_weight = 0.26
+min_tonnes = 38000.0
+max_tonnes = 115000.0
+min_purity_01 = 0.48
+max_purity_01 = 0.80
+
+[[deposit_affinities]]
+id = "alluvial_plain_placer"
+province_id = "alluvial_plain"
+category_key = "metallic_ore"
+is_offshore = false
+accessibility_tier = 1
+spawn_weight = 0.22
+min_tonnes = 18000.0
+max_tonnes = 62000.0
+min_purity_01 = 0.52
+max_purity_01 = 0.84
+
+[[deposit_affinities]]
+id = "continental_shelf_offshore_oil"
+province_id = "continental_shelf"
+category_key = "liquid_fuel"
+is_offshore = true
+accessibility_tier = 3
+spawn_weight = 0.32
+min_tonnes = 70000.0
+max_tonnes = 240000.0
+min_purity_01 = 0.60
+max_purity_01 = 0.90
+
+[[deposit_affinities]]
+id = "continental_shelf_placer_sand"
+province_id = "continental_shelf"
+category_key = "smelting_flux"
+is_offshore = true
+accessibility_tier = 2
+spawn_weight = 0.16
+min_tonnes = 35000.0
+max_tonnes = 95000.0
+min_purity_01 = 0.46
+max_purity_01 = 0.76

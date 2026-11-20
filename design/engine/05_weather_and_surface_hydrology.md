@@ -3,7 +3,7 @@
 **Module ID:** `ENG-WTH-05`  
 **Code Location:** `code/engine/crates/sim-weather/`  
 **Milestone & Design Depth:** `M1–M3 & M7: Full Detailed Design`  
-**Satisfies Requirements:** `ENG-WTH-001`, `ENG-WTH-002`, `ENG-WTH-003`, `ENG-WTH-004`, `ENG-WTH-005`, `ENG-WAR-004.1`, `ENG-WAR-004.2` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
+**Satisfies Requirements:** `ENG-WTH-001`, `ENG-WTH-002`, `ENG-WTH-003`, `ENG-WTH-004`, `ENG-WTH-005`, `ENG-WTH-006`, `ENG-GEO-014`, `ENG-WAR-004.1`, `ENG-WAR-004.2` in [engine_requirements.md](file:///home/roger/Projects/ng/requirements/engine_requirements.md)  
 
 ---
 
@@ -38,9 +38,16 @@ pub struct WeatherSoA {
     pub wind_u_mps: Vec<f32>,
     pub wind_v_mps: Vec<f32>,
     pub visibility_01: Vec<f32>,
+    pub groundwater_m3: Vec<f64>,
+    pub is_spring_oasis: Vec<bool>,
+    pub live_salinity_per_mille: Vec<f32>,
+    pub live_navigability: Vec<RiverNavigabilityKind>,
+    pub dams: BTreeMap<CellId, DamFacilityState>,
     pub topo_order_cells: Vec<CellId>, // Upstream-to-downstream DAG sort order
 }
 ```
+
+Fluid thermophysical constants (`density_kg_m3`, `freeze_point_c`, `boil_point_c`, `latent_heat_evap_kj_kg`, `specific_heat_j_kg_k`) and aquifer/dam policy thresholds load strictly from externalized `[[fluids]]` and `[hydrology_rules]` tables inside `mods/core-schemas/planet/hydrology.toml`.
 
 Double-buffered swap vectors (`atm_moisture_next`, `wind_u_next`, `wind_v_next`) ensure parallel advection never depends on cell visit order or thread scheduling.
 
@@ -61,10 +68,13 @@ Double-buffered swap vectors (`atm_moisture_next`, `wind_u_next`, `wind_v_next`)
    - If `temp_c > 0.5`: add rainfall to `soil_saturation_01` and trigger snowmelt proportional to `(temp_c - 0.5)`.
 4. **Mud Formation:** `mud_index_01` rises non-linearly once `soil_saturation_01 > soil_field_capacity` and drains slowly with evaporation/infiltration.
 
-### 3.3 Topological Watershed Flood Routing (`ENG-WTH-003`)
+### 3.3 Topological Watershed Flood Routing, Groundwater Aquifers & Dams (`ENG-WTH-003`, `ENG-WTH-006`, `ENG-GEO-014`)
 1. Traverse `topo_order_cells` strictly from headwater ridges down to river mouths (`river_downstream` DAG).
 2. Surface runoff (`excess_rain + snowmelt`) enters `river_storage_m3[c]`, releasing `river_discharge_m3s[c]` into `river_downstream[c]` via linear-reservoir travel lag (`k_reach = length_km / flow_speed`), raising `flood_stage_01` when discharge exceeds channel bankfull capacity.
-3. Extended sub-zero `temp_c` thickens `ice_thickness_m` across river channels (halting barges once `ice_thickness_m >= 0.15` while enabling foot/light-cart ice crossings once `>= 0.35`).
+3. **Soil Infiltration & Lateral Groundwater Head Diffusion:** Fraction `soil_drainage_01 * infiltration_rate_01` percolates from moist soil into `groundwater_m3[c]`. Every tick, pairwise antisymmetric fluxes `q_gw(u->v) = -q_gw(v->u)` diffuse `groundwater_m3` down hydraulic head `H_i = elevation_m[i] + groundwater_depth_m[i]` so land + groundwater + snow + reservoir water mass closes `P = E + R + dS` exactly. At piedmont slope breaks and fault instability corridors (`fault_instability_01 > 0.35`), surplus aquifer volume exfiltrates into `soil_water_m3` and `river_storage_m3`, tagging desert foothills as `is_spring_oasis = true`.
+4. **Lakes & Salinity:** `Exorheic` freshwater lakes buffer peak flood inflows across spillway retention, whereas `Endorheic` closed basins adjust `live_salinity_per_mille` inversely with current lake volume under evaporation.
+5. **Constructible Dams & Rule-Curve Reservoirs (`ENG-GEO-014`):** `construct_dam(cell, rule_curve)` impounds inflows into `dam.reservoir_storage_m3` (`DamRuleCurveKind`: `FloodControl` targets `0.62`, `IrrigationSupply` targets `0.78`, `BalancedPower` targets `0.85`), derives `reservoir_head_m` (`12m..65m`), computes `live_hydro_kw = eta * fluid_density * 9.81 * q_release * head_m / 1000.0`, enriches downstream neighbor moisture under `IrrigationSupply`, accumulates `sediment_silt_01`, and triggers a sudden downstream release surge on extreme overtopping (`breached = true`).
+6. Extended sub-zero temperature relative to `fluid.freeze_point_c` thickens `ice_thickness_m` across river channels (halting barges once `ice_thickness_m >= 0.15` while enabling winter ice crossings once `>= 0.25`).
 
 ### 3.4 Downstream System Hazard Coupling (`ENG-WTH-004`, `ENG-WTH-005`)
 1. **Mine & Pit Flooding:** Subsurface inflow rate equals `base_aquifer_inflow + k_rain * soil_saturation_01 + k_flood * flood_stage_01`; un-pumped mines halt extraction once shaft water crosses safety threshold.

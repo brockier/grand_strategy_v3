@@ -270,6 +270,60 @@ Every requirement block carries one of four normative lifecycle statuses:
 - **Requirement:** Every perennial land river channel SHALL maintain a directed acyclic downstream pointer (`river_channel_downstream`), physical volumetric runoff discharge (`river_discharge_m3_s` accumulated monotonically downstream from climate precipitation minus evaporation), surface flow velocity (`river_velocity_mps`), hydroelectric drop potential (`hydro_potential_kw`), and explicit inland lake basin classification (`is_lake`) so that every perennial river terminates strictly in another perennial river confluence, an inland lake, or an ocean coast cell without mid-slope or headless dangling endpoints.
 - **Acceptance Criteria:** Planetary hydrology tests across multiple seeds verify conservation and strict non-decreasing downstream accumulation of `river_discharge_m3_s`, positive `river_velocity_mps` and non-negative `hydro_potential_kw` on perennial channels, and `100%` terminus closure in a downstream confluence, `is_lake` cell, or ocean cell with bit-identical canonical codec serialization.
 
+### ENG-GEO-009: Unified Land-and-Sea Hypsometry, Bathymetry, Sub-Cell Roughness & Emergent Sea Level
+- **ID:** `ENG-GEO-009`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Sim-Deterministic`
+- **Lineage:** `Origin`
+- **Requirement:** Planetary worldgen on the continuous spherical manifold (`ENG-GEO-001.1`) SHALL unify sub-aerial land elevation (`>= 0.0m`) and submarine bathymetry (`< 0.0m`) in one continuous physical altitude field calibrated to an emergent sea-level datum satisfying `land_fraction_target`, while deriving per-sample terrain `roughness_m` from tectonic relief, local slope variance, and lithologic erodibility.
+- **Acceptance Criteria:** Across multiple seeds, generated worlds maintain valid finite negative submarine elevations across ocean trenches (`< -4000m`), abyssal plains, continental slopes, and continental shelves (`-185m .. 0m`), positive continental elevations above `0.0m`, land fraction within configurable tolerance of `land_fraction_target`, and non-negative bounded `roughness_m` exposed through `PlanetGeometryPort`.
+
+### ENG-GEO-010: Two-Generation Land & Marine Tectonic Provinces & Hazard Fields
+- **ID:** `ENG-GEO-010`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Sim-Deterministic`
+- **Lineage:** `Origin`
+- **Requirement:** Tectonic synthesis SHALL model both ancient relict sutures and active modern plate margins across land and seafloor to assign one of 13 `GeologyProvinceKind` classes (`shield_craton`, `old_orogen`, `young_orogen`, `volcanic_arc`, `sedimentary_basin`, `continental_rift`, `platform`, `alluvial_plain`, `continental_shelf`, `continental_slope`, `mid_ocean_ridge`, `oceanic_trench`, `abyssal_plain`) alongside continuous `basin_depth_m`, `fault_instability_01`, and `volcanic_hazard_01` hazard fields.
+- **Acceptance Criteria:** Multi-seed worldgen tests verify land and marine provinces align physically with convergent, divergent, cratonic, shelf, slope, trench, and alluvial zones (`oceanic_trench` deepest mean depth, `young_orogen` highest land relief, elevated `fault_instability_01` and `volcanic_hazard_01` along active margins) with full save/load codec parity.
+
+### ENG-GEO-011: Data-Driven Province Deposit Affinities, 3-Tier Depth Ladder, Placers & Tier-1 Start Guarantee
+- **ID:** `ENG-GEO-011`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Sim-Deterministic`
+- **Lineage:** `Origin`
+- **Requirement:** Subsurface and seabed mineral placement SHALL read externalized `[[deposit_affinities]]` from `ModRegistryPort` to spawn multi-sample contiguous belts conditioned on `GeologyProvinceKind`, tagged with 3-tier vertical `accessibility_tier` (`1` surface/shallow outcrop, `2` mid-shaft seam, `3` deep overburden reservoir), `is_alluvial_placer` downstream transport accumulations along rivers draining orogens, `is_offshore` `continental_shelf` reserves, and a deterministic `accessibility_tier == 1` starter ore and fuel guarantee near temperate coastal settlement sites.
+- **Acceptance Criteria:** Worldgen validation confirms zero hardcoded mineral-to-province tables in Rust, presence of offshore continental-shelf deposits and alluvial river placers, distinct accessibility tiers (`1..=3`), and reachable `accessibility_tier == 1` metallic ore and fuel deposits near starting settlements while remaining hidden from `player-view` prior to physical surveys (`ENG-EPI-001`).
+
+### ENG-GEO-012: Spillway Priority-Flood, Monotonic Thalweg Profiles, Exorheic/Endorheic Lakes, Estuaries & River Navigability
+- **ID:** `ENG-GEO-012`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Sim-Deterministic`
+- **Lineage:** `Origin`
+- **Requirement:** Watershed resolution SHALL route closed depressions across low-slope plains via priority-flood `spill_parent` pathways, classify persistent flooded basins as `LakeKind::Exorheic` (freshwater flow-through lakes) or `LakeKind::Endorheic` (arid terminal salt lakes), incise strictly non-increasing channel bed and water surface profiles (`channel_bed_elev_m[u] > channel_bed_elev_m[ds]` and `water_surface_elev_m[u] >= water_surface_elev_m[ds] >= 0.0`), flag tidal coast outlets as `is_estuary`, classify channels into `RiverNavigabilityKind` (`None`, `ShallowFord`, `Rapids`, `DeepNavigable`), and prune dry-land stalls so `100%` of perennial rivers terminate strictly in another perennial river, a lake, or an ocean cell.
+- **Acceptance Criteria:** Multi-seed tests verify zero dry-land perennial river endpoints, strictly decreasing `channel_bed_elev_m` and non-increasing `water_surface_elev_m` along every perennial link, `Endorheic` salt lakes exhibiting higher salinity than `Exorheic` lakes, valid `is_estuary` ocean outlets, and `RiverNavigabilityKind` coupling inside `sim-logistics`.
+
+### ENG-GEO-013: Continuous Edaphic Soil Texture & Marine Shelf/Upwelling Productivity
+- **ID:** `ENG-GEO-013`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Sim-Deterministic`
+- **Lineage:** `Origin`
+- **Requirement:** Land cells SHALL expose continuous `soil_drainage_01` and `soil_clay_01` derived from geological province weathering, slope, and alluvial siltation (coupled into soil infiltration and mud retention), while marine cells SHALL expose `marine_upwelling_01` and `shelf_nutrient_01` driven by offshore coastal wind forcing, continental-shelf bathymetry, and river-mouth nutrient plumes.
+- **Acceptance Criteria:** Property tests verify bounded `[0.0, 1.0]` soil texture and marine productivity values, higher `soil_clay_01` in alluvial plains and sedimentary basins than cratonic highlands, and elevated `shelf_nutrient_01` on coastal continental shelves near river estuaries.
+
+### ENG-GEO-014: Constructible River Dams, Reservoir Impoundment, Rule-Curve Hydro Output & Sedimentation
+- **ID:** `ENG-GEO-014`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Integration`
+- **Lineage:** `Origin`
+- **Requirement:** Players SHALL be able to commission river dams (`SpinePlayerCommand::ConstructDam`) on perennial river reaches and adjust reservoir regulation (`SpinePlayerCommand::SetDamRuleCurve` supporting `BalancedPower`, `FloodControl`, and `IrrigationSupply`), creating impounded `Exorheic` reservoir storage (`reservoir_storage_m3` and `reservoir_head_m`), computing hourly hydroelectric capacity `live_hydro_kw` from live discharge and head, buffering downstream flood peaks, trapping channel silt (`sediment_silt_01`), and modeling extreme overtopping breach surges with deterministic canonical serialization.
+- **Acceptance Criteria:** Integration and save/load tests construct a dam on a perennial river reach, advance hourly ticks, verify rising reservoir storage and positive `live_hydro_kw`, verify rule-curve switching changes downstream release/storage targets, verify downstream flood buffering, and verify bit-identical save/load replay across `CanonicalSaveablePort`.
+
 ---
 
 ## 6. Dynamic Hourly Weather & Surface Physics (`ENG-WTH`)
@@ -318,6 +372,15 @@ Every requirement block carries one of four normative lifecycle statuses:
 - **Lineage:** `Origin`
 - **Requirement:** Agricultural harvests SHALL suffer quantifiable yield penalties or failure from frost, drought, and harvest-season storms, and perishable goods stored outdoors or in damp, unroofed depots SHALL suffer accelerated rot proportional to temperature and humidity/precipitation.
 - **Acceptance Criteria:** Comparative tests over identical harvests show strictly higher grain spoilage inside open yards exposed to rain than inside dry roofed granaries, and crop collapse when exposed to freezing temperatures outside crop tolerance bounds.
+
+### ENG-WTH-006: Closed Water-Balance Budget, Lateral Groundwater Aquifers, Springs/Oases & Data-Driven `[[fluids]]`
+- **ID:** `ENG-WTH-006`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Property-Sim`
+- **Lineage:** `Origin`
+- **Requirement:** Hourly weather and hydrology SHALL read physical constants (`density_kg_m3`, `freeze_point_c`, `boil_point_c`, `latent_heat_evap_kj_kg`, `specific_heat_j_kg_k`) and aquifer rules strictly from externalized `[[fluids]]` and `[hydrology_rules]` mod records, evolve per-cell `groundwater_m3` via soil percolation and symmetric hydraulic-head lateral diffusion, exfiltrate surplus subsurface flow into `is_spring_oasis` springs and desert oases at piedmont breaks and fault zones, update dynamic lake `salinity_per_mille`, and close total land water budget `P = E + R + dS` across surface, soil, snow, reservoir, and groundwater reservoirs.
+- **Acceptance Criteria:** Multi-day closed-basin and global hydrological tests verify `water_mass_balance_error_m3()` stays within numerical tolerance with groundwater diffusion active, lateral aquifer head flow from high recharge uplands exfiltrates into arid down-gradient piedmont/fault cells as `is_spring_oasis = true`, lake evaporation raises `Endorheic` salinity, and `sim-data` rejects invalid external `[[fluids]]` definitions.
 
 ---
 

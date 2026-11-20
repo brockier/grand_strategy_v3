@@ -1046,7 +1046,10 @@ function appendDepositEstimatesSection(
     const li = doc.createElement("li");
     li.className = "ng-ledger-row";
     const textSpan = doc.createElement("span");
-    textSpan.textContent = `${est.materialLabel}: ${Math.round(est.pointEstTonnes)} t [${Math.round(est.minTonnes)}..${Math.round(est.maxTonnes)} t] · Purity ${Math.round(est.purityEst01 * 100)}% (Tier ${est.instrumentTier})`;
+    const depthTag = est.accessibilityTier ? ` · Depth Tier ${est.accessibilityTier}` : "";
+    const placerTag = est.isAlluvialPlacer ? " · Alluvial Placer" : "";
+    const offshoreTag = est.isOffshore ? " · Offshore Shelf" : "";
+    textSpan.textContent = `${est.materialLabel}: ${Math.round(est.pointEstTonnes)} t [${Math.round(est.minTonnes)}..${Math.round(est.maxTonnes)} t] · Purity ${Math.round(est.purityEst01 * 100)}% (Assay Tier ${est.instrumentTier}${depthTag}${placerTag}${offshoreTag})`;
     const badge = createProvenanceBadgeElement(doc, {
       currentTick,
       observedTick: est.observedTick,
@@ -1057,6 +1060,99 @@ function appendDepositEstimatesSection(
     ul.appendChild(li);
   }
   parent.append(heading, ul);
+}
+
+function formatGeoKeyLabel(raw: string | undefined, fallback: string): string {
+  if (!raw || !raw.trim()) return fallback;
+  return raw
+    .trim()
+    .split("_")
+    .map((p) => (p.length > 0 ? p[0].toUpperCase() + p.slice(1) : p))
+    .join(" ");
+}
+
+function appendDamControlSection(
+  doc: Document,
+  parent: HTMLElement,
+  cell: Extract<KnownCellDto, { tier: "surveyed" | "stale" }>,
+  spine: ViewPluginContext,
+): void {
+  const hasRiver =
+    !cell.isOcean &&
+    (cell.riverChannelDownstreamCellId != null || (cell.strahlerOrder ?? 1) >= 2 || Boolean(cell.damStatus));
+  if (!hasRiver) return;
+
+  const sectionTitle = doc.createElement("strong");
+  sectionTitle.textContent = "River Engineering & Hydroelectricity";
+  parent.appendChild(sectionTitle);
+
+  const dam = cell.damStatus ?? null;
+  if (!dam) {
+    const btn = doc.createElement("button");
+    btn.type = "button";
+    btn.className = "ng-hud-btn";
+    btn.dataset.action = "construct-dam";
+    btn.textContent = `Construct Hydroelectric Dam (Cell #${cell.cellId})`;
+    btn.addEventListener("click", () => {
+      spine.bus.emit({
+        kind: "DispatchSimCommand",
+        command: { kind: "constructDam", targetCell: cell.cellId, ruleCurve: "balanced_power" },
+      });
+    });
+    parent.appendChild(btn);
+    return;
+  }
+
+  const damList = doc.createElement("ul");
+  damList.className = "ng-ledger-list";
+  const outputLabel =
+    dam.liveHydroKw >= 1000
+      ? `${(dam.liveHydroKw / 1000).toFixed(2)} MW`
+      : `${Math.round(dam.liveHydroKw)} kW`;
+  appendInspectorDetailRow(
+    doc,
+    damList,
+    "Dam Status",
+    `${dam.breached ? "BREACHED OVERTOPPING" : "Operational"} · Condition ${Math.round(dam.condition01 * 100)}% · Rule: ${formatGeoKeyLabel(dam.ruleCurve, "Balanced Power")}`,
+  );
+  appendInspectorDetailRow(
+    doc,
+    damList,
+    "Reservoir Storage",
+    `${Math.round(dam.reservoirFill01 * 100)}% full (${(dam.reservoirStorageM3 / 1e6).toFixed(2)} / ${(dam.reservoirCapacityM3 / 1e6).toFixed(2)} Mm3) · Head ${dam.reservoirHeadM.toFixed(1)} m · Silt ${Math.round(dam.sedimentSilt01 * 100)}%`,
+  );
+  appendInspectorDetailRow(
+    doc,
+    damList,
+    "Turbine & Spillway",
+    `${outputLabel} generation · Spillway release ${dam.spillwayReleaseM3S.toFixed(1)} m3/s`,
+  );
+  parent.appendChild(damList);
+
+  const curveBar = doc.createElement("div");
+  curveBar.className = "ng-hud-cluster";
+  const curves = [
+    { key: "balanced_power", label: "Balanced Power" },
+    { key: "flood_control", label: "Flood Control" },
+    { key: "irrigation_supply", label: "Irrigation Supply" },
+  ] as const;
+  for (const c of curves) {
+    const cBtn = doc.createElement("button");
+    cBtn.type = "button";
+    cBtn.className = "ng-hud-btn";
+    cBtn.dataset.ruleCurve = c.key;
+    cBtn.classList.toggle("is-active", dam.ruleCurve === c.key);
+    cBtn.setAttribute("aria-pressed", dam.ruleCurve === c.key ? "true" : "false");
+    cBtn.textContent = c.label;
+    cBtn.addEventListener("click", () => {
+      spine.bus.emit({
+        kind: "DispatchSimCommand",
+        command: { kind: "setDamRuleCurve", targetCell: cell.cellId, ruleCurve: c.key },
+      });
+    });
+    curveBar.appendChild(cBtn);
+  }
+  parent.appendChild(curveBar);
 }
 
 const topologyCacheBySubdiv = new Map<number, GoldbergTopologyData>();
@@ -1583,8 +1679,11 @@ export function createEntityInspectorWindowPlugin(): WindowContentPlugin {
             const baseBargeKmH = 6.2;
             const downKmH = (baseBargeKmH + vel * 3.6 * 0.85).toFixed(1);
             const upKmH = Math.max(1.7, baseBargeKmH - vel * 3.6 * 0.65).toFixed(1);
+            const navLabel = formatGeoKeyLabel(cell.riverNavigability, "Channel");
+            const estuaryText = cell.isEstuary ? " · Tidal Estuary" : "";
+            const provText = cell.geologyProvince ? ` · ${formatGeoKeyLabel(cell.geologyProvince, "Platform")}` : "";
             title.textContent = `Perennial River Reach (Cell #${cell.cellId})`;
-            detail.textContent = `Flow: Cell #${cell.cellId} -> ${terminusLabel} | Discharge: ${q.toFixed(1)} m3/s | Current: ${vel.toFixed(2)} m/s | Barge Speeds: ${downKmH} km/h downstream / ${upKmH} km/h upstream | Hydro Potential: ${hydroText} | Strahler Order ${cell.strahlerOrder ?? 1}`;
+            detail.textContent = `Flow: Cell #${cell.cellId} -> ${terminusLabel} | Discharge: ${q.toFixed(1)} m3/s | Current: ${vel.toFixed(2)} m/s | ${navLabel}${estuaryText}${provText} | Barge Speeds: ${downKmH} km/h downstream / ${upKmH} km/h upstream | Hydro Potential: ${hydroText} | Strahler Order ${cell.strahlerOrder ?? 1}`;
             extras.appendChild(
               createProvenanceBadgeElement(document, {
                 currentTick,
@@ -1594,6 +1693,7 @@ export function createEntityInspectorWindowPlugin(): WindowContentPlugin {
                 isLiveSight: cell.tier === "surveyed" ? cell.isLiveHqSight : false,
               }),
             );
+            appendDamControlSection(document, extras, cell, spine);
             if (dsId !== null) {
               extras.appendChild(
                 createClickableToken(document, `Follow Flow Downstream (#${dsId})`, () => {
@@ -1643,6 +1743,53 @@ export function createEntityInspectorWindowPlugin(): WindowContentPlugin {
                   : ""
               }`,
             );
+            if (cell.tier === "surveyed" || cell.tier === "stale") {
+              if (cell.geologyProvince !== undefined || cell.roughnessM !== undefined) {
+                appendInspectorDetailRow(
+                  document,
+                  geoList,
+                  "Geology & Roughness",
+                  `${formatGeoKeyLabel(cell.geologyProvince, cell.isOcean ? "Marine Basin" : "Platform")} · Relief Roughness ${Math.round(cell.roughnessM ?? 28)} m${
+                    (cell.faultInstability01 ?? 0) > 0.3 || (cell.volcanicHazard01 ?? 0) > 0.3
+                      ? ` · Seismic ${Math.round((cell.faultInstability01 ?? 0) * 100)}% / Volcanic ${Math.round((cell.volcanicHazard01 ?? 0) * 100)}%`
+                      : ""
+                  }`,
+                );
+              }
+              if (cell.isOcean) {
+                if (cell.marineUpwelling01 !== undefined || cell.shelfNutrient01 !== undefined) {
+                  appendInspectorDetailRow(
+                    document,
+                    geoList,
+                    "Marine Bathymetry",
+                    `Upwelling ${Math.round((cell.marineUpwelling01 ?? 0) * 100)}% · Nutrient Flux ${Math.round((cell.shelfNutrient01 ?? 0) * 100)}%`,
+                  );
+                }
+              } else {
+                if (cell.soilDrainage01 !== undefined || cell.soilClay01 !== undefined) {
+                  appendInspectorDetailRow(
+                    document,
+                    geoList,
+                    "Soil Profile",
+                    `Drainage ${Math.round((cell.soilDrainage01 ?? 0.5) * 100)}% · Clay ${Math.round((cell.soilClay01 ?? 0.35) * 100)}%`,
+                  );
+                }
+                const hydroNotes: string[] = [];
+                if (cell.riverNavigability && cell.riverNavigability !== "none") {
+                  hydroNotes.push(formatGeoKeyLabel(cell.riverNavigability, "Channel"));
+                }
+                if (cell.isEstuary) hydroNotes.push("Estuary");
+                if (cell.isLake) {
+                  hydroNotes.push(
+                    `${formatGeoKeyLabel(cell.lakeKind, "Lake")} Lake (${(cell.lakeSalinityPerMille ?? 0.2).toFixed(1)}‰)`,
+                  );
+                }
+                if (cell.isSpringOasis) hydroNotes.push("Aquifer Spring Oasis");
+                if (hydroNotes.length > 0) {
+                  appendInspectorDetailRow(document, geoList, "Hydrology & Aquifer", hydroNotes.join(" · "));
+                }
+              }
+            }
 
             const topo = getCachedTopology(snap.globeTopology.subdivision);
             const nbrIds = topo.cells[cell.cellId]?.neighbors ?? [];
@@ -1666,6 +1813,9 @@ export function createEntityInspectorWindowPlugin(): WindowContentPlugin {
             }
             extras.appendChild(geoList);
 
+            if (cell.tier === "surveyed" || cell.tier === "stale") {
+              appendDamControlSection(document, extras, cell, spine);
+            }
             appendDepositEstimatesSection(document, extras, cell, currentTick);
           }
         } else {

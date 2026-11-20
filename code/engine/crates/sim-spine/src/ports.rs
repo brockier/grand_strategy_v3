@@ -57,6 +57,345 @@ impl TickPhase {
     }
 }
 
+/// Unified continental and marine tectonic provinces (`ENG-GEO-010`).
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
+pub enum GeologyProvinceKind {
+    ShieldCraton = 0,
+    OldOrogen = 1,
+    YoungOrogen = 2,
+    VolcanicArc = 3,
+    SedimentaryBasin = 4,
+    ContinentalRift = 5,
+    #[default]
+    Platform = 6,
+    AlluvialPlain = 7,
+    ContinentalShelf = 8,
+    ContinentalSlope = 9,
+    MidOceanRidge = 10,
+    OceanicTrench = 11,
+    AbyssalPlain = 12,
+}
+
+impl GeologyProvinceKind {
+    /// Canonical string identifier matching externalized `[[geology_provinces]]` IDs.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ShieldCraton => "shield_craton",
+            Self::OldOrogen => "old_orogen",
+            Self::YoungOrogen => "young_orogen",
+            Self::VolcanicArc => "volcanic_arc",
+            Self::SedimentaryBasin => "sedimentary_basin",
+            Self::ContinentalRift => "continental_rift",
+            Self::Platform => "platform",
+            Self::AlluvialPlain => "alluvial_plain",
+            Self::ContinentalShelf => "continental_shelf",
+            Self::ContinentalSlope => "continental_slope",
+            Self::MidOceanRidge => "mid_ocean_ridge",
+            Self::OceanicTrench => "oceanic_trench",
+            Self::AbyssalPlain => "abyssal_plain",
+        }
+    }
+
+    /// Parses canonical province string into typed enum.
+    #[must_use]
+    pub fn from_key(raw: &str) -> Self {
+        match raw.trim() {
+            "shield_craton" => Self::ShieldCraton,
+            "old_orogen" => Self::OldOrogen,
+            "young_orogen" => Self::YoungOrogen,
+            "volcanic_arc" => Self::VolcanicArc,
+            "sedimentary_basin" => Self::SedimentaryBasin,
+            "continental_rift" => Self::ContinentalRift,
+            "alluvial_plain" => Self::AlluvialPlain,
+            "continental_shelf" => Self::ContinentalShelf,
+            "continental_slope" => Self::ContinentalSlope,
+            "mid_ocean_ridge" => Self::MidOceanRidge,
+            "oceanic_trench" => Self::OceanicTrench,
+            "abyssal_plain" => Self::AbyssalPlain,
+            _ => Self::Platform,
+        }
+    }
+
+    /// Stable numeric code for binary codecs and shader LUT textures.
+    #[must_use]
+    pub const fn code(self) -> u8 {
+        self as u8
+    }
+
+    /// Decodes a stored numeric province code.
+    #[must_use]
+    pub const fn from_code(code: u8) -> Self {
+        match code {
+            0 => Self::ShieldCraton,
+            1 => Self::OldOrogen,
+            2 => Self::YoungOrogen,
+            3 => Self::VolcanicArc,
+            4 => Self::SedimentaryBasin,
+            5 => Self::ContinentalRift,
+            7 => Self::AlluvialPlain,
+            8 => Self::ContinentalShelf,
+            9 => Self::ContinentalSlope,
+            10 => Self::MidOceanRidge,
+            11 => Self::OceanicTrench,
+            12 => Self::AbyssalPlain,
+            _ => Self::Platform,
+        }
+    }
+
+    /// Returns true if the province represents submarine oceanic crust or shelf margin.
+    #[must_use]
+    pub const fn is_marine(self) -> bool {
+        matches!(
+            self,
+            Self::ContinentalShelf
+                | Self::ContinentalSlope
+                | Self::MidOceanRidge
+                | Self::OceanicTrench
+                | Self::AbyssalPlain
+        )
+    }
+}
+
+/// Hydrological lake outlet classification (`ENG-GEO-012`, `ENG-WTH-006`).
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
+pub enum LakeKind {
+    #[default]
+    None = 0,
+    Exorheic = 1,
+    Endorheic = 2,
+}
+
+impl LakeKind {
+    /// Canonical string identifier for snapshots and inspection.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Exorheic => "exorheic",
+            Self::Endorheic => "endorheic",
+        }
+    }
+
+    /// Stable numeric codec identifier.
+    #[must_use]
+    pub const fn code(self) -> u8 {
+        self as u8
+    }
+
+    /// Decodes numeric lake classification code.
+    #[must_use]
+    pub const fn from_code(code: u8) -> Self {
+        match code {
+            1 => Self::Exorheic,
+            2 => Self::Endorheic,
+            _ => Self::None,
+        }
+    }
+}
+
+/// River reach navigation and fordability classification (`ENG-GEO-012`).
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
+pub enum RiverNavigabilityKind {
+    #[default]
+    None = 0,
+    ShallowFord = 1,
+    Rapids = 2,
+    DeepNavigable = 3,
+}
+
+impl RiverNavigabilityKind {
+    /// Canonical string identifier for snapshots and logistics UI.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::ShallowFord => "shallow_ford",
+            Self::Rapids => "rapids",
+            Self::DeepNavigable => "deep_navigable",
+        }
+    }
+
+    /// Stable numeric codec identifier.
+    #[must_use]
+    pub const fn code(self) -> u8 {
+        self as u8
+    }
+
+    /// Decodes numeric navigability code.
+    #[must_use]
+    pub const fn from_code(code: u8) -> Self {
+        match code {
+            1 => Self::ShallowFord,
+            2 => Self::Rapids,
+            3 => Self::DeepNavigable,
+            _ => Self::None,
+        }
+    }
+}
+
+/// Reservoir dam regulation policy mode (`ENG-GEO-014`).
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug, Default)]
+pub enum DamRuleCurveKind {
+    #[default]
+    BalancedPower = 0,
+    FloodControl = 1,
+    IrrigationSupply = 2,
+}
+
+impl DamRuleCurveKind {
+    /// Canonical snake_case identifier.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::BalancedPower => "balanced_power",
+            Self::FloodControl => "flood_control",
+            Self::IrrigationSupply => "irrigation_supply",
+        }
+    }
+
+    /// Parses string rule curve identifier safely.
+    #[must_use]
+    pub fn from_key(raw: &str) -> Option<Self> {
+        match raw.trim() {
+            "balanced_power" | "BalancedPower" => Some(Self::BalancedPower),
+            "flood_control" | "FloodControl" => Some(Self::FloodControl),
+            "irrigation_supply" | "IrrigationSupply" => Some(Self::IrrigationSupply),
+            _ => None,
+        }
+    }
+
+    /// Stable numeric codec tag.
+    #[must_use]
+    pub const fn code(self) -> u8 {
+        self as u8
+    }
+
+    /// Decodes numeric rule curve code.
+    #[must_use]
+    pub const fn from_code(code: u8) -> Self {
+        match code {
+            1 => Self::FloodControl,
+            2 => Self::IrrigationSupply,
+            _ => Self::BalancedPower,
+        }
+    }
+}
+
+/// Live reservoir and dam operational view exposed across `SurfaceConditionsPort` (`ENG-GEO-014`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DamStatusView {
+    pub cell_id: CellId,
+    pub rule_curve: DamRuleCurveKind,
+    pub reservoir_storage_m3: f64,
+    pub reservoir_capacity_m3: f64,
+    pub reservoir_fill_01: f32,
+    pub reservoir_head_m: f32,
+    pub spillway_release_m3_s: f32,
+    pub live_hydro_kw: f32,
+    pub sediment_silt_01: f32,
+    pub condition_01: f32,
+    pub breached: bool,
+    pub impounded_upstream_cells: Vec<CellId>,
+}
+
+/// Externalized fluid thermophysical constants (`ENG-WTH-006`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct FluidDefView {
+    pub id: String,
+    pub display_name: String,
+    pub density_kg_m3: f32,
+    pub freeze_point_c: f32,
+    pub boil_point_c: f32,
+    pub latent_heat_evap_kj_kg: f32,
+    pub specific_heat_j_kg_k: f32,
+}
+
+impl Default for FluidDefView {
+    fn default() -> Self {
+        Self {
+            id: "water".to_owned(),
+            display_name: "Terrestrial Water".to_owned(),
+            density_kg_m3: 1000.0,
+            freeze_point_c: 0.0,
+            boil_point_c: 100.0,
+            latent_heat_evap_kj_kg: 2260.0,
+            specific_heat_j_kg_k: 4184.0,
+        }
+    }
+}
+
+/// Externalized land or marine geology province metadata (`ENG-GEO-010`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct GeologyProvinceDefView {
+    pub id: String,
+    pub display_name: String,
+    pub is_marine: bool,
+    pub typical_age_myr: f32,
+    pub base_roughness_m: f32,
+    pub fault_instability_01: f32,
+    pub volcanic_hazard_01: f32,
+    pub soil_fertility_bias: f32,
+    pub marine_upwelling_bias: f32,
+}
+
+/// Externalized province-affinity subsurface mineral deposit rule (`ENG-GEO-011`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DepositAffinityDefView {
+    pub id: String,
+    pub province_id: String,
+    pub category_key: String,
+    pub is_offshore: bool,
+    pub accessibility_tier: u8,
+    pub spawn_weight: f32,
+    pub min_tonnes: f64,
+    pub max_tonnes: f64,
+    pub min_purity_01: f32,
+    pub max_purity_01: f32,
+}
+
+/// Externalized hydrological, aquifer, navigability, and dam regulation policy constants (`ENG-GEO-012`, `ENG-GEO-014`, `ENG-WTH-006`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct HydrologyRulesView {
+    pub active_fluid_id: String,
+    pub infiltration_rate_01: f32,
+    pub evapotranspiration_scale: f32,
+    pub aquifer_diffusivity: f32,
+    pub aquifer_capacity_mm: f32,
+    pub spring_emergence_threshold_01: f32,
+    pub estuary_max_elev_m: f32,
+    pub shallow_ford_max_q_m3_s: f32,
+    pub deep_navigable_min_q_m3_s: f32,
+    pub rapids_min_slope_rad: f32,
+    pub dam_min_discharge_m3_s: f32,
+    pub dam_min_relief_m: f32,
+    pub dam_turbine_efficiency_01: f32,
+    pub dam_siltation_rate_per_day: f32,
+    pub dam_breach_flood_threshold_01: f32,
+}
+
+impl Default for HydrologyRulesView {
+    fn default() -> Self {
+        Self {
+            active_fluid_id: "water".to_owned(),
+            infiltration_rate_01: 0.34,
+            evapotranspiration_scale: 1.0,
+            aquifer_diffusivity: 0.085,
+            aquifer_capacity_mm: 420.0,
+            spring_emergence_threshold_01: 0.88,
+            estuary_max_elev_m: 14.0,
+            shallow_ford_max_q_m3_s: 35.0,
+            deep_navigable_min_q_m3_s: 45.0,
+            rapids_min_slope_rad: 0.032,
+            dam_min_discharge_m3_s: 18.0,
+            dam_min_relief_m: 18.0,
+            dam_turbine_efficiency_01: 0.82,
+            dam_siltation_rate_per_day: 0.00015,
+            dam_breach_flood_threshold_01: 0.96,
+        }
+    }
+}
+
 /// Physical bounds controlling procedural generation of planetary ores, fluxes, fuels, crops, fauna, and pathogens.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NaturalBoundsView {
@@ -70,6 +409,23 @@ pub struct NaturalBoundsView {
     pub ore_purity_range: [f32; 2],
     pub fuel_enthalpy_mj_kg_range: [f32; 2],
     pub crop_opt_temp_c_range: [f32; 2],
+}
+
+impl Default for NaturalBoundsView {
+    fn default() -> Self {
+        Self {
+            ore_count: 6,
+            flux_count: 3,
+            fuel_count: 4,
+            crop_count: 5,
+            fauna_count: 4,
+            pathogen_count: 3,
+            ore_melting_k_range: [1150.0, 1850.0],
+            ore_purity_range: [0.18, 0.72],
+            fuel_enthalpy_mj_kg_range: [14.0, 44.0],
+            crop_opt_temp_c_range: [8.0, 30.0],
+        }
+    }
 }
 
 /// Read-only planetary generation parameter view loaded from `sim-data`.
@@ -87,6 +443,33 @@ pub struct PlanetGenConfigView {
     pub max_orogenic_uplift_m: f32,
     pub planetary_density_kg_m3: f32,
     pub natural_bounds: NaturalBoundsView,
+    pub hydrology_rules: HydrologyRulesView,
+    pub fluids: Vec<FluidDefView>,
+    pub geology_provinces: Vec<GeologyProvinceDefView>,
+    pub deposit_affinities: Vec<DepositAffinityDefView>,
+}
+
+impl Default for PlanetGenConfigView {
+    fn default() -> Self {
+        Self {
+            id: "default_terrestrial_planet".to_owned(),
+            goldberg_subdivision: 8,
+            tectonic_plate_count: 14,
+            land_fraction_target: 0.34,
+            axial_tilt_deg: 23.4,
+            solar_constant_w_m2: 1361.0,
+            rotation_period_hours: 24.0,
+            mean_radius_km: 6371.0,
+            base_sea_level_m: 0.0,
+            max_orogenic_uplift_m: 6800.0,
+            planetary_density_kg_m3: 5514.0,
+            natural_bounds: NaturalBoundsView::default(),
+            hydrology_rules: HydrologyRulesView::default(),
+            fluids: vec![FluidDefView::default()],
+            geology_provinces: Vec::new(),
+            deposit_affinities: Vec::new(),
+        }
+    }
 }
 
 /// Read-only view of an interned external commodity definition.
@@ -628,6 +1011,86 @@ pub trait PlanetGeometryPort: Send + Sync {
     fn cell_hydro_potential_kw(&self, _cell: CellId) -> f32 {
         0.0
     }
+
+    fn cell_geology_province(&self, cell: CellId) -> GeologyProvinceKind {
+        if self.cell_elevation_m(cell) < 0.0 {
+            GeologyProvinceKind::AbyssalPlain
+        } else {
+            GeologyProvinceKind::Platform
+        }
+    }
+
+    fn cell_roughness_m(&self, _cell: CellId) -> f32 {
+        28.0
+    }
+
+    fn cell_basin_depth_m(&self, _cell: CellId) -> f32 {
+        0.0
+    }
+
+    fn cell_fault_instability_01(&self, _cell: CellId) -> f32 {
+        0.1
+    }
+
+    fn cell_volcanic_hazard_01(&self, _cell: CellId) -> f32 {
+        0.05
+    }
+
+    fn cell_soil_drainage_01(&self, _cell: CellId) -> f32 {
+        0.5
+    }
+
+    fn cell_soil_clay_01(&self, _cell: CellId) -> f32 {
+        0.35
+    }
+
+    fn cell_marine_upwelling_01(&self, _cell: CellId) -> f32 {
+        0.0
+    }
+
+    fn cell_shelf_nutrient_01(&self, _cell: CellId) -> f32 {
+        0.0
+    }
+
+    fn cell_channel_bed_elev_m(&self, cell: CellId) -> f32 {
+        self.cell_elevation_m(cell)
+    }
+
+    fn cell_water_surface_elev_m(&self, cell: CellId) -> f32 {
+        self.cell_elevation_m(cell).max(0.0)
+    }
+
+    fn cell_lake_kind(&self, cell: CellId) -> LakeKind {
+        if self.cell_is_lake(cell) {
+            LakeKind::Exorheic
+        } else {
+            LakeKind::None
+        }
+    }
+
+    fn cell_lake_salinity_per_mille(&self, cell: CellId) -> f32 {
+        if self.cell_elevation_m(cell) < 0.0 {
+            35.0
+        } else if self.cell_lake_kind(cell) == LakeKind::Endorheic {
+            48.0
+        } else {
+            0.2
+        }
+    }
+
+    fn cell_is_estuary(&self, _cell: CellId) -> bool {
+        false
+    }
+
+    fn cell_river_navigability(&self, cell: CellId) -> RiverNavigabilityKind {
+        if self.cell_river_channel_downstream(cell).is_none() {
+            RiverNavigabilityKind::None
+        } else if self.cell_river_discharge_m3_s(cell) >= 45.0 {
+            RiverNavigabilityKind::DeepNavigable
+        } else {
+            RiverNavigabilityKind::ShallowFord
+        }
+    }
 }
 
 /// Normalizes a 3D direction vector to the unit sphere.
@@ -702,6 +1165,9 @@ pub struct HiddenDepositView {
     pub average_purity_01: f32,
     pub overburden_depth_m: f32,
     pub aquifer_flood_risk_01: f32,
+    pub accessibility_tier: u8,
+    pub is_offshore: bool,
+    pub is_alluvial_placer: bool,
 }
 
 /// Ground-truth subsurface mineral veins and fossil beds.
@@ -744,6 +1210,34 @@ impl Default for SurfaceConditionSnapshot {
 /// Read-only surface weather condition port.
 pub trait SurfaceConditionsPort: Send + Sync {
     fn surface(&self, cell: CellId) -> SurfaceConditionSnapshot;
+
+    fn cell_groundwater_m3(&self, _cell: CellId) -> f64 {
+        0.0
+    }
+
+    fn cell_is_spring_oasis(&self, _cell: CellId) -> bool {
+        false
+    }
+
+    fn cell_salinity_per_mille(&self, _cell: CellId) -> f32 {
+        0.2
+    }
+
+    fn cell_live_discharge_m3_s(&self, _cell: CellId) -> f32 {
+        0.0
+    }
+
+    fn cell_live_navigability(&self, _cell: CellId) -> RiverNavigabilityKind {
+        RiverNavigabilityKind::None
+    }
+
+    fn active_dams(&self) -> Vec<DamStatusView> {
+        Vec::new()
+    }
+
+    fn dam_at_cell(&self, _cell: CellId) -> Option<DamStatusView> {
+        None
+    }
 }
 
 /// Atomic state mutation submitted to `PhysicalLedgerPort`.
@@ -984,6 +1478,14 @@ pub enum SpinePlayerCommand {
         no_retreat: bool,
     },
     AcknowledgeSuccession,
+    ConstructDam {
+        target_cell: CellId,
+        rule_curve: DamRuleCurveKind,
+    },
+    SetDamRuleCurve {
+        target_cell: CellId,
+        rule_curve: DamRuleCurveKind,
+    },
 }
 
 /// Command hierarchy and player input port.

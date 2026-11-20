@@ -194,6 +194,15 @@ Every requirement block carries one of four normative lifecycle statuses:
 - **Requirement:** The globe viewport SHALL support smooth heading-relative panning via `W/A/S/D` (`W` forward along camera heading, `S` backward, `A` left, `D` right), yaw rotation via `Q/E` (`Q` counter-clockwise, `E` clockwise) and horizontal secondary mouse drag (`Right-Drag` or `Shift+Left-Drag`), conflict-free floating window shortcut bindings without colliding with `WASDQE`, and an explicit HUD `Controls (?)` button (`?` / `F1`) displaying the complete mouse and keyboard control mapping.
 - **Acceptance Criteria:** Automated camera and UI tests verify camera `northTangent` yaw rotation under `Q/E` and secondary horizontal drag, heading-relative spherical panning under `W/A/S/D` without triggering docked windows, deconflicted non-colliding window hotkeys, and opening of the Controls reference window from the HUD launcher or `?` key.
 
+### UI-GLB-009: Sign-Preserving Coastlines, Carved 3D River Valleys & Bathymetric Sea-Floor Relief
+- **ID:** `UI-GLB-009`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Unit-Vitest`
+- **Lineage:** `Origin`
+- **Requirement:** Globe vertex relief and terrain sampling SHALL clamp coastal fractal warp strictly to mixed land-and-ocean triangles (`4.0 * landCornerSum * oceanCornerSum`) so sample ocean nodes never rise above `0.0m` (`< 0.0m`) and sample land nodes never drop below `0.0m` (`> 0.0m`), suppress positive mountain/hill displacement inside river channels while carving 3D `thalweg` valleys, enforce strictly non-increasing terrain-locked water elevation from source to `0.0m` coastline, and render subtle shelf-to-abyss marine bathymetry beneath translucent ocean water.
+- **Acceptance Criteria:** CPU/shader terrain parity unit tests verify shallow ocean cells (`elevationM = -12m`) never evaluate above `0.0m`, pure land cells remain positive, incised river channel samples lie monotonically below adjacent bank crests, and bathymetric uniforms compile cleanly under WebGL2.
+
 ---
 
 ## 5. Diegetic Map Overlays, Fog-of-War & Weather Visuals (`UI-MAP`)
@@ -323,6 +332,15 @@ Every requirement block carries one of four normative lifecycle statuses:
 - **Lineage:** `Origin`
 - **Requirement:** Map picking SHALL combine 3D feature-mesh raycasting (`features.group.children`) with zoom-proportional hit radii so buildings, resource facilities, settlements, stone-grey constructed roads, perennial rivers (with flow direction chevrons, volumetric `m3/s` discharge, inland lakes, and contiguous trunk splines), convoys, and formations are individually selectable without co-located formations hijacking clicks, opening dedicated Inspector detail views while rendering a fitted selection highlight that clears on `Escape` or empty terrain/ocean clicks.
 - **Acceptance Criteria:** Picking, geometry, and skin tests assert individual resolution of co-located settlement structures, facility buildings, grey `roadStoneRgb` roads, contiguous flow-annotated `River` chains, convoys, and formations; valid Inspector inspection views for `road`, `river`, and `facility` targets; subtle fitted highlight removal upon `Escape`; and zero painted persistent yellow circles left on empty terrain clicks.
+
+### UI-MAP-010: Unbroken Estuary-Widened River Ribbons, Contour-Flooded Lakes/Reservoirs, Geology Overlay & Dam Inspector Controls
+- **ID:** `UI-MAP-010`
+- **Status:** `Active`
+- **Milestone:** `M7`
+- **Verification Layer:** `Unit-Vitest`
+- **Lineage:** `Origin`
+- **Requirement:** Map features and shaders SHALL render contiguous river ribbons that reach `0.0m` ocean shorelines without mid-course or coastal `+2.0m` gaps, enforce strictly non-increasing 3D spline height along every chain, flare estuary outlets up to `2.2x` width at sea level, render contour-flooded surfaces for `Exorheic` freshwater lakes, `Endorheic` salt lakes, and impounded dam reservoirs alongside pickable 3D dam crests, provide a selectable `Geology & Bathymetry` map lens highlighting land and marine tectonic provinces, faults, shelves, trenches, mid-ocean ridges, and springs/oases inside explored territory (`ENG-EPI-001`), and expose hydrological/geological dossier metrics plus validated `constructDam` and `setDamRuleCurve` controls inside the Field Inspector.
+- **Acceptance Criteria:** Automated ribbon geometry, overlay, IPC validator, and Inspector UI tests confirm unbroken ocean-reaching estuary ribbons (`widthRatio >= 1.6x` toward outlet and non-increasing 3D radius), valid reservoir and 3D dam geometry, functioning `geology` lens selection strictly respecting `unexplored` fog, and valid `constructDam` / `setDamRuleCurve` IPC command dispatch from the Inspector.
 
 ---
 

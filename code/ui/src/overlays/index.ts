@@ -32,6 +32,10 @@ export interface OverlayTelemetrySummary {
   readonly formationCount: number;
   readonly staleFormationCount: number;
   readonly noRetreatFormationCount: number;
+  readonly geologyProvinceCount: number;
+  readonly endorheicLakeCount: number;
+  readonly springOasisCount: number;
+  readonly activeDamCount: number;
 }
 
 /** Baseline map overlay plugin cartridge for M0..M4 shell verification. */
@@ -71,13 +75,26 @@ export function summarizeOverlaySnapshot(
   let surveyedCount = 0;
   let liveSightCount = 0;
 
+  const geologyProvinces = new Set<string>();
+  let endorheicLakeCount = 0;
+  let springOasisCount = 0;
+  let activeDamCount = 0;
+
   for (const cell of snapshot.knownCells) {
     if (cell.tier === "unexplored") unexploredCount += 1;
     else if (cell.tier === "rumored") rumoredCount += 1;
-    else if (cell.tier === "stale") staleCount += 1;
     else {
-      surveyedCount += 1;
-      if (cell.isLiveHqSight) liveSightCount += 1;
+      if (cell.tier === "stale") staleCount += 1;
+      else {
+        surveyedCount += 1;
+        if (cell.isLiveHqSight) liveSightCount += 1;
+      }
+      if (cell.geologyProvince) geologyProvinces.add(cell.geologyProvince);
+      if (cell.lakeKind === "endorheic" || (cell.lakeSalinityPerMille ?? 0) >= 8) {
+        endorheicLakeCount += 1;
+      }
+      if (cell.isSpringOasis) springOasisCount += 1;
+      if (cell.damStatus && !cell.damStatus.breached) activeDamCount += 1;
     }
   }
 
@@ -167,6 +184,10 @@ export function summarizeOverlaySnapshot(
     formationCount: formations.length,
     staleFormationCount,
     noRetreatFormationCount,
+    geologyProvinceCount: geologyProvinces.size,
+    endorheicLakeCount,
+    springOasisCount,
+    activeDamCount,
   };
 }
 
@@ -290,6 +311,36 @@ export class TradeAndCongestionOverlayLayer implements MapLayerPlugin {
   }
 }
 
+/** Geological Provinces, Bathymetry, Oases & Hydrological Dams overlay plugin (`UI-MAP-010`). */
+export class GeologyBathymetryOverlayLayer implements MapLayerPlugin {
+  readonly layerId = "geology_bathymetry";
+  readonly displayName = "Geology & Bathymetry";
+  private lastSummary: OverlayTelemetrySummary | null = null;
+
+  public supportsMode(modeId: string): boolean {
+    return modeId === "geology";
+  }
+
+  public mount(_host: GlobeLayerHost, store: DiegeticStoreAccess, _bus: UiIntentBus): void {
+    const snap = store.getSnapshot();
+    if (snap) this.onSnapshotUpdate(snap);
+  }
+
+  public onSnapshotUpdate(snapshot: DiegeticSnapshot): void {
+    this.lastSummary = summarizeOverlaySnapshot(snapshot, "geology");
+  }
+
+  public onFrameRender(_cameraAltitudeNorm: number, _elapsedSec: number): void {}
+
+  public getSummary(): OverlayTelemetrySummary | null {
+    return this.lastSummary;
+  }
+
+  public dispose(): void {
+    this.lastSummary = null;
+  }
+}
+
 /** Operational Warfare Theaters, Battle Plans & Courier-Lagged Formations overlay plugin (`UI-MAP-007.1`, `UI-MAP-007.2`). */
 export class OperationalWarfareOverlayLayer implements MapLayerPlugin {
   readonly layerId = "operational_warfare";
@@ -362,6 +413,7 @@ export class OverlayToolbarLayer implements MapLayerPlugin {
 
     const modes = [
       { id: "terrain", label: "Terrain" },
+      { id: "geology", label: "Geology" },
       { id: "parchment", label: "Parchment" },
       { id: "epistemic", label: "Recon & Delay" },
       { id: "weather", label: "Weather" },
@@ -539,6 +591,9 @@ export class OverlayToolbarLayer implements MapLayerPlugin {
     } else if (this.activeModeId === "epistemic") {
       this.legendEl.textContent =
         `Live ${summary.liveSightCount} · Surveyed ${summary.surveyedCount} · Stale ${summary.staleCount} · Rumored ${summary.rumoredCount}`;
+    } else if (this.activeModeId === "geology") {
+      this.legendEl.textContent =
+        `Provinces ${summary.geologyProvinceCount} · Oases ${summary.springOasisCount} · Endorheic ${summary.endorheicLakeCount} · Dams ${summary.activeDamCount}`;
     } else if (this.activeModeId === "parchment") {
       this.legendEl.textContent =
         `Chart View · Surveyed ${summary.surveyedCount} · Unexplored ${summary.unexploredCount}`;
@@ -639,7 +694,21 @@ function formatHoverTooltipText(hit: GlobeRayHit, snapshot: DiegeticSnapshot | n
       provenanceLabel: cell.provenanceLabel,
       isLiveSight: cell.tier === "surveyed" ? cell.isLiveHqSight : false,
     });
-    return `${hit.label} [${desc.badgeText}]${coordSuffix}`;
+    const geoTags: string[] = [];
+    if (cell.tier === "surveyed" || cell.tier === "stale") {
+      if (cell.geologyProvince) {
+        geoTags.push(cell.geologyProvince.replace(/_/g, " "));
+      }
+      if (cell.isSpringOasis) geoTags.push("spring oasis");
+      if (cell.lakeKind === "endorheic") {
+        geoTags.push(`salt lake ${Math.round(cell.lakeSalinityPerMille ?? 35)}‰`);
+      }
+      if (cell.damStatus) {
+        geoTags.push(cell.damStatus.breached ? "breached dam" : `dam ${Math.round(cell.damStatus.liveHydroKw)} kW`);
+      }
+    }
+    const geoSuffix = geoTags.length > 0 ? ` · ${geoTags.join(", ")}` : "";
+    return `${hit.label}${geoSuffix} [${desc.badgeText}]${coordSuffix}`;
   }
   return `${hit.label}${coordSuffix}`;
 }

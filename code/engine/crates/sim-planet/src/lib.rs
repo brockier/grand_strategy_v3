@@ -8,7 +8,7 @@ pub mod procedural;
 pub mod topology;
 
 use std::cmp::Reverse;
-use std::collections::{BTreeMap, BTreeSet, BinaryHeap};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque};
 
 use rand_chacha::ChaCha8Rng;
 use rand_core::{RngCore, SeedableRng};
@@ -18,9 +18,10 @@ use sim_spine::{
         write_f32_bits, write_f64_bits, write_str, write_u16_le, write_u32_le, write_u64_le,
         write_u8,
     },
-    CanonicalSaveablePort, CellGeologyView, CellId, EdgeId, HiddenDepositView, NaturalBoundsView,
-    PlanetGenConfigView, PlanetGeometryPort, PlateId, ProceduralDepositCategory,
-    ProceduralMaterialId, RockStrataClass, SubsurfaceDepositTruthPort,
+    CanonicalSaveablePort, CellGeologyView, CellId, DepositAffinityDefView, EdgeId, FluidDefView,
+    GeologyProvinceDefView, GeologyProvinceKind, HiddenDepositView, HydrologyRulesView, LakeKind,
+    NaturalBoundsView, PlanetGenConfigView, PlanetGeometryPort, PlateId, ProceduralDepositCategory,
+    ProceduralMaterialId, RiverNavigabilityKind, RockStrataClass, SubsurfaceDepositTruthPort,
 };
 
 use crate::procedural::{
@@ -199,17 +200,28 @@ pub struct GeneratedPlanet {
     pub config: PlanetGenConfigView,
     pub topology: GoldbergTopology,
     pub elevation_m: Vec<f32>,
+    pub channel_bed_elev_m: Vec<f32>,
+    pub water_surface_elev_m: Vec<f32>,
+    pub roughness_m: Vec<f32>,
     pub raw_tectonic_uplift_m: Vec<f32>,
     pub is_ocean: Vec<bool>,
     pub is_convergent_boundary: Vec<bool>,
     pub is_divergent_boundary: Vec<bool>,
     pub plate_id: Vec<PlateId>,
+    pub geology_province: Vec<GeologyProvinceKind>,
+    pub basin_depth_m: Vec<f32>,
+    pub fault_instability_01: Vec<f32>,
+    pub volcanic_hazard_01: Vec<f32>,
     pub strata: Vec<RockStrataClass>,
     pub biome_keys: Vec<String>,
     pub base_precip_mm_yr: Vec<f32>,
     pub mean_annual_temp_c: Vec<f32>,
     pub aridity_index_01: Vec<f32>,
     pub soil_fertility_01: Vec<f32>,
+    pub soil_drainage_01: Vec<f32>,
+    pub soil_clay_01: Vec<f32>,
+    pub marine_upwelling_01: Vec<f32>,
+    pub shelf_nutrient_01: Vec<f32>,
     pub prevailing_wind_uv: Vec<[f32; 2]>,
     pub edge_slope_rad: Vec<f32>,
     pub river_downstream: Vec<Option<CellId>>,
@@ -217,6 +229,10 @@ pub struct GeneratedPlanet {
     pub drainage_area_km2: Vec<f32>,
     pub strahler_order: Vec<u8>,
     pub is_lake: Vec<bool>,
+    pub lake_kind: Vec<LakeKind>,
+    pub lake_salinity_per_mille: Vec<f32>,
+    pub is_estuary: Vec<bool>,
+    pub river_navigability: Vec<RiverNavigabilityKind>,
     pub river_channel_downstream: Vec<Option<CellId>>,
     pub river_discharge_m3_s: Vec<f32>,
     pub river_velocity_mps: Vec<f32>,
@@ -467,21 +483,46 @@ impl GeneratedPlanet {
             *e += sea_shift;
         }
 
-        // Shape submerged margins into two-tier continental shelves (-8m .. -185m) and abyssal basins
-        // while keeping exact land/ocean classification unchanged.
-        for e in &mut raw_elev {
-            if *e <= cfg.base_sea_level_m {
-                let depth = (cfg.base_sea_level_m - *e).max(0.0);
-                let mapped_depth = if depth < 950.0 {
-                    6.0 + (depth / 950.0).powf(1.45) * 176.0
-                } else if depth < 1650.0 {
-                    let t = (depth - 950.0) / 700.0;
+        // Shape submerged margins into continental shelves (-8m .. -185m), continental slopes,
+        // abyssal plains, mid-ocean spreading ridges, and oceanic subduction trenches while preserving shoreline classification.
+        let mut plate_is_continental = vec![false; plate_count];
+        for (p_idx, &base_e) in plate_base_elev.iter().enumerate() {
+            plate_is_continental[p_idx] = base_e > 0.0;
+        }
+        let mut is_ocean_trench = vec![false; n];
+        let mut is_mid_ocean_ridge = vec![false; n];
+        for idx in 0..n {
+            if raw_elev[idx] <= cfg.base_sea_level_m {
+                let cid = CellId(idx as u32);
+                let pa_cont = plate_is_continental[plate_id[idx].get() as usize];
+                let all_oceanic_boundary = !pa_cont
+                    && topology
+                        .neighbors(cid)
+                        .iter()
+                        .filter(|&&nb| plate_id[nb.get() as usize] != plate_id[idx])
+                        .all(|&nb| !plate_is_continental[plate_id[nb.get() as usize].get() as usize]);
+                let touches_land = topology
+                    .neighbors(cid)
+                    .iter()
+                    .any(|&nb| raw_elev[nb.get() as usize] > cfg.base_sea_level_m);
+                let depth = (cfg.base_sea_level_m - raw_elev[idx]).max(0.0);
+                let mut mapped_depth = if touches_land || depth < 1050.0 {
+                    6.0 + (depth / 1050.0).clamp(0.0, 1.0).powf(1.38) * 176.0
+                } else if depth < 1750.0 {
+                    let t = (depth - 1050.0) / 700.0;
                     let s = t * t * (3.0 - 2.0 * t);
                     182.0 + s * (2600.0 - 182.0)
                 } else {
-                    (depth + 950.0).clamp(2600.0, 5600.0)
+                    (depth + 950.0).clamp(2600.0, 4400.0)
                 };
-                *e = cfg.base_sea_level_m - mapped_depth;
+                if is_convergent_boundary[idx] && all_oceanic_boundary && !touches_land && depth > 800.0 {
+                    is_ocean_trench[idx] = true;
+                    mapped_depth = (4350.0 + (depth / 3.0).min(1950.0)).clamp(4300.0, 6400.0);
+                } else if is_divergent_boundary[idx] && !touches_land && depth > 850.0 {
+                    is_mid_ocean_ridge[idx] = true;
+                    mapped_depth = (1850.0 + (depth * 0.18).min(850.0)).clamp(1800.0, 2780.0);
+                }
+                raw_elev[idx] = cfg.base_sea_level_m - mapped_depth;
             }
         }
 
@@ -740,30 +781,146 @@ impl GeneratedPlanet {
             .map(|p| (p / 24.0 * 14.0).clamp(35.0, 4600.0))
             .collect();
 
-        // 6. Rock strata classes, biome strings, and strata-conditioned subsurface deposits (`ENG-GEO-003`).
+        // 6. Rock strata classes, two-generation land/marine provinces, hazards, soils, and upwelling (`ENG-GEO-003`, `009`, `010`, `013`).
+        let mut province_def_by_key: BTreeMap<&str, &GeologyProvinceDefView> = BTreeMap::new();
+        for gp in &cfg.geology_provinces {
+            province_def_by_key.insert(gp.id.as_str(), gp);
+        }
         let mut strata = Vec::with_capacity(n);
         let mut biome_keys = Vec::with_capacity(n);
+        let mut geology_province = Vec::with_capacity(n);
+        let mut relict_orogen = vec![0.0_f32; n];
+        let mut basin_depth_m = vec![0.0_f32; n];
+        let mut fault_instability_01 = vec![0.0_f32; n];
+        let mut volcanic_hazard_01 = vec![0.0_f32; n];
+        let mut roughness_m = vec![0.0_f32; n];
         for idx in 0..n {
+            let cid = CellId(idx as u32);
+            let pos = topology.cell_unit_xyz[idx];
             let elev_above = elevation_m[idx] - cfg.base_sea_level_m;
             let [lat, _lon] = topology.cell_lat_lon_rad[idx];
             let abs_lat_deg = lat.abs().to_degrees();
             let temp = mean_annual_temp_c[idx];
             let precip = base_precip_mm_yr[idx];
+            let paleo = ridged_fbm_sphere(pos, world_seed ^ 0x5A17_9C3B, 3, 2.5) as f32;
+            relict_orogen[idx] = paleo;
+            let volcanic_mask =
+                fbm_sphere([pos[0] * 4.5, pos[1] * 4.5, pos[2] * 4.5], world_seed ^ 0xBADA_5511, 3)
+                    as f32;
 
-            let st = if is_ocean[idx] {
-                RockStrataClass::OceanicBasalt
-            } else if is_convergent_boundary[idx] && elev_above > 750.0 {
-                RockStrataClass::IgneousOrogenic
-            } else if is_convergent_boundary[idx] || is_divergent_boundary[idx] {
-                RockStrataClass::VolcanicArc
-            } else if elev_above > 520.0 {
-                RockStrataClass::MetamorphicShield
-            } else if drainage_area_km2[idx] > topology.cell_area_km2[idx] * 3.5 {
-                RockStrataClass::AlluvialPlain
+            let prov = if is_ocean[idx] {
+                if is_ocean_trench[idx] || elevation_m[idx] - cfg.base_sea_level_m < -4250.0 {
+                    GeologyProvinceKind::OceanicTrench
+                } else if is_mid_ocean_ridge[idx] {
+                    GeologyProvinceKind::MidOceanRidge
+                } else if elev_above >= -190.0 {
+                    GeologyProvinceKind::ContinentalShelf
+                } else if elev_above >= -2650.0 {
+                    GeologyProvinceKind::ContinentalSlope
+                } else {
+                    GeologyProvinceKind::AbyssalPlain
+                }
+            } else if is_divergent_boundary[idx] && elev_above < 1400.0 {
+                GeologyProvinceKind::ContinentalRift
+            } else if is_convergent_boundary[idx] && volcanic_mask > 0.12 {
+                GeologyProvinceKind::VolcanicArc
+            } else if is_convergent_boundary[idx] || elev_above > 1550.0 {
+                GeologyProvinceKind::YoungOrogen
+            } else if drainage_area_km2[idx] > topology.cell_area_km2[idx] * 3.5
+                && elev_above < 480.0
+            {
+                GeologyProvinceKind::AlluvialPlain
+            } else if paleo > 0.56 && elev_above > 340.0 {
+                GeologyProvinceKind::OldOrogen
+            } else if elev_above > 560.0 || (paleo < 0.34 && raw_tectonic_uplift_m[idx] >= 0.0 && elev_above > 320.0) {
+                GeologyProvinceKind::ShieldCraton
+            } else if pit_fill_m[idx] > 0.5 || raw_tectonic_uplift_m[idx] < -50.0 || elev_above < 280.0 {
+                GeologyProvinceKind::SedimentaryBasin
             } else {
-                RockStrataClass::SedimentaryBasin
+                GeologyProvinceKind::Platform
+            };
+            geology_province.push(prov);
+
+            let st = match prov {
+                GeologyProvinceKind::ContinentalShelf
+                | GeologyProvinceKind::ContinentalSlope
+                | GeologyProvinceKind::MidOceanRidge
+                | GeologyProvinceKind::OceanicTrench
+                | GeologyProvinceKind::AbyssalPlain => RockStrataClass::OceanicBasalt,
+                GeologyProvinceKind::YoungOrogen | GeologyProvinceKind::OldOrogen => {
+                    RockStrataClass::IgneousOrogenic
+                }
+                GeologyProvinceKind::VolcanicArc | GeologyProvinceKind::ContinentalRift => {
+                    RockStrataClass::VolcanicArc
+                }
+                GeologyProvinceKind::ShieldCraton => RockStrataClass::MetamorphicShield,
+                GeologyProvinceKind::AlluvialPlain => RockStrataClass::AlluvialPlain,
+                GeologyProvinceKind::SedimentaryBasin | GeologyProvinceKind::Platform => {
+                    RockStrataClass::SedimentaryBasin
+                }
             };
             strata.push(st);
+
+            let mut neighbor_relief_max = 0.0_f32;
+            for &nb in topology.neighbors(cid) {
+                neighbor_relief_max = neighbor_relief_max
+                    .max((elevation_m[idx] - elevation_m[nb.get() as usize]).abs());
+            }
+            let def_opt = province_def_by_key.get(prov.as_str()).copied();
+            let base_rough = def_opt.map(|d| d.base_roughness_m).unwrap_or(match prov {
+                GeologyProvinceKind::YoungOrogen => 240.0,
+                GeologyProvinceKind::OceanicTrench => 210.0,
+                GeologyProvinceKind::VolcanicArc => 195.0,
+                GeologyProvinceKind::MidOceanRidge => 165.0,
+                GeologyProvinceKind::ContinentalSlope => 140.0,
+                GeologyProvinceKind::ContinentalRift => 135.0,
+                GeologyProvinceKind::OldOrogen => 95.0,
+                GeologyProvinceKind::ShieldCraton => 42.0,
+                GeologyProvinceKind::Platform => 34.0,
+                GeologyProvinceKind::SedimentaryBasin => 22.0,
+                GeologyProvinceKind::AbyssalPlain => 18.0,
+                GeologyProvinceKind::ContinentalShelf => 12.0,
+                GeologyProvinceKind::AlluvialPlain => 10.0,
+            });
+            roughness_m[idx] = (base_rough * 0.72 + neighbor_relief_max * 0.14).clamp(4.0, 950.0);
+
+            let def_fault = def_opt.map(|d| d.fault_instability_01).unwrap_or(match prov {
+                GeologyProvinceKind::OceanicTrench => 0.92,
+                GeologyProvinceKind::VolcanicArc => 0.84,
+                GeologyProvinceKind::ContinentalRift => 0.78,
+                GeologyProvinceKind::MidOceanRidge => 0.74,
+                GeologyProvinceKind::YoungOrogen => 0.72,
+                GeologyProvinceKind::ContinentalSlope => 0.42,
+                GeologyProvinceKind::OldOrogen => 0.24,
+                _ => 0.12,
+            });
+            let def_volc = def_opt.map(|d| d.volcanic_hazard_01).unwrap_or(match prov {
+                GeologyProvinceKind::VolcanicArc => 0.86,
+                GeologyProvinceKind::MidOceanRidge => 0.80,
+                GeologyProvinceKind::OceanicTrench => 0.62,
+                GeologyProvinceKind::ContinentalRift => 0.58,
+                GeologyProvinceKind::YoungOrogen => 0.34,
+                _ => 0.05,
+            });
+            fault_instability_01[idx] = (def_fault
+                + if is_convergent_boundary[idx] || is_divergent_boundary[idx] {
+                    0.08
+                } else {
+                    0.0
+                })
+            .clamp(0.0, 1.0);
+            volcanic_hazard_01[idx] = def_volc.clamp(0.0, 1.0);
+            basin_depth_m[idx] = match prov {
+                GeologyProvinceKind::SedimentaryBasin => {
+                    (420.0 + pit_fill_m[idx] * 24.0 + (600.0 - elev_above.max(0.0)) * 2.2)
+                        .clamp(120.0, 5200.0)
+                }
+                GeologyProvinceKind::AlluvialPlain => {
+                    (180.0 + (drainage_area_km2[idx] / 500.0)).clamp(60.0, 1800.0)
+                }
+                GeologyProvinceKind::ContinentalShelf => 950.0,
+                _ => 20.0,
+            };
 
             let biome = if is_ocean[idx] {
                 if elev_above > -250.0 {
@@ -791,58 +948,25 @@ impl GeneratedPlanet {
             biome_keys.push(biome.to_string());
         }
 
-        let (deposits, cell_deposit_ranges) =
-            seed_subsurface_deposits(world_seed, &strata, &materials, &topology.cell_area_km2);
         let watershed_ids = compute_watershed_ids(&river_downstream, &is_ocean);
-
-        let mut aridity_index_01 = Vec::with_capacity(n);
-        let mut soil_fertility_01 = Vec::with_capacity(n);
-        for idx in 0..n {
-            if is_ocean[idx] {
-                aridity_index_01.push(1.0);
-                soil_fertility_01.push(0.0);
-                continue;
-            }
-            let temp = mean_annual_temp_c[idx].max(0.0);
-            let pet_mm = (300.0 + 25.0 * temp + 0.045 * temp * temp * temp).max(120.0);
-            let aridity = (base_precip_mm_yr[idx] / pet_mm).clamp(0.0, 1.0);
-            aridity_index_01.push(aridity);
-
-            let base_parent = match strata[idx] {
-                RockStrataClass::AlluvialPlain => 0.88_f32,
-                RockStrataClass::VolcanicArc => 0.78,
-                RockStrataClass::SedimentaryBasin => 0.72,
-                RockStrataClass::MetamorphicShield => 0.44,
-                RockStrataClass::IgneousOrogenic => 0.28,
-                RockStrataClass::OceanicBasalt => 0.15,
-            };
-            let thermal_factor = ((mean_annual_temp_c[idx] + 4.0) / 20.0).clamp(0.1, 1.0);
-            let moisture_factor = (aridity * 1.15).clamp(0.08, 1.0);
-            let drainage_bonus = if drainage_area_km2[idx] > topology.cell_area_km2[idx] * 2.5 {
-                0.10
-            } else {
-                0.0
-            };
-            let elev_penalty = ((elevation_m[idx] - cfg.base_sea_level_m - 900.0).max(0.0) / 2800.0)
-                .clamp(0.0, 0.55);
-            let fertility = (base_parent * 0.55
-                + 0.45 * thermal_factor * moisture_factor
-                + drainage_bonus
-                - elev_penalty)
-                .clamp(0.0, 1.0);
-            soil_fertility_01.push(fertility);
-        }
 
         let (
             is_lake,
+            lake_kind,
+            lake_salinity_per_mille,
+            is_estuary,
+            river_navigability,
             river_channel_downstream,
+            channel_bed_elev_m,
+            water_surface_elev_m,
             river_discharge_m3_s,
             river_velocity_mps,
             hydro_potential_kw,
         ) = compute_volumetric_hydrology(
             &topology,
-            &elevation_m,
+            &mut elevation_m,
             cfg.base_sea_level_m,
+            &cfg.hydrology_rules,
             &is_ocean,
             ocean_count,
             &pit_fill_m,
@@ -854,22 +978,169 @@ impl GeneratedPlanet {
             &mean_annual_temp_c,
         );
 
+        let (deposits, cell_deposit_ranges) = seed_subsurface_deposits(
+            world_seed,
+            cfg,
+            &topology,
+            &elevation_m,
+            &is_ocean,
+            &geology_province,
+            &strata,
+            &river_downstream,
+            &river_channel_downstream,
+            &mean_annual_temp_c,
+            &materials,
+            &topology.cell_area_km2,
+        );
+
+        let mut aridity_index_01 = Vec::with_capacity(n);
+        let mut soil_fertility_01 = Vec::with_capacity(n);
+        let mut soil_drainage_01 = Vec::with_capacity(n);
+        let mut soil_clay_01 = Vec::with_capacity(n);
+        let mut marine_upwelling_01 = vec![0.0_f32; n];
+        let mut shelf_nutrient_01 = vec![0.0_f32; n];
+
+        for idx in 0..n {
+            if is_ocean[idx] {
+                aridity_index_01.push(1.0);
+                soil_fertility_01.push(0.0);
+                soil_drainage_01.push(0.0);
+                soil_clay_01.push(0.0);
+
+                // Wind-driven offshore Ekman coastal upwelling + river nutrient shelf enrichment (`ENG-GEO-013`).
+                let cid = CellId(idx as u32);
+                let pos = topology.cell_unit_xyz[idx];
+                let (east, north) = topology::tangent_basis([
+                    f64::from(pos[0]),
+                    f64::from(pos[1]),
+                    f64::from(pos[2]),
+                ]);
+                let [wu, wv] = prevailing_wind_uv[idx];
+                let wind_3d = norm3([
+                    east[0] * f64::from(wu) + north[0] * f64::from(wv),
+                    east[1] * f64::from(wu) + north[1] * f64::from(wv),
+                    east[2] * f64::from(wu) + north[2] * f64::from(wv),
+                ]);
+                let mut coastal_land_dir_score = 0.0_f32;
+                let mut river_mouth_inflow = 0.0_f32;
+                for &nb in topology.neighbors(cid) {
+                    let nb_idx = nb.get() as usize;
+                    if !is_ocean[nb_idx] {
+                        let np = topology.cell_unit_xyz[nb_idx];
+                        let dir_to_sea = norm3([
+                            f64::from(pos[0] - np[0]),
+                            f64::from(pos[1] - np[1]),
+                            f64::from(pos[2] - np[2]),
+                        ]);
+                        let seaward = dot3_f64(dir_to_sea, wind_3d).max(0.0) as f32;
+                        coastal_land_dir_score = coastal_land_dir_score.max(seaward);
+                        if river_channel_downstream[nb_idx] == Some(cid) {
+                            river_mouth_inflow += river_discharge_m3_s[nb_idx];
+                        }
+                    }
+                }
+                let prov_bias = province_def_by_key
+                    .get(geology_province[idx].as_str())
+                    .map(|d| d.marine_upwelling_bias)
+                    .unwrap_or(match geology_province[idx] {
+                        GeologyProvinceKind::ContinentalShelf => 0.55,
+                        GeologyProvinceKind::ContinentalSlope => 0.35,
+                        _ => 0.10,
+                    });
+                marine_upwelling_01[idx] =
+                    (coastal_land_dir_score * 0.65 + prov_bias * 0.45).clamp(0.02, 1.0);
+                let shelf_factor = if geology_province[idx] == GeologyProvinceKind::ContinentalShelf
+                {
+                    0.52
+                } else if geology_province[idx] == GeologyProvinceKind::ContinentalSlope {
+                    0.24
+                } else {
+                    0.06
+                };
+                let plume = (river_mouth_inflow / 800.0).clamp(0.0, 0.48);
+                shelf_nutrient_01[idx] =
+                    (shelf_factor + plume + marine_upwelling_01[idx] * 0.28).clamp(0.0, 1.0);
+                continue;
+            }
+
+            let temp = mean_annual_temp_c[idx].max(0.0);
+            let pet_mm = (300.0 + 25.0 * temp + 0.045 * temp * temp * temp).max(120.0);
+            let aridity = (base_precip_mm_yr[idx] / pet_mm).clamp(0.0, 1.0);
+            aridity_index_01.push(aridity);
+
+            let clay = match geology_province[idx] {
+                GeologyProvinceKind::AlluvialPlain => (0.64 + aridity * 0.18).clamp(0.45, 0.88),
+                GeologyProvinceKind::SedimentaryBasin => (0.48 + aridity * 0.16).clamp(0.32, 0.78),
+                GeologyProvinceKind::Platform => (0.36 + aridity * 0.12).clamp(0.22, 0.65),
+                GeologyProvinceKind::VolcanicArc => 0.34,
+                GeologyProvinceKind::OldOrogen => 0.28,
+                GeologyProvinceKind::ContinentalRift => 0.26,
+                GeologyProvinceKind::ShieldCraton => 0.22,
+                GeologyProvinceKind::YoungOrogen => 0.16,
+                _ => 0.30,
+            };
+            let rough_norm = (roughness_m[idx] / 250.0).clamp(0.0, 1.0);
+            let drainage = (0.85 - clay * 0.58 + rough_norm * 0.22).clamp(0.12, 0.94);
+            soil_clay_01.push(clay);
+            soil_drainage_01.push(drainage);
+
+            let base_parent = match strata[idx] {
+                RockStrataClass::AlluvialPlain => 0.88_f32,
+                RockStrataClass::VolcanicArc => 0.78,
+                RockStrataClass::SedimentaryBasin => 0.72,
+                RockStrataClass::MetamorphicShield => 0.44,
+                RockStrataClass::IgneousOrogenic => 0.28,
+                RockStrataClass::OceanicBasalt => 0.15,
+            };
+            let prov_bias = province_def_by_key
+                .get(geology_province[idx].as_str())
+                .map(|d| d.soil_fertility_bias)
+                .unwrap_or(0.0);
+            let thermal_factor = ((mean_annual_temp_c[idx] + 4.0) / 20.0).clamp(0.1, 1.0);
+            let moisture_factor = (aridity * 1.15).clamp(0.08, 1.0);
+            let drainage_bonus = if drainage_area_km2[idx] > topology.cell_area_km2[idx] * 2.5 {
+                0.10
+            } else {
+                0.0
+            };
+            let elev_penalty = ((elevation_m[idx] - cfg.base_sea_level_m - 900.0).max(0.0) / 2800.0)
+                .clamp(0.0, 0.55);
+            let fertility = (base_parent * 0.52
+                + 0.42 * thermal_factor * moisture_factor
+                + drainage_bonus
+                + prov_bias * 0.35
+                - elev_penalty)
+                .clamp(0.0, 1.0);
+            soil_fertility_01.push(fertility);
+        }
+
         Self {
             world_seed,
             config: cfg.clone(),
             topology,
             elevation_m,
+            channel_bed_elev_m,
+            water_surface_elev_m,
+            roughness_m,
             raw_tectonic_uplift_m,
             is_ocean,
             is_convergent_boundary,
             is_divergent_boundary,
             plate_id,
+            geology_province,
+            basin_depth_m,
+            fault_instability_01,
+            volcanic_hazard_01,
             strata,
             biome_keys,
             base_precip_mm_yr,
             mean_annual_temp_c,
             aridity_index_01,
             soil_fertility_01,
+            soil_drainage_01,
+            soil_clay_01,
+            marine_upwelling_01,
+            shelf_nutrient_01,
             prevailing_wind_uv,
             edge_slope_rad,
             river_downstream,
@@ -877,6 +1148,10 @@ impl GeneratedPlanet {
             drainage_area_km2,
             strahler_order,
             is_lake,
+            lake_kind,
+            lake_salinity_per_mille,
+            is_estuary,
+            river_navigability,
             river_channel_downstream,
             river_discharge_m3_s,
             river_velocity_mps,
@@ -930,159 +1205,428 @@ impl GeneratedPlanet {
     }
 }
 
+fn tier_overburden_m(tier: u8, is_offshore: bool, rng: &mut ChaCha8Rng) -> (f32, f32) {
+    if is_offshore {
+        return (240.0 + next_unit_f32(rng) * 720.0, 0.90);
+    }
+    match tier {
+        1 => (2.0 + next_unit_f32(rng) * 28.0, 0.08 + next_unit_f32(rng) * 0.25),
+        2 => (42.0 + next_unit_f32(rng) * 145.0, 0.25 + next_unit_f32(rng) * 0.42),
+        _ => (210.0 + next_unit_f32(rng) * 720.0, 0.45 + next_unit_f32(rng) * 0.45),
+    }
+}
+
+fn category_from_affinity_key(key: &str) -> ProceduralDepositCategory {
+    match key.trim() {
+        "smelting_flux" => ProceduralDepositCategory::SmeltingFlux,
+        "solid_fuel" => ProceduralDepositCategory::SolidFuel,
+        "liquid_fuel" => ProceduralDepositCategory::LiquidFuel,
+        _ => ProceduralDepositCategory::MetallicOre,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
 fn seed_subsurface_deposits(
     world_seed: u64,
+    cfg: &PlanetGenConfigView,
+    topology: &GoldbergTopology,
+    elevation_m: &[f32],
+    is_ocean: &[bool],
+    geology_province: &[GeologyProvinceKind],
     strata: &[RockStrataClass],
+    river_downstream: &[Option<CellId>],
+    river_channel_downstream: &[Option<CellId>],
+    mean_annual_temp_c: &[f32],
     materials: &ProceduralMaterialCatalog,
     cell_area_km2: &[f32],
 ) -> (Vec<HiddenDepositView>, Vec<(usize, usize)>) {
     let mut rng = split_seed(world_seed, 3);
     let n = strata.len();
-    let mut deposits = Vec::new();
-    let mut ranges = Vec::with_capacity(n);
+    let mut per_cell: Vec<Vec<HiddenDepositView>> = vec![Vec::new(); n];
 
     let solid_fuels: Vec<&ProceduralFuelDef> =
         materials.fuels.iter().filter(|f| !f.is_liquid).collect();
     let liquid_fuels: Vec<&ProceduralFuelDef> =
         materials.fuels.iter().filter(|f| f.is_liquid).collect();
 
-    for (idx, &st) in strata.iter().enumerate() {
-        let start = deposits.len();
-        let area_factor = (f64::from(cell_area_km2[idx]) / 50000.0).clamp(0.3, 4.0);
-        let cid = CellId(idx as u32);
-        let roll = next_unit_f32(&mut rng);
+    let pick_material_for_category =
+        |cat: ProceduralDepositCategory, rng: &mut ChaCha8Rng| -> Option<(ProceduralMaterialId, f32)> {
+            match cat {
+                ProceduralDepositCategory::MetallicOre => {
+                    (!materials.ores.is_empty()).then(|| {
+                        let ore = &materials.ores[(rng.next_u64() as usize) % materials.ores.len()];
+                        (
+                            ore.id,
+                            (ore.base_grade_01 * (0.85 + 0.3 * next_unit_f32(rng)))
+                                .clamp(0.08, 0.92),
+                        )
+                    })
+                }
+                ProceduralDepositCategory::SmeltingFlux => {
+                    (!materials.fluxes.is_empty()).then(|| {
+                        let flux =
+                            &materials.fluxes[(rng.next_u64() as usize) % materials.fluxes.len()];
+                        (flux.id, 0.55 + next_unit_f32(rng) * 0.38)
+                    })
+                }
+                ProceduralDepositCategory::SolidFuel => (!solid_fuels.is_empty()).then(|| {
+                    let fuel = solid_fuels[(rng.next_u64() as usize) % solid_fuels.len()];
+                    (fuel.id, 0.58 + next_unit_f32(rng) * 0.34)
+                }),
+                ProceduralDepositCategory::LiquidFuel => (!liquid_fuels.is_empty()).then(|| {
+                    let fuel = liquid_fuels[(rng.next_u64() as usize) % liquid_fuels.len()];
+                    (fuel.id, 0.65 + next_unit_f32(rng) * 0.30)
+                }),
+            }
+        };
 
-        match st {
-            RockStrataClass::IgneousOrogenic
-            | RockStrataClass::VolcanicArc
-            | RockStrataClass::MetamorphicShield => {
-                // Orogenic / shield / volcanic belts strongly host metallic ore seams.
-                if roll < 0.62 && !materials.ores.is_empty() {
-                    let ore = &materials.ores[(rng.next_u64() as usize) % materials.ores.len()];
-                    deposits.push(HiddenDepositView {
-                        cell: cid,
-                        material_id: ore.id,
-                        category: ProceduralDepositCategory::MetallicOre,
-                        total_mass_tonnes: 180_000.0 * area_factor
-                            * f64::from(0.5 + next_unit_f32(&mut rng)),
-                        average_purity_01: (ore.base_grade_01 * (0.85 + 0.3 * next_unit_f32(&mut rng)))
-                            .clamp(0.08, 0.92),
-                        overburden_depth_m: 15.0 + next_unit_f32(&mut rng) * 180.0,
-                        aquifer_flood_risk_01: 0.12 + next_unit_f32(&mut rng) * 0.45,
-                    });
+    if !cfg.deposit_affinities.is_empty() {
+        let mut by_province: BTreeMap<&str, Vec<&DepositAffinityDefView>> = BTreeMap::new();
+        for aff in &cfg.deposit_affinities {
+            by_province.entry(aff.province_id.as_str()).or_default().push(aff);
+        }
+
+        for idx in 0..n {
+            let cid = CellId(idx as u32);
+            let prov = geology_province[idx];
+            let area_factor = (f64::from(cell_area_km2[idx]) / 50000.0).clamp(0.35, 3.8);
+            let Some(affs) = by_province.get(prov.as_str()) else {
+                continue;
+            };
+            for &aff in affs {
+                if aff.is_offshore != is_ocean[idx] {
+                    continue;
                 }
-                if next_unit_f32(&mut rng) < 0.24 && !materials.fluxes.is_empty() {
-                    let flux =
-                        &materials.fluxes[(rng.next_u64() as usize) % materials.fluxes.len()];
-                    deposits.push(HiddenDepositView {
+                if next_unit_f32(&mut rng) < aff.spawn_weight.clamp(0.0, 1.0) {
+                    let cat = category_from_affinity_key(&aff.category_key);
+                    let Some((material_id, base_pur)) = pick_material_for_category(cat, &mut rng)
+                    else {
+                        continue;
+                    };
+                    let purity = (aff.min_purity_01
+                        + next_unit_f32(&mut rng) * (aff.max_purity_01 - aff.min_purity_01).max(0.01))
+                    .max(base_pur * 0.5)
+                    .clamp(0.08, 0.95);
+                    let tonnes = (aff.min_tonnes
+                        + f64::from(next_unit_f32(&mut rng)) * (aff.max_tonnes - aff.min_tonnes).max(1.0))
+                        * area_factor;
+                    let tier = aff.accessibility_tier.clamp(1, 3);
+                    let (overburden_depth_m, aquifer_flood_risk_01) =
+                        tier_overburden_m(tier, aff.is_offshore, &mut rng);
+                    per_cell[idx].push(HiddenDepositView {
                         cell: cid,
-                        material_id: flux.id,
-                        category: ProceduralDepositCategory::SmeltingFlux,
-                        total_mass_tonnes: 220_000.0 * area_factor
-                            * f64::from(0.5 + next_unit_f32(&mut rng)),
-                        average_purity_01: 0.55 + next_unit_f32(&mut rng) * 0.38,
-                        overburden_depth_m: 10.0 + next_unit_f32(&mut rng) * 90.0,
-                        aquifer_flood_risk_01: 0.10 + next_unit_f32(&mut rng) * 0.30,
-                    });
-                }
-            }
-            RockStrataClass::SedimentaryBasin => {
-                // Sedimentary basins host coal/oil beds, carbonate/silicate fluxes, and trace bog iron.
-                if roll < 0.38 && !solid_fuels.is_empty() {
-                    let fuel = solid_fuels[(rng.next_u64() as usize) % solid_fuels.len()];
-                    deposits.push(HiddenDepositView {
-                        cell: cid,
-                        material_id: fuel.id,
-                        category: ProceduralDepositCategory::SolidFuel,
-                        total_mass_tonnes: 420_000.0 * area_factor
-                            * f64::from(0.6 + next_unit_f32(&mut rng)),
-                        average_purity_01: 0.62 + next_unit_f32(&mut rng) * 0.32,
-                        overburden_depth_m: 25.0 + next_unit_f32(&mut rng) * 240.0,
-                        aquifer_flood_risk_01: 0.28 + next_unit_f32(&mut rng) * 0.55,
-                    });
-                } else if roll < 0.62 && !liquid_fuels.is_empty() {
-                    let fuel = liquid_fuels[(rng.next_u64() as usize) % liquid_fuels.len()];
-                    deposits.push(HiddenDepositView {
-                        cell: cid,
-                        material_id: fuel.id,
-                        category: ProceduralDepositCategory::LiquidFuel,
-                        total_mass_tonnes: 260_000.0 * area_factor
-                            * f64::from(0.5 + next_unit_f32(&mut rng)),
-                        average_purity_01: 0.68 + next_unit_f32(&mut rng) * 0.28,
-                        overburden_depth_m: 120.0 + next_unit_f32(&mut rng) * 900.0,
-                        aquifer_flood_risk_01: 0.35 + next_unit_f32(&mut rng) * 0.50,
-                    });
-                }
-                if next_unit_f32(&mut rng) < 0.30 && !materials.fluxes.is_empty() {
-                    let flux =
-                        &materials.fluxes[(rng.next_u64() as usize) % materials.fluxes.len()];
-                    deposits.push(HiddenDepositView {
-                        cell: cid,
-                        material_id: flux.id,
-                        category: ProceduralDepositCategory::SmeltingFlux,
-                        total_mass_tonnes: 340_000.0 * area_factor,
-                        average_purity_01: 0.60 + next_unit_f32(&mut rng) * 0.35,
-                        overburden_depth_m: 8.0 + next_unit_f32(&mut rng) * 75.0,
-                        aquifer_flood_risk_01: 0.20 + next_unit_f32(&mut rng) * 0.40,
-                    });
-                }
-                if next_unit_f32(&mut rng) < 0.08 && !materials.ores.is_empty() {
-                    let ore = &materials.ores[(rng.next_u64() as usize) % materials.ores.len()];
-                    deposits.push(HiddenDepositView {
-                        cell: cid,
-                        material_id: ore.id,
-                        category: ProceduralDepositCategory::MetallicOre,
-                        total_mass_tonnes: 65_000.0 * area_factor,
-                        average_purity_01: (ore.base_grade_01 * 0.72).clamp(0.06, 0.70),
-                        overburden_depth_m: 5.0 + next_unit_f32(&mut rng) * 60.0,
-                        aquifer_flood_risk_01: 0.45 + next_unit_f32(&mut rng) * 0.45,
-                    });
-                }
-            }
-            RockStrataClass::AlluvialPlain => {
-                if roll < 0.22 && !solid_fuels.is_empty() {
-                    let fuel = solid_fuels[(rng.next_u64() as usize) % solid_fuels.len()];
-                    deposits.push(HiddenDepositView {
-                        cell: cid,
-                        material_id: fuel.id,
-                        category: ProceduralDepositCategory::SolidFuel,
-                        total_mass_tonnes: 140_000.0 * area_factor,
-                        average_purity_01: 0.50 + next_unit_f32(&mut rng) * 0.30,
-                        overburden_depth_m: 6.0 + next_unit_f32(&mut rng) * 45.0,
-                        aquifer_flood_risk_01: 0.55 + next_unit_f32(&mut rng) * 0.40,
-                    });
-                }
-                if next_unit_f32(&mut rng) < 0.14 && !materials.ores.is_empty() {
-                    let ore = &materials.ores[(rng.next_u64() as usize) % materials.ores.len()];
-                    deposits.push(HiddenDepositView {
-                        cell: cid,
-                        material_id: ore.id,
-                        category: ProceduralDepositCategory::MetallicOre,
-                        total_mass_tonnes: 55_000.0 * area_factor,
-                        average_purity_01: (ore.base_grade_01 * 0.65).clamp(0.05, 0.68),
-                        overburden_depth_m: 4.0 + next_unit_f32(&mut rng) * 28.0,
-                        aquifer_flood_risk_01: 0.60 + next_unit_f32(&mut rng) * 0.35,
-                    });
-                }
-            }
-            RockStrataClass::OceanicBasalt => {
-                if roll < 0.08 && !liquid_fuels.is_empty() {
-                    let fuel = liquid_fuels[(rng.next_u64() as usize) % liquid_fuels.len()];
-                    deposits.push(HiddenDepositView {
-                        cell: cid,
-                        material_id: fuel.id,
-                        category: ProceduralDepositCategory::LiquidFuel,
-                        total_mass_tonnes: 180_000.0 * area_factor,
-                        average_purity_01: 0.62 + next_unit_f32(&mut rng) * 0.30,
-                        overburden_depth_m: 350.0 + next_unit_f32(&mut rng) * 900.0,
-                        aquifer_flood_risk_01: 0.90,
+                        material_id,
+                        category: cat,
+                        total_mass_tonnes: tonnes,
+                        average_purity_01: purity,
+                        overburden_depth_m,
+                        aquifer_flood_risk_01,
+                        accessibility_tier: tier,
+                        is_offshore: aff.is_offshore,
+                        is_alluvial_placer: false,
                     });
                 }
             }
         }
-        ranges.push((start, deposits.len()));
+    } else {
+        // Synthetic test-config fallback when explicit [[deposit_affinities]] records are omitted.
+        for (idx, &st) in strata.iter().enumerate() {
+            let area_factor = (f64::from(cell_area_km2[idx]) / 50000.0).clamp(0.3, 4.0);
+            let cid = CellId(idx as u32);
+            let roll = next_unit_f32(&mut rng);
+            let offshore = geology_province[idx] == GeologyProvinceKind::ContinentalShelf;
+
+            match st {
+                RockStrataClass::IgneousOrogenic
+                | RockStrataClass::VolcanicArc
+                | RockStrataClass::MetamorphicShield => {
+                    if roll < 0.62 && !materials.ores.is_empty() {
+                        let tier = if matches!(st, RockStrataClass::IgneousOrogenic | RockStrataClass::MetamorphicShield) {
+                            1
+                        } else {
+                            2
+                        };
+                        let (overburden_depth_m, aquifer_flood_risk_01) =
+                            tier_overburden_m(tier, false, &mut rng);
+                        let ore = &materials.ores[(rng.next_u64() as usize) % materials.ores.len()];
+                        per_cell[idx].push(HiddenDepositView {
+                            cell: cid,
+                            material_id: ore.id,
+                            category: ProceduralDepositCategory::MetallicOre,
+                            total_mass_tonnes: 180_000.0 * area_factor
+                                * f64::from(0.5 + next_unit_f32(&mut rng)),
+                            average_purity_01: (ore.base_grade_01
+                                * (0.85 + 0.3 * next_unit_f32(&mut rng)))
+                            .clamp(0.08, 0.92),
+                            overburden_depth_m,
+                            aquifer_flood_risk_01,
+                            accessibility_tier: tier,
+                            is_offshore: false,
+                            is_alluvial_placer: false,
+                        });
+                    }
+                    if next_unit_f32(&mut rng) < 0.24 && !materials.fluxes.is_empty() {
+                        let flux = &materials.fluxes[(rng.next_u64() as usize) % materials.fluxes.len()];
+                        let (overburden_depth_m, aquifer_flood_risk_01) =
+                            tier_overburden_m(1, false, &mut rng);
+                        per_cell[idx].push(HiddenDepositView {
+                            cell: cid,
+                            material_id: flux.id,
+                            category: ProceduralDepositCategory::SmeltingFlux,
+                            total_mass_tonnes: 220_000.0 * area_factor
+                                * f64::from(0.5 + next_unit_f32(&mut rng)),
+                            average_purity_01: 0.55 + next_unit_f32(&mut rng) * 0.38,
+                            overburden_depth_m,
+                            aquifer_flood_risk_01,
+                            accessibility_tier: 1,
+                            is_offshore: false,
+                            is_alluvial_placer: false,
+                        });
+                    }
+                }
+                RockStrataClass::SedimentaryBasin => {
+                    if roll < 0.38 && !solid_fuels.is_empty() {
+                        let fuel = solid_fuels[(rng.next_u64() as usize) % solid_fuels.len()];
+                        let (overburden_depth_m, aquifer_flood_risk_01) =
+                            tier_overburden_m(1, false, &mut rng);
+                        per_cell[idx].push(HiddenDepositView {
+                            cell: cid,
+                            material_id: fuel.id,
+                            category: ProceduralDepositCategory::SolidFuel,
+                            total_mass_tonnes: 420_000.0 * area_factor
+                                * f64::from(0.6 + next_unit_f32(&mut rng)),
+                            average_purity_01: 0.62 + next_unit_f32(&mut rng) * 0.32,
+                            overburden_depth_m,
+                            aquifer_flood_risk_01,
+                            accessibility_tier: 1,
+                            is_offshore: false,
+                            is_alluvial_placer: false,
+                        });
+                    } else if roll < 0.62 && !liquid_fuels.is_empty() {
+                        let fuel = liquid_fuels[(rng.next_u64() as usize) % liquid_fuels.len()];
+                        let (overburden_depth_m, aquifer_flood_risk_01) =
+                            tier_overburden_m(3, false, &mut rng);
+                        per_cell[idx].push(HiddenDepositView {
+                            cell: cid,
+                            material_id: fuel.id,
+                            category: ProceduralDepositCategory::LiquidFuel,
+                            total_mass_tonnes: 260_000.0 * area_factor
+                                * f64::from(0.5 + next_unit_f32(&mut rng)),
+                            average_purity_01: 0.68 + next_unit_f32(&mut rng) * 0.28,
+                            overburden_depth_m,
+                            aquifer_flood_risk_01,
+                            accessibility_tier: 3,
+                            is_offshore: false,
+                            is_alluvial_placer: false,
+                        });
+                    }
+                    if next_unit_f32(&mut rng) < 0.30 && !materials.fluxes.is_empty() {
+                        let flux = &materials.fluxes[(rng.next_u64() as usize) % materials.fluxes.len()];
+                        let (overburden_depth_m, aquifer_flood_risk_01) =
+                            tier_overburden_m(1, false, &mut rng);
+                        per_cell[idx].push(HiddenDepositView {
+                            cell: cid,
+                            material_id: flux.id,
+                            category: ProceduralDepositCategory::SmeltingFlux,
+                            total_mass_tonnes: 340_000.0 * area_factor,
+                            average_purity_01: 0.60 + next_unit_f32(&mut rng) * 0.35,
+                            overburden_depth_m,
+                            aquifer_flood_risk_01,
+                            accessibility_tier: 1,
+                            is_offshore: false,
+                            is_alluvial_placer: false,
+                        });
+                    }
+                }
+                RockStrataClass::AlluvialPlain => {
+                    if roll < 0.22 && !solid_fuels.is_empty() {
+                        let fuel = solid_fuels[(rng.next_u64() as usize) % solid_fuels.len()];
+                        let (overburden_depth_m, aquifer_flood_risk_01) =
+                            tier_overburden_m(1, false, &mut rng);
+                        per_cell[idx].push(HiddenDepositView {
+                            cell: cid,
+                            material_id: fuel.id,
+                            category: ProceduralDepositCategory::SolidFuel,
+                            total_mass_tonnes: 140_000.0 * area_factor,
+                            average_purity_01: 0.50 + next_unit_f32(&mut rng) * 0.30,
+                            overburden_depth_m,
+                            aquifer_flood_risk_01,
+                            accessibility_tier: 1,
+                            is_offshore: false,
+                            is_alluvial_placer: false,
+                        });
+                    }
+                }
+                RockStrataClass::OceanicBasalt => {
+                    if offshore && roll < 0.26 && !liquid_fuels.is_empty() {
+                        let fuel = liquid_fuels[(rng.next_u64() as usize) % liquid_fuels.len()];
+                        let (overburden_depth_m, aquifer_flood_risk_01) =
+                            tier_overburden_m(3, true, &mut rng);
+                        per_cell[idx].push(HiddenDepositView {
+                            cell: cid,
+                            material_id: fuel.id,
+                            category: ProceduralDepositCategory::LiquidFuel,
+                            total_mass_tonnes: 190_000.0 * area_factor,
+                            average_purity_01: 0.64 + next_unit_f32(&mut rng) * 0.28,
+                            overburden_depth_m,
+                            aquifer_flood_risk_01,
+                            accessibility_tier: 3,
+                            is_offshore: true,
+                            is_alluvial_placer: false,
+                        });
+                    }
+                }
+            }
+        }
     }
 
+    // Propagate downstream alluvial placers from upland orogens/arcs into river/alluvial basins (`ENG-GEO-011`).
+    let mut drains_orogen = vec![false; n];
+    for idx in 0..n {
+        if matches!(
+            geology_province[idx],
+            GeologyProvinceKind::OldOrogen
+                | GeologyProvinceKind::YoungOrogen
+                | GeologyProvinceKind::VolcanicArc
+        ) {
+            drains_orogen[idx] = true;
+            let mut cur = idx;
+            for _ in 0..16 {
+                let Some(ds) = river_downstream[cur] else {
+                    break;
+                };
+                let d_idx = ds.get() as usize;
+                if d_idx >= n || is_ocean[d_idx] || drains_orogen[d_idx] {
+                    break;
+                }
+                drains_orogen[d_idx] = true;
+                cur = d_idx;
+            }
+        }
+    }
+    if !materials.ores.is_empty() {
+        for idx in 0..n {
+            if !is_ocean[idx]
+                && drains_orogen[idx]
+                && (geology_province[idx] == GeologyProvinceKind::AlluvialPlain
+                    || river_channel_downstream[idx].is_some())
+                && next_unit_f32(&mut rng) < 0.09
+            {
+                let has_ore = per_cell[idx]
+                    .iter()
+                    .any(|d| d.category == ProceduralDepositCategory::MetallicOre);
+                if !has_ore {
+                    let ore = &materials.ores[(rng.next_u64() as usize) % materials.ores.len()];
+                    let area_factor = (f64::from(cell_area_km2[idx]) / 50000.0).clamp(0.35, 3.5);
+                    per_cell[idx].push(HiddenDepositView {
+                        cell: CellId(idx as u32),
+                        material_id: ore.id,
+                        category: ProceduralDepositCategory::MetallicOre,
+                        total_mass_tonnes: 28_000.0 * area_factor,
+                        average_purity_01: (ore.base_grade_01 * 0.92).clamp(0.24, 0.85),
+                        overburden_depth_m: 3.5 + next_unit_f32(&mut rng) * 14.0,
+                        aquifer_flood_risk_01: 0.45,
+                        accessibility_tier: 1,
+                        is_offshore: false,
+                        is_alluvial_placer: true,
+                    });
+                }
+            }
+        }
+    }
+
+    // Tier-1 Starter Coastal Guarantee (`ENG-GEO-011`): ensure top temperate coastal landing regions
+    // always have reachable Tier-1 metallic ore and solid fuel within 2 land hops.
+    let mut coastal_candidates: Vec<(i32, usize)> = Vec::new();
+    for idx in 0..n {
+        if is_ocean[idx] {
+            continue;
+        }
+        let cid = CellId(idx as u32);
+        let touches_sea = topology.neighbors(cid).iter().any(|&nb| is_ocean[nb.get() as usize]);
+        let temp = mean_annual_temp_c[idx];
+        let elev = elevation_m[idx];
+        if touches_sea && (6.0..=26.0).contains(&temp) && elev < 380.0 {
+            let score = ((22.0 - (temp - 15.0).abs()) * 100.0 - (elev - 65.0).abs() * 0.6) as i32;
+            coastal_candidates.push((score, idx));
+        }
+    }
+    coastal_candidates.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    for &(_score, start_idx) in coastal_candidates.iter().take(48) {
+        let mut ring = Vec::new();
+        let mut seen = BTreeSet::new();
+        let mut q = VecDeque::from([(start_idx, 0u8)]);
+        seen.insert(start_idx);
+        while let Some((cur, d)) = q.pop_front() {
+            if !is_ocean[cur] {
+                ring.push(cur);
+            }
+            if d >= 2 {
+                continue;
+            }
+            for &nb in topology.neighbors(CellId(cur as u32)) {
+                let nb_idx = nb.get() as usize;
+                if !is_ocean[nb_idx] && seen.insert(nb_idx) {
+                    q.push_back((nb_idx, d + 1));
+                }
+            }
+        }
+        let has_t1_ore = ring.iter().any(|&ci| {
+            per_cell[ci].iter().any(|d| {
+                d.category == ProceduralDepositCategory::MetallicOre && d.accessibility_tier == 1
+            })
+        });
+        if !has_t1_ore && !materials.ores.is_empty() {
+            if let Some(&target_idx) = ring.iter().max_by(|&&a, &&b| elevation_m[a].total_cmp(&elevation_m[b])) {
+                let ore = &materials.ores[(start_idx) % materials.ores.len()];
+                per_cell[target_idx].push(HiddenDepositView {
+                    cell: CellId(target_idx as u32),
+                    material_id: ore.id,
+                    category: ProceduralDepositCategory::MetallicOre,
+                    total_mass_tonnes: 42_000.0,
+                    average_purity_01: (ore.base_grade_01 * 0.95).clamp(0.28, 0.84),
+                    overburden_depth_m: 6.5,
+                    aquifer_flood_risk_01: 0.14,
+                    accessibility_tier: 1,
+                    is_offshore: false,
+                    is_alluvial_placer: false,
+                });
+            }
+        }
+        let has_t1_fuel = ring.iter().any(|&ci| {
+            per_cell[ci].iter().any(|d| {
+                matches!(
+                    d.category,
+                    ProceduralDepositCategory::SolidFuel | ProceduralDepositCategory::LiquidFuel
+                ) && d.accessibility_tier == 1
+            })
+        });
+        if !has_t1_fuel && !solid_fuels.is_empty() {
+            if let Some(&target_idx) = ring.iter().min_by(|&&a, &&b| elevation_m[a].total_cmp(&elevation_m[b])) {
+                let fuel = solid_fuels[start_idx % solid_fuels.len()];
+                per_cell[target_idx].push(HiddenDepositView {
+                    cell: CellId(target_idx as u32),
+                    material_id: fuel.id,
+                    category: ProceduralDepositCategory::SolidFuel,
+                    total_mass_tonnes: 48_000.0,
+                    average_purity_01: 0.68,
+                    overburden_depth_m: 8.0,
+                    aquifer_flood_risk_01: 0.18,
+                    accessibility_tier: 1,
+                    is_offshore: false,
+                    is_alluvial_placer: false,
+                });
+            }
+        }
+    }
+
+    let mut deposits = Vec::new();
+    let mut ranges = Vec::with_capacity(n);
+    for cell_list in per_cell {
+        let start = deposits.len();
+        deposits.extend(cell_list);
+        ranges.push((start, deposits.len()));
+    }
     (deposits, ranges)
 }
 
@@ -1299,6 +1843,111 @@ impl PlanetGeometryPort for GeneratedPlanet {
             .copied()
             .unwrap_or(0.0)
     }
+
+    fn cell_geology_province(&self, cell: CellId) -> GeologyProvinceKind {
+        self.geology_province
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(GeologyProvinceKind::AbyssalPlain)
+    }
+
+    fn cell_roughness_m(&self, cell: CellId) -> f32 {
+        self.roughness_m
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(28.0)
+    }
+
+    fn cell_basin_depth_m(&self, cell: CellId) -> f32 {
+        self.basin_depth_m
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    fn cell_fault_instability_01(&self, cell: CellId) -> f32 {
+        self.fault_instability_01
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(0.1)
+    }
+
+    fn cell_volcanic_hazard_01(&self, cell: CellId) -> f32 {
+        self.volcanic_hazard_01
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(0.05)
+    }
+
+    fn cell_soil_drainage_01(&self, cell: CellId) -> f32 {
+        self.soil_drainage_01
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(0.5)
+    }
+
+    fn cell_soil_clay_01(&self, cell: CellId) -> f32 {
+        self.soil_clay_01
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(0.35)
+    }
+
+    fn cell_marine_upwelling_01(&self, cell: CellId) -> f32 {
+        self.marine_upwelling_01
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    fn cell_shelf_nutrient_01(&self, cell: CellId) -> f32 {
+        self.shelf_nutrient_01
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    fn cell_channel_bed_elev_m(&self, cell: CellId) -> f32 {
+        self.channel_bed_elev_m
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or_else(|| self.cell_elevation_m(cell))
+    }
+
+    fn cell_water_surface_elev_m(&self, cell: CellId) -> f32 {
+        self.water_surface_elev_m
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or_else(|| self.cell_elevation_m(cell).max(0.0))
+    }
+
+    fn cell_lake_kind(&self, cell: CellId) -> LakeKind {
+        self.lake_kind
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(LakeKind::None)
+    }
+
+    fn cell_lake_salinity_per_mille(&self, cell: CellId) -> f32 {
+        self.lake_salinity_per_mille
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(0.2)
+    }
+
+    fn cell_is_estuary(&self, cell: CellId) -> bool {
+        self.is_estuary
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(false)
+    }
+
+    fn cell_river_navigability(&self, cell: CellId) -> RiverNavigabilityKind {
+        self.river_navigability
+            .get(cell.get() as usize)
+            .copied()
+            .unwrap_or(RiverNavigabilityKind::None)
+    }
 }
 
 impl SubsurfaceDepositTruthPort for GeneratedPlanet {
@@ -1329,17 +1978,28 @@ impl CanonicalSaveablePort for GeneratedPlanet {
         write_u32_le(out, self.elevation_m.len() as u32);
         for idx in 0..self.elevation_m.len() {
             write_f32_bits(out, self.elevation_m[idx]);
+            write_f32_bits(out, self.channel_bed_elev_m[idx]);
+            write_f32_bits(out, self.water_surface_elev_m[idx]);
+            write_f32_bits(out, self.roughness_m[idx]);
             write_f32_bits(out, self.raw_tectonic_uplift_m[idx]);
             write_u8(out, u8::from(self.is_ocean[idx]));
             write_u8(out, u8::from(self.is_convergent_boundary[idx]));
             write_u8(out, u8::from(self.is_divergent_boundary[idx]));
             write_u16_le(out, self.plate_id[idx].get());
+            write_u8(out, self.geology_province[idx].code());
+            write_f32_bits(out, self.basin_depth_m[idx]);
+            write_f32_bits(out, self.fault_instability_01[idx]);
+            write_f32_bits(out, self.volcanic_hazard_01[idx]);
             write_u8(out, self.strata[idx] as u8);
             write_str(out, &self.biome_keys[idx]);
             write_f32_bits(out, self.base_precip_mm_yr[idx]);
             write_f32_bits(out, self.mean_annual_temp_c[idx]);
             write_f32_bits(out, self.aridity_index_01[idx]);
             write_f32_bits(out, self.soil_fertility_01[idx]);
+            write_f32_bits(out, self.soil_drainage_01[idx]);
+            write_f32_bits(out, self.soil_clay_01[idx]);
+            write_f32_bits(out, self.marine_upwelling_01[idx]);
+            write_f32_bits(out, self.shelf_nutrient_01[idx]);
             write_f32_bits(out, self.prevailing_wind_uv[idx][0]);
             write_f32_bits(out, self.prevailing_wind_uv[idx][1]);
             match self.river_downstream[idx] {
@@ -1349,6 +2009,10 @@ impl CanonicalSaveablePort for GeneratedPlanet {
             write_f32_bits(out, self.drainage_area_km2[idx]);
             write_u8(out, self.strahler_order[idx]);
             write_u8(out, u8::from(self.is_lake[idx]));
+            write_u8(out, self.lake_kind[idx].code());
+            write_f32_bits(out, self.lake_salinity_per_mille[idx]);
+            write_u8(out, u8::from(self.is_estuary[idx]));
+            write_u8(out, self.river_navigability[idx].code());
             match self.river_channel_downstream[idx] {
                 None => write_u32_le(out, u32::MAX),
                 Some(ds) => write_u32_le(out, ds.get()),
@@ -1374,6 +2038,9 @@ impl CanonicalSaveablePort for GeneratedPlanet {
             write_f32_bits(out, dep.average_purity_01);
             write_f32_bits(out, dep.overburden_depth_m);
             write_f32_bits(out, dep.aquifer_flood_risk_01);
+            write_u8(out, dep.accessibility_tier);
+            write_u8(out, u8::from(dep.is_offshore));
+            write_u8(out, u8::from(dep.is_alluvial_placer));
         }
         write_material_catalog(out, &self.materials);
     }
@@ -1391,22 +2058,37 @@ impl CanonicalSaveablePort for GeneratedPlanet {
         }
 
         let mut elevation_m = Vec::with_capacity(n);
+        let mut channel_bed_elev_m = Vec::with_capacity(n);
+        let mut water_surface_elev_m = Vec::with_capacity(n);
+        let mut roughness_m = Vec::with_capacity(n);
         let mut raw_tectonic_uplift_m = Vec::with_capacity(n);
         let mut is_ocean = Vec::with_capacity(n);
         let mut is_convergent_boundary = Vec::with_capacity(n);
         let mut is_divergent_boundary = Vec::with_capacity(n);
         let mut plate_id = Vec::with_capacity(n);
+        let mut geology_province = Vec::with_capacity(n);
+        let mut basin_depth_m = Vec::with_capacity(n);
+        let mut fault_instability_01 = Vec::with_capacity(n);
+        let mut volcanic_hazard_01 = Vec::with_capacity(n);
         let mut strata = Vec::with_capacity(n);
         let mut biome_keys = Vec::with_capacity(n);
         let mut base_precip_mm_yr = Vec::with_capacity(n);
         let mut mean_annual_temp_c = Vec::with_capacity(n);
         let mut aridity_index_01 = Vec::with_capacity(n);
         let mut soil_fertility_01 = Vec::with_capacity(n);
+        let mut soil_drainage_01 = Vec::with_capacity(n);
+        let mut soil_clay_01 = Vec::with_capacity(n);
+        let mut marine_upwelling_01 = Vec::with_capacity(n);
+        let mut shelf_nutrient_01 = Vec::with_capacity(n);
         let mut prevailing_wind_uv = Vec::with_capacity(n);
         let mut river_downstream = Vec::with_capacity(n);
         let mut drainage_area_km2 = Vec::with_capacity(n);
         let mut strahler_order = Vec::with_capacity(n);
         let mut is_lake = Vec::with_capacity(n);
+        let mut lake_kind = Vec::with_capacity(n);
+        let mut lake_salinity_per_mille = Vec::with_capacity(n);
+        let mut is_estuary = Vec::with_capacity(n);
+        let mut river_navigability = Vec::with_capacity(n);
         let mut river_channel_downstream = Vec::with_capacity(n);
         let mut river_discharge_m3_s = Vec::with_capacity(n);
         let mut river_velocity_mps = Vec::with_capacity(n);
@@ -1414,11 +2096,18 @@ impl CanonicalSaveablePort for GeneratedPlanet {
 
         for _ in 0..n {
             elevation_m.push(read_f32_bits(input)?);
+            channel_bed_elev_m.push(read_f32_bits(input)?);
+            water_surface_elev_m.push(read_f32_bits(input)?);
+            roughness_m.push(read_f32_bits(input)?);
             raw_tectonic_uplift_m.push(read_f32_bits(input)?);
             is_ocean.push(read_u8(input)? != 0);
             is_convergent_boundary.push(read_u8(input)? != 0);
             is_divergent_boundary.push(read_u8(input)? != 0);
             plate_id.push(PlateId(read_u16_le(input)?));
+            geology_province.push(GeologyProvinceKind::from_code(read_u8(input)?));
+            basin_depth_m.push(read_f32_bits(input)?);
+            fault_instability_01.push(read_f32_bits(input)?);
+            volcanic_hazard_01.push(read_f32_bits(input)?);
             strata.push(match read_u8(input)? {
                 0 => RockStrataClass::OceanicBasalt,
                 1 => RockStrataClass::IgneousOrogenic,
@@ -1433,6 +2122,10 @@ impl CanonicalSaveablePort for GeneratedPlanet {
             mean_annual_temp_c.push(read_f32_bits(input)?);
             aridity_index_01.push(read_f32_bits(input)?);
             soil_fertility_01.push(read_f32_bits(input)?);
+            soil_drainage_01.push(read_f32_bits(input)?);
+            soil_clay_01.push(read_f32_bits(input)?);
+            marine_upwelling_01.push(read_f32_bits(input)?);
+            shelf_nutrient_01.push(read_f32_bits(input)?);
             prevailing_wind_uv.push([read_f32_bits(input)?, read_f32_bits(input)?]);
             let ds_raw = read_u32_le(input)?;
             river_downstream.push(if ds_raw == u32::MAX {
@@ -1443,6 +2136,10 @@ impl CanonicalSaveablePort for GeneratedPlanet {
             drainage_area_km2.push(read_f32_bits(input)?);
             strahler_order.push(read_u8(input)?);
             is_lake.push(read_u8(input)? != 0);
+            lake_kind.push(LakeKind::from_code(read_u8(input)?));
+            lake_salinity_per_mille.push(read_f32_bits(input)?);
+            is_estuary.push(read_u8(input)? != 0);
+            river_navigability.push(RiverNavigabilityKind::from_code(read_u8(input)?));
             let ch_raw = read_u32_le(input)?;
             river_channel_downstream.push(if ch_raw == u32::MAX {
                 None
@@ -1487,6 +2184,9 @@ impl CanonicalSaveablePort for GeneratedPlanet {
                 average_purity_01: read_f32_bits(input)?,
                 overburden_depth_m: read_f32_bits(input)?,
                 aquifer_flood_risk_01: read_f32_bits(input)?,
+                accessibility_tier: read_u8(input)?,
+                is_offshore: read_u8(input)? != 0,
+                is_alluvial_placer: read_u8(input)? != 0,
             };
             per_cell_bins.entry(cell.get()).or_default().push(dep);
         }
@@ -1507,17 +2207,28 @@ impl CanonicalSaveablePort for GeneratedPlanet {
             config: cfg,
             topology,
             elevation_m,
+            channel_bed_elev_m,
+            water_surface_elev_m,
+            roughness_m,
             raw_tectonic_uplift_m,
             is_ocean,
             is_convergent_boundary,
             is_divergent_boundary,
             plate_id,
+            geology_province,
+            basin_depth_m,
+            fault_instability_01,
+            volcanic_hazard_01,
             strata,
             biome_keys,
             base_precip_mm_yr,
             mean_annual_temp_c,
             aridity_index_01,
             soil_fertility_01,
+            soil_drainage_01,
+            soil_clay_01,
+            marine_upwelling_01,
+            shelf_nutrient_01,
             prevailing_wind_uv,
             edge_slope_rad,
             river_downstream,
@@ -1525,6 +2236,10 @@ impl CanonicalSaveablePort for GeneratedPlanet {
             drainage_area_km2,
             strahler_order,
             is_lake,
+            lake_kind,
+            lake_salinity_per_mille,
+            is_estuary,
+            river_navigability,
             river_channel_downstream,
             river_discharge_m3_s,
             river_velocity_mps,
@@ -1575,8 +2290,9 @@ fn compute_watershed_ids(
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 fn compute_volumetric_hydrology(
     topology: &GoldbergTopology,
-    elevation_m: &[f32],
+    elevation_m: &mut [f32],
     base_sea_level_m: f32,
+    rules: &HydrologyRulesView,
     is_ocean: &[bool],
     ocean_count: usize,
     pit_fill_m: &[f32],
@@ -1586,7 +2302,19 @@ fn compute_volumetric_hydrology(
     drainage_area_km2: &[f32],
     base_precip_mm_yr: &[f32],
     mean_annual_temp_c: &[f32],
-) -> (Vec<bool>, Vec<Option<CellId>>, Vec<f32>, Vec<f32>, Vec<f32>) {
+) -> (
+    Vec<bool>,
+    Vec<LakeKind>,
+    Vec<f32>,
+    Vec<bool>,
+    Vec<RiverNavigabilityKind>,
+    Vec<Option<CellId>>,
+    Vec<f32>,
+    Vec<f32>,
+    Vec<f32>,
+    Vec<f32>,
+    Vec<f32>,
+) {
     let n = elevation_m.len();
     let mut river_discharge_m3_s = vec![0.0_f32; n];
 
@@ -1594,7 +2322,8 @@ fn compute_volumetric_hydrology(
     for &cid in topo_sorted_land_cells {
         let idx = cid.get() as usize;
         let temp = mean_annual_temp_c[idx].max(0.0);
-        let evap_mm = 260.0 + 24.0 * temp + 0.04 * temp * temp * temp;
+        let evap_mm =
+            (260.0 + 24.0 * temp + 0.04 * temp * temp * temp) * rules.evapotranspiration_scale;
         let excess_mm = (base_precip_mm_yr[idx] - 0.58 * evap_mm)
             .max(base_precip_mm_yr[idx] * 0.04)
             .max(1.0);
@@ -1609,7 +2338,7 @@ fn compute_volumetric_hydrology(
         }
     }
 
-    // 2. Classify Priority-Flood topographic depression basins with catchment inflow as inland lakes.
+    // 2. Classify Priority-Flood topographic depression basins as Exorheic (freshwater) or Endorheic (salt) lakes.
     let max_drainage_idx = drainage_area_km2
         .iter()
         .enumerate()
@@ -1618,20 +2347,30 @@ fn compute_volumetric_hydrology(
         .map(|(i, _)| i);
 
     let mut is_lake = vec![false; n];
+    let mut lake_kind = vec![LakeKind::None; n];
+    let mut lake_salinity_per_mille = vec![0.2_f32; n];
+
     for idx in 0..n {
         if is_ocean[idx] {
+            lake_salinity_per_mille[idx] = 35.0;
             continue;
         }
         let has_catchment_inflow = drainage_area_km2[idx] >= topology.cell_area_km2[idx] * 1.9;
         let ds_is_land = river_downstream[idx].is_some_and(|ds| !is_ocean[ds.get() as usize]);
-        if (pit_fill_m[idx] >= 6.0 && base_precip_mm_yr[idx] >= 250.0 && has_catchment_inflow && ds_is_land)
-            || (ocean_count == 0 && max_drainage_idx == Some(idx))
-        {
+        let humid_basin = pit_fill_m[idx] >= 6.0
+            && base_precip_mm_yr[idx] >= 250.0
+            && has_catchment_inflow
+            && ds_is_land;
+        let arid_sink_basin = pit_fill_m[idx] >= 3.5
+            && base_precip_mm_yr[idx] >= 120.0
+            && base_precip_mm_yr[idx] < 520.0
+            && has_catchment_inflow
+            && ds_is_land;
+        if humid_basin || arid_sink_basin || (ocean_count == 0 && max_drainage_idx == Some(idx)) {
             is_lake[idx] = true;
         }
     }
 
-    // Endorheic terminal lakes evaporate modest inflow locally instead of draining out through dry basins.
     let mut is_terminal_lake = vec![false; n];
     for idx in 0..n {
         if !is_lake[idx] {
@@ -1644,15 +2383,22 @@ fn compute_volumetric_hydrology(
             && river_discharge_m3_s[idx] < 4500.0;
         if closed_world_sink || arid_terminal {
             is_terminal_lake[idx] = true;
+            lake_kind[idx] = LakeKind::Endorheic;
+            let arid_bias = (1.0 - (base_precip_mm_yr[idx] / 520.0).clamp(0.0, 1.0)) * 95.0;
+            lake_salinity_per_mille[idx] = (32.0 + arid_bias).clamp(24.0, 155.0);
+        } else {
+            lake_kind[idx] = LakeKind::Exorheic;
+            lake_salinity_per_mille[idx] = 0.25;
         }
     }
 
-    // 3. Seed perennial channel cells and propagate closure downstream to lake or sea terminus.
+    // 3. Seed perennial channel cells and propagate closure strictly downstream to river, lake, or sea terminus.
+    let min_q = 18.0_f32;
     let mut is_perennial = vec![false; n];
     for &cid in topo_sorted_land_cells {
         let idx = cid.get() as usize;
-        if (strahler_order[idx] >= 2 && river_discharge_m3_s[idx] >= 18.0)
-            || (is_lake[idx] && !is_terminal_lake[idx] && river_discharge_m3_s[idx] >= 18.0)
+        if (strahler_order[idx] >= 2 && river_discharge_m3_s[idx] >= min_q)
+            || (is_lake[idx] && !is_terminal_lake[idx] && river_discharge_m3_s[idx] >= min_q)
         {
             is_perennial[idx] = true;
         }
@@ -1667,23 +2413,81 @@ fn compute_volumetric_hydrology(
         }
     }
 
+    // Guarantee zero mid-land terminations: trace each perennial reach downstream to confirm terminus closure.
     let mut river_channel_downstream = vec![None; n];
-    let mut river_velocity_mps = vec![0.0_f32; n];
-    let mut hydro_potential_kw = vec![0.0_f32; n];
-
     for idx in 0..n {
         if !is_perennial[idx] {
             continue;
         }
-        let Some(ds) = river_downstream[idx] else {
+        if let Some(ds) = river_downstream[idx] {
+            let ds_idx = ds.get() as usize;
+            if ds_idx < n && (is_ocean[ds_idx] || is_lake[ds_idx] || is_perennial[ds_idx]) {
+                river_channel_downstream[idx] = Some(ds);
+            }
+        }
+    }
+    // Prune recursively if any upstream node pointed to a cell that wasn't valid (defensive closure).
+    loop {
+        let mut changed = false;
+        for idx in 0..n {
+            if let Some(ds) = river_channel_downstream[idx] {
+                let d_idx = ds.get() as usize;
+                let valid =
+                    is_ocean[d_idx] || is_lake[d_idx] || river_channel_downstream[d_idx].is_some();
+                if !valid {
+                    river_channel_downstream[idx] = None;
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    // 4. Compute strictly monotonic incised channel bed and water surface profiles from sea/lake upward (`ENG-GEO-012`).
+    let mut channel_bed_elev_m = elevation_m.to_vec();
+    let mut water_surface_elev_m = elevation_m
+        .iter()
+        .map(|&e| if e <= base_sea_level_m { base_sea_level_m } else { e })
+        .collect::<Vec<_>>();
+    for &cid in topo_sorted_land_cells.iter().rev() {
+        let idx = cid.get() as usize;
+        if let Some(ds) = river_channel_downstream[idx] {
+            let ds_idx = ds.get() as usize;
+            let ds_bed = if is_ocean[ds_idx] {
+                base_sea_level_m - 2.0
+            } else {
+                channel_bed_elev_m[ds_idx]
+            };
+            let ds_surf = if is_ocean[ds_idx] {
+                base_sea_level_m
+            } else {
+                water_surface_elev_m[ds_idx]
+            };
+            let incise = (1.5 + f32::from(strahler_order[idx]) * 1.4).min(18.0);
+            let bed = (elevation_m[idx] - incise).max(ds_bed + 0.25);
+            let surf = (bed + 0.6 + f32::from(strahler_order[idx]) * 0.3)
+                .max(ds_surf + 0.05)
+                .min(elevation_m[idx]);
+            channel_bed_elev_m[idx] = bed;
+            water_surface_elev_m[idx] = surf;
+        } else if is_lake[idx] {
+            channel_bed_elev_m[idx] = (elevation_m[idx] - 6.0).max(base_sea_level_m + 0.1);
+            water_surface_elev_m[idx] = elevation_m[idx];
+        }
+    }
+
+    let mut is_estuary = vec![false; n];
+    let mut river_navigability = vec![RiverNavigabilityKind::None; n];
+    let mut river_velocity_mps = vec![0.0_f32; n];
+    let mut hydro_potential_kw = vec![0.0_f32; n];
+
+    for idx in 0..n {
+        let Some(ds) = river_channel_downstream[idx] else {
             continue;
         };
         let ds_idx = ds.get() as usize;
-        if ds_idx >= n {
-            continue;
-        }
-        river_channel_downstream[idx] = Some(ds);
-
         let arc_m = (topology.great_circle_km(CellId(idx as u32), ds) * 1000.0).max(1000.0);
         let ds_elev = if is_ocean[ds_idx] {
             base_sea_level_m
@@ -1692,20 +2496,40 @@ fn compute_volumetric_hydrology(
         };
         let dh_m = (elevation_m[idx] - ds_elev).max(0.25);
         let slope = (dh_m / arc_m).clamp(0.00005, 0.08);
-        let q = river_discharge_m3_s[idx].max(18.0);
+        let q = river_discharge_m3_s[idx].max(min_q);
         let vel = ((0.45 + 0.55 * (q / 500.0).powf(0.18)) * (slope / 0.0012).powf(0.32))
             .clamp(0.35, 4.8);
         let usable_head_m = dh_m.min(180.0);
-        // Power P = eta * rho * g * Q * H in kW (eta = 0.72, rho*g = 9.81 kN/m^3).
-        let kw = (0.72 * 9.81 * q * usable_head_m).max(0.0);
+        let kw = (rules.dam_turbine_efficiency_01 * 9.81 * q * usable_head_m).max(0.0);
+
+        let area_scale = (topology.cell_area_km2[idx] / 1800.0).clamp(1.0, 55.0);
+        let reach_q = q / area_scale;
+        let local_slope = slope * 8.0;
 
         river_velocity_mps[idx] = vel;
         hydro_potential_kw[idx] = kw;
+        is_estuary[idx] =
+            is_ocean[ds_idx] && elevation_m[idx] - base_sea_level_m <= rules.estuary_max_elev_m.max(120.0);
+        river_navigability[idx] = if local_slope >= rules.rapids_min_slope_rad || vel > 3.25 {
+            RiverNavigabilityKind::Rapids
+        } else if reach_q <= rules.shallow_ford_max_q_m3_s
+            || (strahler_order[idx] <= 2 && reach_q < rules.deep_navigable_min_q_m3_s)
+        {
+            RiverNavigabilityKind::ShallowFord
+        } else {
+            RiverNavigabilityKind::DeepNavigable
+        };
     }
 
     (
         is_lake,
+        lake_kind,
+        lake_salinity_per_mille,
+        is_estuary,
+        river_navigability,
         river_channel_downstream,
+        channel_bed_elev_m,
+        water_surface_elev_m,
         river_discharge_m3_s,
         river_velocity_mps,
         hydro_potential_kw,
@@ -1742,33 +2566,160 @@ fn write_planet_gen_config(out: &mut Vec<u8>, cfg: &PlanetGenConfigView) {
     for v in cfg.natural_bounds.crop_opt_temp_c_range {
         write_f32_bits(out, v);
     }
+    write_str(out, &cfg.hydrology_rules.active_fluid_id);
+    write_f32_bits(out, cfg.hydrology_rules.infiltration_rate_01);
+    write_f32_bits(out, cfg.hydrology_rules.evapotranspiration_scale);
+    write_f32_bits(out, cfg.hydrology_rules.aquifer_diffusivity);
+    write_f32_bits(out, cfg.hydrology_rules.aquifer_capacity_mm);
+    write_f32_bits(out, cfg.hydrology_rules.spring_emergence_threshold_01);
+    write_f32_bits(out, cfg.hydrology_rules.estuary_max_elev_m);
+    write_f32_bits(out, cfg.hydrology_rules.shallow_ford_max_q_m3_s);
+    write_f32_bits(out, cfg.hydrology_rules.deep_navigable_min_q_m3_s);
+    write_f32_bits(out, cfg.hydrology_rules.rapids_min_slope_rad);
+    write_f32_bits(out, cfg.hydrology_rules.dam_min_discharge_m3_s);
+    write_f32_bits(out, cfg.hydrology_rules.dam_min_relief_m);
+    write_f32_bits(out, cfg.hydrology_rules.dam_turbine_efficiency_01);
+    write_f32_bits(out, cfg.hydrology_rules.dam_siltation_rate_per_day);
+    write_f32_bits(out, cfg.hydrology_rules.dam_breach_flood_threshold_01);
+    write_u32_le(out, cfg.fluids.len() as u32);
+    for f in &cfg.fluids {
+        write_str(out, &f.id);
+        write_str(out, &f.display_name);
+        write_f32_bits(out, f.density_kg_m3);
+        write_f32_bits(out, f.freeze_point_c);
+        write_f32_bits(out, f.boil_point_c);
+        write_f32_bits(out, f.latent_heat_evap_kj_kg);
+        write_f32_bits(out, f.specific_heat_j_kg_k);
+    }
+    write_u32_le(out, cfg.geology_provinces.len() as u32);
+    for gp in &cfg.geology_provinces {
+        write_str(out, &gp.id);
+        write_str(out, &gp.display_name);
+        write_u8(out, u8::from(gp.is_marine));
+        write_f32_bits(out, gp.typical_age_myr);
+        write_f32_bits(out, gp.base_roughness_m);
+        write_f32_bits(out, gp.fault_instability_01);
+        write_f32_bits(out, gp.volcanic_hazard_01);
+        write_f32_bits(out, gp.soil_fertility_bias);
+        write_f32_bits(out, gp.marine_upwelling_bias);
+    }
+    write_u32_le(out, cfg.deposit_affinities.len() as u32);
+    for aff in &cfg.deposit_affinities {
+        write_str(out, &aff.id);
+        write_str(out, &aff.province_id);
+        write_str(out, &aff.category_key);
+        write_u8(out, u8::from(aff.is_offshore));
+        write_u8(out, aff.accessibility_tier);
+        write_f32_bits(out, aff.spawn_weight);
+        write_f64_bits(out, aff.min_tonnes);
+        write_f64_bits(out, aff.max_tonnes);
+        write_f32_bits(out, aff.min_purity_01);
+        write_f32_bits(out, aff.max_purity_01);
+    }
 }
 
 fn read_planet_gen_config(input: &mut &[u8]) -> Result<PlanetGenConfigView, String> {
+    let id = read_str(input)?;
+    let goldberg_subdivision = read_u8(input)?;
+    let tectonic_plate_count = read_u16_le(input)?;
+    let land_fraction_target = read_f32_bits(input)?;
+    let axial_tilt_deg = read_f32_bits(input)?;
+    let solar_constant_w_m2 = read_f32_bits(input)?;
+    let rotation_period_hours = read_f32_bits(input)?;
+    let mean_radius_km = read_f32_bits(input)?;
+    let base_sea_level_m = read_f32_bits(input)?;
+    let max_orogenic_uplift_m = read_f32_bits(input)?;
+    let planetary_density_kg_m3 = read_f32_bits(input)?;
+    let natural_bounds = NaturalBoundsView {
+        ore_count: read_u16_le(input)?,
+        flux_count: read_u16_le(input)?,
+        fuel_count: read_u16_le(input)?,
+        crop_count: read_u16_le(input)?,
+        fauna_count: read_u16_le(input)?,
+        pathogen_count: read_u16_le(input)?,
+        ore_melting_k_range: [read_f32_bits(input)?, read_f32_bits(input)?],
+        ore_purity_range: [read_f32_bits(input)?, read_f32_bits(input)?],
+        fuel_enthalpy_mj_kg_range: [read_f32_bits(input)?, read_f32_bits(input)?],
+        crop_opt_temp_c_range: [read_f32_bits(input)?, read_f32_bits(input)?],
+    };
+    let hydrology_rules = HydrologyRulesView {
+        active_fluid_id: read_str(input)?,
+        infiltration_rate_01: read_f32_bits(input)?,
+        evapotranspiration_scale: read_f32_bits(input)?,
+        aquifer_diffusivity: read_f32_bits(input)?,
+        aquifer_capacity_mm: read_f32_bits(input)?,
+        spring_emergence_threshold_01: read_f32_bits(input)?,
+        estuary_max_elev_m: read_f32_bits(input)?,
+        shallow_ford_max_q_m3_s: read_f32_bits(input)?,
+        deep_navigable_min_q_m3_s: read_f32_bits(input)?,
+        rapids_min_slope_rad: read_f32_bits(input)?,
+        dam_min_discharge_m3_s: read_f32_bits(input)?,
+        dam_min_relief_m: read_f32_bits(input)?,
+        dam_turbine_efficiency_01: read_f32_bits(input)?,
+        dam_siltation_rate_per_day: read_f32_bits(input)?,
+        dam_breach_flood_threshold_01: read_f32_bits(input)?,
+    };
+    let n_fluids = read_u32_le(input)? as usize;
+    let mut fluids = Vec::with_capacity(n_fluids);
+    for _ in 0..n_fluids {
+        fluids.push(FluidDefView {
+            id: read_str(input)?,
+            display_name: read_str(input)?,
+            density_kg_m3: read_f32_bits(input)?,
+            freeze_point_c: read_f32_bits(input)?,
+            boil_point_c: read_f32_bits(input)?,
+            latent_heat_evap_kj_kg: read_f32_bits(input)?,
+            specific_heat_j_kg_k: read_f32_bits(input)?,
+        });
+    }
+    let n_prov = read_u32_le(input)? as usize;
+    let mut geology_provinces = Vec::with_capacity(n_prov);
+    for _ in 0..n_prov {
+        geology_provinces.push(GeologyProvinceDefView {
+            id: read_str(input)?,
+            display_name: read_str(input)?,
+            is_marine: read_u8(input)? != 0,
+            typical_age_myr: read_f32_bits(input)?,
+            base_roughness_m: read_f32_bits(input)?,
+            fault_instability_01: read_f32_bits(input)?,
+            volcanic_hazard_01: read_f32_bits(input)?,
+            soil_fertility_bias: read_f32_bits(input)?,
+            marine_upwelling_bias: read_f32_bits(input)?,
+        });
+    }
+    let n_aff = read_u32_le(input)? as usize;
+    let mut deposit_affinities = Vec::with_capacity(n_aff);
+    for _ in 0..n_aff {
+        deposit_affinities.push(DepositAffinityDefView {
+            id: read_str(input)?,
+            province_id: read_str(input)?,
+            category_key: read_str(input)?,
+            is_offshore: read_u8(input)? != 0,
+            accessibility_tier: read_u8(input)?,
+            spawn_weight: read_f32_bits(input)?,
+            min_tonnes: read_f64_bits(input)?,
+            max_tonnes: read_f64_bits(input)?,
+            min_purity_01: read_f32_bits(input)?,
+            max_purity_01: read_f32_bits(input)?,
+        });
+    }
     Ok(PlanetGenConfigView {
-        id: read_str(input)?,
-        goldberg_subdivision: read_u8(input)?,
-        tectonic_plate_count: read_u16_le(input)?,
-        land_fraction_target: read_f32_bits(input)?,
-        axial_tilt_deg: read_f32_bits(input)?,
-        solar_constant_w_m2: read_f32_bits(input)?,
-        rotation_period_hours: read_f32_bits(input)?,
-        mean_radius_km: read_f32_bits(input)?,
-        base_sea_level_m: read_f32_bits(input)?,
-        max_orogenic_uplift_m: read_f32_bits(input)?,
-        planetary_density_kg_m3: read_f32_bits(input)?,
-        natural_bounds: NaturalBoundsView {
-            ore_count: read_u16_le(input)?,
-            flux_count: read_u16_le(input)?,
-            fuel_count: read_u16_le(input)?,
-            crop_count: read_u16_le(input)?,
-            fauna_count: read_u16_le(input)?,
-            pathogen_count: read_u16_le(input)?,
-            ore_melting_k_range: [read_f32_bits(input)?, read_f32_bits(input)?],
-            ore_purity_range: [read_f32_bits(input)?, read_f32_bits(input)?],
-            fuel_enthalpy_mj_kg_range: [read_f32_bits(input)?, read_f32_bits(input)?],
-            crop_opt_temp_c_range: [read_f32_bits(input)?, read_f32_bits(input)?],
-        },
+        id,
+        goldberg_subdivision,
+        tectonic_plate_count,
+        land_fraction_target,
+        axial_tilt_deg,
+        solar_constant_w_m2,
+        rotation_period_hours,
+        mean_radius_km,
+        base_sea_level_m,
+        max_orogenic_uplift_m,
+        planetary_density_kg_m3,
+        natural_bounds,
+        hydrology_rules,
+        fluids,
+        geology_provinces,
+        deposit_affinities,
     })
 }
 

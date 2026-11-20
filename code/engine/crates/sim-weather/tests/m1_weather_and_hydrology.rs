@@ -4,8 +4,9 @@ use std::collections::BTreeMap;
 use std::f32::consts::PI;
 
 use sim_spine::{
-    CalendarConfigView, CanonicalSaveablePort, CellGeologyView, CellId, EdgeId, NaturalBoundsView,
-    PlanetGenConfigView, PlanetGeometryPort, RockStrataClass, SurfaceConditionsPort, Tick,
+    CalendarConfigView, CanonicalSaveablePort, CellGeologyView, CellId, DamRuleCurveKind, EdgeId,
+    GeologyProvinceKind, LakeKind, NaturalBoundsView, PlanetGenConfigView, PlanetGeometryPort,
+    RockStrataClass, SurfaceConditionsPort, Tick,
 };
 use sim_weather::WeatherEngine;
 
@@ -34,6 +35,7 @@ fn test_planet_cfg() -> PlanetGenConfigView {
             fuel_enthalpy_mj_kg_range: [20.0, 42.0],
             crop_opt_temp_c_range: [12.0, 26.0],
         },
+        ..PlanetGenConfigView::default()
     }
 }
 
@@ -61,6 +63,14 @@ struct FixturePlanet {
     nbrs: Vec<Vec<CellId>>,
     edge_map: BTreeMap<(u32, u32), EdgeId>,
     topo: Vec<CellId>,
+    provinces: Vec<GeologyProvinceKind>,
+    faults: Vec<f32>,
+    soil_drainage: Vec<f32>,
+    lake_kinds: Vec<LakeKind>,
+    lake_salinity: Vec<f32>,
+    aridity: Vec<f32>,
+    base_precip: Vec<f32>,
+    biome_keys: Vec<&'static str>,
 }
 
 impl FixturePlanet {
@@ -110,7 +120,59 @@ impl FixturePlanet {
             ],
             edge_map,
             topo: vec![CellId(0), CellId(1), CellId(2), CellId(4)],
+            provinces: vec![GeologyProvinceKind::Platform; 6],
+            faults: vec![0.1; 6],
+            soil_drainage: vec![0.5; 6],
+            lake_kinds: vec![LakeKind::None; 6],
+            lake_salinity: vec![0.2; 6],
+            aridity: vec![0.9; 6],
+            base_precip: vec![950.0; 6],
+            biome_keys: vec!["temperate_forest"; 6],
         }
+    }
+
+    fn new_oasis_and_endorheic() -> Self {
+        let mut p = Self::new();
+        p.elev_m = vec![1600.0, 120.0, 18.0, -200.0, 14.0, -200.0];
+        p.is_ocean = vec![false, false, false, true, false, true];
+        p.downstream = vec![
+            Some(CellId(1)),
+            Some(CellId(2)),
+            None,
+            None,
+            None,
+            None,
+        ];
+        p.provinces = vec![
+            GeologyProvinceKind::YoungOrogen,
+            GeologyProvinceKind::ContinentalRift,
+            GeologyProvinceKind::SedimentaryBasin,
+            GeologyProvinceKind::AbyssalPlain,
+            GeologyProvinceKind::SedimentaryBasin,
+            GeologyProvinceKind::AbyssalPlain,
+        ];
+        p.faults = vec![0.15, 0.85, 0.15, 0.05, 0.1, 0.05];
+        p.soil_drainage = vec![0.78, 0.55, 0.35, 0.0, 0.25, 0.0];
+        p.lake_kinds = vec![
+            LakeKind::None,
+            LakeKind::None,
+            LakeKind::Exorheic,
+            LakeKind::None,
+            LakeKind::Endorheic,
+            LakeKind::None,
+        ];
+        p.lake_salinity = vec![0.2, 0.2, 0.25, 35.0, 48.0, 35.0];
+        p.aridity = vec![1.25, 0.18, 0.25, 1.0, 0.12, 1.0];
+        p.base_precip = vec![1600.0, 85.0, 120.0, 800.0, 45.0, 800.0];
+        p.biome_keys = vec![
+            "alpine_rock",
+            "warm_desert",
+            "warm_desert",
+            "deep_ocean",
+            "warm_desert",
+            "deep_ocean",
+        ];
+        p
     }
 }
 
@@ -143,7 +205,7 @@ impl PlanetGeometryPort for FixturePlanet {
             cell_id: cell,
             elevation_m: self.elev_m[i],
             strata_label: RockStrataClass::AlluvialPlain.as_str().to_string(),
-            biome_key: "temperate_forest".to_string(),
+            biome_key: self.biome_keys[i].to_string(),
             is_ocean: self.is_ocean[i],
         }
     }
@@ -172,8 +234,8 @@ impl PlanetGeometryPort for FixturePlanet {
         self.drainage[cell.get() as usize]
     }
 
-    fn cell_base_precip_mm_yr(&self, _cell: CellId) -> f32 {
-        950.0
+    fn cell_base_precip_mm_yr(&self, cell: CellId) -> f32 {
+        self.base_precip[cell.get() as usize]
     }
 
     fn edge_length_km(&self, _edge: EdgeId) -> f32 {
@@ -182,6 +244,57 @@ impl PlanetGeometryPort for FixturePlanet {
 
     fn topo_sorted_land_cells(&self) -> &[CellId] {
         &self.topo
+    }
+
+    fn cell_geology_province(&self, cell: CellId) -> GeologyProvinceKind {
+        self.provinces[cell.get() as usize]
+    }
+
+    fn cell_fault_instability_01(&self, cell: CellId) -> f32 {
+        self.faults[cell.get() as usize]
+    }
+
+    fn cell_soil_drainage_01(&self, cell: CellId) -> f32 {
+        self.soil_drainage[cell.get() as usize]
+    }
+
+    fn cell_is_lake(&self, cell: CellId) -> bool {
+        self.lake_kinds[cell.get() as usize] != LakeKind::None
+    }
+
+    fn cell_lake_kind(&self, cell: CellId) -> LakeKind {
+        self.lake_kinds[cell.get() as usize]
+    }
+
+    fn cell_lake_salinity_per_mille(&self, cell: CellId) -> f32 {
+        self.lake_salinity[cell.get() as usize]
+    }
+
+    fn cell_aridity_index_01(&self, cell: CellId) -> f32 {
+        self.aridity[cell.get() as usize]
+    }
+
+    fn cell_river_channel_downstream(&self, cell: CellId) -> Option<CellId> {
+        let idx = cell.get() as usize;
+        if self.is_ocean[idx] {
+            None
+        } else {
+            self.downstream[idx]
+        }
+    }
+
+    fn cell_river_discharge_m3_s(&self, cell: CellId) -> f32 {
+        let idx = cell.get() as usize;
+        if self.is_ocean[idx] {
+            0.0
+        } else {
+            95.0 + (idx as f32) * 35.0
+        }
+    }
+
+    fn cell_hydro_potential_kw(&self, cell: CellId) -> f32 {
+        let idx = cell.get() as usize;
+        if self.is_ocean[idx] { 0.0 } else { 14_500.0 }
     }
 }
 
@@ -330,4 +443,123 @@ fn storm_mud_spikes_surface_conditions_and_canonical_save_roundtrip_is_bit_exact
         restored.step_hourly(Tick(t));
     }
     assert_eq!(restored.blake3_digest(), weather.blake3_digest());
+}
+
+// @req ENG-WTH-006
+#[test]
+fn darcy_groundwater_emergent_oases_and_endorheic_salinity_conserve_land_water_mass() {
+    let planet = FixturePlanet::new_oasis_and_endorheic();
+    let pcfg = test_planet_cfg();
+    let cal = test_cal_cfg();
+    let mut weather = WeatherEngine::new(&planet, &pcfg, &cal);
+
+    // Recharge upland headwater so Darcy head gradient feeds arid piedmont/fault Cell 1.
+    for step in 0..96 {
+        if step % 12 == 0 && step < 48 {
+            weather.inject_storm_rainfall(CellId(0), 60.0);
+        }
+        weather.step_hourly(Tick(step));
+    }
+
+    let gw_piedmont = weather.cell_groundwater_m3(CellId(1));
+    assert!(gw_piedmont > 0.0, "groundwater must percolate and diffuse to piedmont cell");
+    assert!(
+        weather.cell_is_spring_oasis(CellId(1)),
+        "arid fault/piedmont cell receiving upland recharge must daylight as a spring oasis"
+    );
+
+    // Flash storm temporarily dilutes Endorheic desert salt pan Cell 4, then desert evaporation re-concentrates salinity.
+    let sal_eq = weather.cell_salinity_per_mille(CellId(4));
+    weather.inject_storm_rainfall(CellId(4), 12.0);
+    weather.step_hourly(Tick(96));
+    let sal_diluted = weather.cell_salinity_per_mille(CellId(4));
+    assert!(sal_diluted <= sal_eq, "fresh rainfall inflow should dilute or hold basin salinity");
+    for step in 97..360 {
+        weather.step_hourly(Tick(step));
+    }
+    let sal_concentrated = weather.cell_salinity_per_mille(CellId(4));
+    assert!(
+        sal_concentrated > sal_diluted && sal_concentrated >= 35.0,
+        "endorheic terminal pan must concentrate dissolved salt under desert evaporation ({sal_diluted} -> {sal_concentrated})"
+    );
+
+    let err = weather.water_mass_balance_error_m3();
+    let pool = weather.total_land_water_m3().max(1.0);
+    assert!(
+        err / pool < 1e-8,
+        "aquifer + surface hydrology mass balance error {err} exceeded threshold on pool {pool}"
+    );
+}
+
+// @req ENG-GEO-014
+#[test]
+fn construct_dam_impounds_reservoir_responds_to_rule_curves_and_breaches_on_overtopping() {
+    let planet = FixturePlanet::new();
+    let pcfg = test_planet_cfg();
+    let cal = test_cal_cfg();
+    let mut weather = WeatherEngine::new(&planet, &pcfg, &cal);
+
+    for t in 0..24 {
+        weather.step_hourly(Tick(t));
+    }
+
+    weather
+        .construct_dam(CellId(1), DamRuleCurveKind::BalancedPower)
+        .expect("dam construction on river reach Cell 1 must succeed");
+
+    // Feed upstream inflows into Cell 0 so reservoir behind Cell 1 fills up and drives turbines.
+    for t in 24..60 {
+        if t % 6 == 0 {
+            weather.inject_storm_rainfall(CellId(0), 65.0);
+        }
+        weather.step_hourly(Tick(t));
+    }
+
+    let power_dam = weather.dam_at_cell(CellId(1)).expect("dam must exist");
+    assert!(power_dam.reservoir_storage_m3 > 0.0, "reservoir must impound incoming river flow");
+    assert!(power_dam.live_hydro_kw > 0.0, "head + turbine flow must generate hydroelectric kW");
+
+    // Verify canonical save/load preserves live dam state bit-for-bit.
+    let digest_before = weather.blake3_digest();
+    let mut saved = Vec::new();
+    weather.write_canonical_state(&mut saved);
+    let mut restored = WeatherEngine::new(&planet, &pcfg, &cal);
+    let mut slice = saved.as_slice();
+    restored.read_canonical_state(&mut slice).expect("restore weather with dam");
+    assert!(slice.is_empty());
+    assert_eq!(restored.blake3_digest(), digest_before);
+
+    // Switch rule curve to FloodControl and verify spillway release shifts immediately.
+    let release_balanced = power_dam.spillway_release_m3_s;
+    weather
+        .set_dam_rule_curve(CellId(1), DamRuleCurveKind::FloodControl)
+        .expect("rule curve update must succeed");
+    weather.step_hourly(Tick(60));
+    let flood_dam = weather.dam_at_cell(CellId(1)).expect("dam remains active");
+    assert_eq!(flood_dam.rule_curve, DamRuleCurveKind::FloodControl);
+    assert!(
+        flood_dam.spillway_release_m3_s >= release_balanced * 0.9,
+        "flood-control rule curve should release higher protective drawdowns"
+    );
+
+    // Overtop reservoir with extreme inflow to verify breach release + mass balance conservation.
+    for t in 61..95 {
+        weather.inject_storm_rainfall(CellId(0), 850.0);
+        weather.inject_storm_rainfall(CellId(1), 850.0);
+        weather.step_hourly(Tick(t));
+    }
+    let post_breach = weather.dam_at_cell(CellId(1)).expect("breached dam record persists");
+    assert!(post_breach.breached, "extreme sustained overtopping should breach the dam");
+    assert_eq!(post_breach.live_hydro_kw, 0.0);
+    assert!(
+        weather.surface(CellId(2)).flood_stage_01 > 0.15,
+        "dam breach must route floodwater downstream without violating mass balance"
+    );
+
+    let err = weather.water_mass_balance_error_m3();
+    let pool = weather.total_land_water_m3().max(1.0);
+    assert!(
+        err / pool < 1e-8,
+        "dam impoundment + breach mass balance error {err} exceeded threshold on pool {pool}"
+    );
 }

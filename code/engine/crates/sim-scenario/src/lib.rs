@@ -623,6 +623,34 @@ impl ScenarioWorld {
             SpinePlayerCommand::AcknowledgeSuccession => {
                 self.succession.acknowledge_succession();
             }
+            SpinePlayerCommand::ConstructDam {
+                target_cell,
+                rule_curve,
+            } => {
+                if self.weather.construct_dam(*target_cell, *rule_curve).is_ok() {
+                    self.succession.record_physical_hq_archive(format!(
+                        "Constructed Dam at Cell #{} ({})",
+                        target_cell.get(),
+                        rule_curve.as_str()
+                    ));
+                }
+            }
+            SpinePlayerCommand::SetDamRuleCurve {
+                target_cell,
+                rule_curve,
+            } => {
+                if self
+                    .weather
+                    .set_dam_rule_curve(*target_cell, *rule_curve)
+                    .is_ok()
+                {
+                    self.succession.record_physical_hq_archive(format!(
+                        "Updated Dam Rule Curve at Cell #{} -> {}",
+                        target_cell.get(),
+                        rule_curve.as_str()
+                    ));
+                }
+            }
             _ => {}
         }
 
@@ -1100,6 +1128,9 @@ impl ScenarioWorld {
                                 tick.get(),
                                 skill * 100.0
                             ),
+                            accessibility_tier: d.accessibility_tier,
+                            is_offshore: d.is_offshore,
+                            is_alluvial_placer: d.is_alluvial_placer,
                         });
                     }
                     let char_name = self
@@ -2421,7 +2452,9 @@ fn apply_clock_command(clock: &mut SimulationClock, cmd: &SpinePlayerCommand) {
         | SpinePlayerCommand::SetInnovationMode { .. }
         | SpinePlayerCommand::IssueTheaterDirective { .. }
         | SpinePlayerCommand::IssueOperationalBattlePlan { .. }
-        | SpinePlayerCommand::AcknowledgeSuccession => {}
+        | SpinePlayerCommand::AcknowledgeSuccession
+        | SpinePlayerCommand::ConstructDam { .. }
+        | SpinePlayerCommand::SetDamRuleCurve { .. } => {}
     }
 }
 

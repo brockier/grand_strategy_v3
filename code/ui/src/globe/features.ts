@@ -120,6 +120,10 @@ export class GlobeFeatureOverlayGroup {
   private formationFreshMat: THREE.MeshStandardMaterial;
   private formationStaleMat: THREE.MeshStandardMaterial;
   private noRetreatRingMat: THREE.MeshStandardMaterial;
+  private lakeFreshMat: THREE.MeshStandardMaterial;
+  private lakeSaltMat: THREE.MeshStandardMaterial;
+  private damMasonryMat: THREE.MeshStandardMaterial;
+  private damBreachedMat: THREE.MeshStandardMaterial;
 
   private labelAnchors: MapLabelAnchor[] = [];
   private lastSnapshot: DiegeticSnapshot | null = null;
@@ -309,6 +313,37 @@ export class GlobeFeatureOverlayGroup {
       metalness: 0.20,
       side: THREE.DoubleSide,
     });
+    this.lakeFreshMat = new THREE.MeshStandardMaterial({
+      color: rgbToThreeColor(palette?.riverWaterRgb ?? [54, 108, 133]),
+      roughness: 0.22,
+      metalness: 0.16,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+    this.lakeSaltMat = new THREE.MeshStandardMaterial({
+      color: rgbToThreeColor(palette?.oceanShallowRgb ?? [135, 163, 173]).lerp(
+        rgbToThreeColor(palette?.peakSnowRgb ?? [244, 239, 228]),
+        0.38,
+      ),
+      roughness: 0.34,
+      metalness: 0.12,
+      side: THREE.DoubleSide,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    });
+    this.damMasonryMat = new THREE.MeshStandardMaterial({
+      color: rgbToThreeColor(palette?.roadStoneRgb ?? [122, 125, 130]),
+      roughness: 0.72,
+      metalness: 0.14,
+    });
+    this.damBreachedMat = new THREE.MeshStandardMaterial({
+      color: rgbToThreeColor(palette?.settlementMarkerRgb ?? [139, 46, 34]),
+      roughness: 0.80,
+      metalness: 0.08,
+    });
   }
 
   setPalette(palette: GlobePalette): void {
@@ -338,6 +373,12 @@ export class GlobeFeatureOverlayGroup {
     this.formationFreshMat.color.copy(rgbToThreeColor(palette.roadOchreRgb));
     this.formationStaleMat.color.copy(rgbToThreeColor(palette.compassRoseRgb));
     this.noRetreatRingMat.color.copy(rgbToThreeColor(palette.contourInkRgb));
+    this.lakeFreshMat.color.copy(rgbToThreeColor(palette.riverWaterRgb));
+    this.lakeSaltMat.color
+      .copy(rgbToThreeColor(palette.oceanShallowRgb))
+      .lerp(rgbToThreeColor(palette.peakSnowRgb), 0.38);
+    this.damMasonryMat.color.copy(rgbToThreeColor(palette.roadStoneRgb ?? [122, 125, 130]));
+    this.damBreachedMat.color.copy(rgbToThreeColor(palette.settlementMarkerRgb));
   }
 
   getSummary(): FeatureOverlayRenderSummary {
@@ -456,6 +497,80 @@ export class GlobeFeatureOverlayGroup {
     }
     if (riverBuild.chevronMesh) {
       this.group.add(riverBuild.chevronMesh);
+    }
+
+    // 1b. Natural lake basins (Exorheic/Endorheic), impounded dam reservoirs & pickable 3D masonry dams (`UI-GLB-009`, `ENG-GEO-014`).
+    for (const kCell of snapshot.knownCells) {
+      if (kCell.tier !== "surveyed" && kCell.tier !== "stale") continue;
+      if (kCell.isOcean || kCell.elevationM < 0) continue;
+      const cell = cellMap.get(kCell.cellId);
+      if (!cell) continue;
+
+      const dam = kCell.damStatus ?? null;
+      const fill01 = dam ? Math.max(0.05, Math.min(1, dam.reservoirFill01)) : 0;
+      const isNaturalLake = Boolean(kCell.isLake);
+      const isEndorheic = kCell.lakeKind === "endorheic" || (kCell.lakeSalinityPerMille ?? 0) >= 8;
+
+      if (isNaturalLake || (dam && fill01 > 0.02)) {
+        const up = surfaceNormalFor(cell.centerUnit);
+        const radius =
+          ((isNaturalLake ? 0.011 : 0.0085 * (0.45 + 0.55 * fill01)) / Math.max(1, densityScale * 0.68)) *
+          Math.max(0.45, 0.72 + 0.28 * altitudeNorm);
+        const basin = new THREE.Mesh(
+          new THREE.CircleGeometry(radius, 14),
+          isEndorheic && !dam ? this.lakeSaltMat : this.lakeFreshMat,
+        );
+        const gLift = terrainHeightAt(cell.centerUnit, cell.cellId) + (flatMode ? 0.0014 : 0.00072);
+        basin.position.copy(projectPoint(cell.centerUnit, gLift));
+        basin.quaternion.setFromUnitVectors(zUp, up);
+        this.group.add(basin);
+      }
+
+      if (dam) {
+        const dsId =
+          kCell.riverChannelDownstreamCellId !== undefined
+            ? kCell.riverChannelDownstreamCellId
+            : (kCell.riverDownstreamCellId ?? null);
+        const dsGeom = dsId !== null ? cellMap.get(dsId) : undefined;
+        const anchorUnit = dsGeom ? slerpUnitVec3(cell.centerUnit, dsGeom.centerUnit, 0.24) : cell.centerUnit;
+        const up = surfaceNormalFor(anchorUnit);
+        const wallH = dam.breached ? 0.0022 * markerScale : 0.0048 * markerScale;
+        const wallLen = 0.0088 * markerScale;
+        const wallThick = 0.0024 * markerScale;
+        const damMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(wallLen, wallH, wallThick),
+          dam.breached ? this.damBreachedMat : this.damMasonryMat,
+        );
+        const dLift = terrainHeightAt(anchorUnit, kCell.cellId, dsId ?? kCell.cellId) + wallH * 0.45;
+        damMesh.position.copy(projectPoint(anchorUnit, dLift));
+        if (dsGeom) {
+          const pA = projectPoint(cell.centerUnit, dLift);
+          const pB = projectPoint(dsGeom.centerUnit, dLift);
+          const flowVec = pB.sub(pA);
+          if (flowVec.lengthSq() > 1e-10) {
+            flowVec.normalize();
+            const alongCrest = new THREE.Vector3().crossVectors(up, flowVec).normalize();
+            const trueFlow = new THREE.Vector3().crossVectors(alongCrest, up).normalize();
+            const basisMat = new THREE.Matrix4().makeBasis(alongCrest, up, trueFlow);
+            damMesh.quaternion.setFromRotationMatrix(basisMat);
+          } else {
+            damMesh.quaternion.setFromUnitVectors(yUp, up);
+          }
+        } else {
+          damMesh.quaternion.setFromUnitVectors(yUp, up);
+        }
+        damMesh.userData.pickHit = {
+          hitKind: "river",
+          cellId: kCell.cellId,
+          toCellId: dsId ?? kCell.cellId,
+          flowNorm01: kCell.riverFlowNorm01 ?? 0.65,
+          dischargeM3S: dam.spillwayReleaseM3S,
+          velocityMps: kCell.riverVelocityMps,
+          hydroPotentialKw: dam.liveHydroKw,
+          label: `${dam.breached ? "Breached " : ""}Hydro Dam #${kCell.cellId}`,
+        } satisfies GlobeRayHit;
+        this.group.add(damMesh);
+      }
     }
 
     // 2. Curved intact road ribbons & dashed washed-out segments.
@@ -1097,5 +1212,9 @@ export class GlobeFeatureOverlayGroup {
     this.formationFreshMat.dispose();
     this.formationStaleMat.dispose();
     this.noRetreatRingMat.dispose();
+    this.lakeFreshMat.dispose();
+    this.lakeSaltMat.dispose();
+    this.damMasonryMat.dispose();
+    this.damBreachedMat.dispose();
   }
 }

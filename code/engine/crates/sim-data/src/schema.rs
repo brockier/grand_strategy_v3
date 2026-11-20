@@ -119,10 +119,170 @@ pub struct PlanetGenerationRecord {
     pub natural_bounds: NaturalWorldBoundsRecord,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FluidRecord {
+    pub id: String,
+    pub display_name: String,
+    pub density_kg_m3: f32,
+    pub freeze_point_c: f32,
+    pub boil_point_c: f32,
+    pub latent_heat_evap_kj_kg: f32,
+    pub specific_heat_j_kg_k: f32,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GeologyProvinceRecord {
+    pub id: String,
+    pub display_name: String,
+    pub is_marine: bool,
+    pub typical_age_myr: f32,
+    pub base_roughness_m: f32,
+    pub fault_instability_01: f32,
+    pub volcanic_hazard_01: f32,
+    pub soil_fertility_bias: f32,
+    #[serde(default)]
+    pub marine_upwelling_bias: f32,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DepositAffinityRecord {
+    pub id: String,
+    pub province_id: String,
+    pub category_key: String,
+    #[serde(default)]
+    pub is_offshore: bool,
+    pub accessibility_tier: u8,
+    pub spawn_weight: f32,
+    pub min_tonnes: f64,
+    pub max_tonnes: f64,
+    pub min_purity_01: f32,
+    pub max_purity_01: f32,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HydrologyRulesRecord {
+    #[serde(default = "default_hydrology_rules_id")]
+    pub id: String,
+    #[serde(default = "default_active_fluid_id")]
+    pub active_fluid_id: String,
+    #[serde(default = "default_infiltration_rate")]
+    pub infiltration_rate_01: f32,
+    #[serde(default = "default_one_f32")]
+    pub evapotranspiration_scale: f32,
+    #[serde(default = "default_aquifer_diffusivity")]
+    pub aquifer_diffusivity: f32,
+    #[serde(default = "default_aquifer_capacity_mm")]
+    pub aquifer_capacity_mm: f32,
+    #[serde(default = "default_spring_threshold")]
+    pub spring_emergence_threshold_01: f32,
+    #[serde(default = "default_estuary_max_elev")]
+    pub estuary_max_elev_m: f32,
+    #[serde(default = "default_shallow_ford_max_q")]
+    pub shallow_ford_max_q_m3_s: f32,
+    #[serde(default = "default_deep_nav_min_q")]
+    pub deep_navigable_min_q_m3_s: f32,
+    #[serde(default = "default_rapids_min_slope")]
+    pub rapids_min_slope_rad: f32,
+    #[serde(default = "default_dam_min_discharge")]
+    pub dam_min_discharge_m3_s: f32,
+    #[serde(default = "default_dam_min_relief")]
+    pub dam_min_relief_m: f32,
+    #[serde(default = "default_dam_turbine_eff")]
+    pub dam_turbine_efficiency_01: f32,
+    #[serde(default = "default_dam_siltation")]
+    pub dam_siltation_rate_per_day: f32,
+    #[serde(default = "default_dam_breach_flood")]
+    pub dam_breach_flood_threshold_01: f32,
+}
+
+fn default_hydrology_rules_id() -> String {
+    "default_hydrology_rules".to_owned()
+}
+fn default_active_fluid_id() -> String {
+    "water".to_owned()
+}
+fn default_infiltration_rate() -> f32 {
+    0.34
+}
+fn default_one_f32() -> f32 {
+    1.0
+}
+fn default_aquifer_diffusivity() -> f32 {
+    0.085
+}
+fn default_aquifer_capacity_mm() -> f32 {
+    420.0
+}
+fn default_spring_threshold() -> f32 {
+    0.88
+}
+fn default_estuary_max_elev() -> f32 {
+    14.0
+}
+fn default_shallow_ford_max_q() -> f32 {
+    35.0
+}
+fn default_deep_nav_min_q() -> f32 {
+    45.0
+}
+fn default_rapids_min_slope() -> f32 {
+    0.032
+}
+fn default_dam_min_discharge() -> f32 {
+    18.0
+}
+fn default_dam_min_relief() -> f32 {
+    18.0
+}
+fn default_dam_turbine_eff() -> f32 {
+    0.82
+}
+fn default_dam_siltation() -> f32 {
+    0.00015
+}
+fn default_dam_breach_flood() -> f32 {
+    0.96
+}
+
+impl Default for HydrologyRulesRecord {
+    fn default() -> Self {
+        Self {
+            id: default_hydrology_rules_id(),
+            active_fluid_id: default_active_fluid_id(),
+            infiltration_rate_01: default_infiltration_rate(),
+            evapotranspiration_scale: default_one_f32(),
+            aquifer_diffusivity: default_aquifer_diffusivity(),
+            aquifer_capacity_mm: default_aquifer_capacity_mm(),
+            spring_emergence_threshold_01: default_spring_threshold(),
+            estuary_max_elev_m: default_estuary_max_elev(),
+            shallow_ford_max_q_m3_s: default_shallow_ford_max_q(),
+            deep_navigable_min_q_m3_s: default_deep_nav_min_q(),
+            rapids_min_slope_rad: default_rapids_min_slope(),
+            dam_min_discharge_m3_s: default_dam_min_discharge(),
+            dam_min_relief_m: default_dam_min_relief(),
+            dam_turbine_efficiency_01: default_dam_turbine_eff(),
+            dam_siltation_rate_per_day: default_dam_siltation(),
+            dam_breach_flood_threshold_01: default_dam_breach_flood(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PlanetGenDomain {
     pub planet_generation: Option<PlanetGenerationRecord>,
+    #[serde(default)]
+    pub hydrology_rules: Option<HydrologyRulesRecord>,
+    #[serde(default)]
+    pub fluids: Vec<FluidRecord>,
+    #[serde(default)]
+    pub geology_provinces: Vec<GeologyProvinceRecord>,
+    #[serde(default)]
+    pub deposit_affinities: Vec<DepositAffinityRecord>,
 }
 
 fn default_tool_hardness() -> f32 {
